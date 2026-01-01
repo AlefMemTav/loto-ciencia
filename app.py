@@ -32,44 +32,28 @@ def carregar_dados_reais():
         # Carrega o Excel
         df = pd.read_excel("data/mega_sena_asloterias_ate_concurso_2954_sorteio.xlsx")
 
-        # Concurso é col 0, Data é col 1.
-        # As bolas (1 a 6) estão nas colunas de índice 2 a 7.
-        # O iloc[:, 2:8] pega todas as linhas (:), das colunas 2 até 8 (o 8 não entra).
-
+        # Ajuste conforme as colunas do seu Excel
         df_limpo = df.iloc[:, 2:8].copy()
-
-        # Renomeia imediatamente para o padrão do nosso sistema
         df_limpo.columns = ["D1", "D2", "D3", "D4", "D5", "D6"]
 
-        # Converte tudo para número (caso tenha sobrado texto) e remove erros
         for col in df_limpo.columns:
             df_limpo[col] = pd.to_numeric(df_limpo[col], errors="coerce")
 
-        # Remove linhas vazias
         df_limpo = df_limpo.dropna()
-
         return df_limpo
 
     except FileNotFoundError:
-        st.error(
-            "Erro: Arquivo 'data/mega_sena_asloterias_ate_concurso_2954_sorteio.xlsx' não encontrado."
-        )
+        st.error("Erro: Arquivo Excel não encontrado na pasta data/.")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"Erro ao processar dados: {e}")
-        # Dica de debug: Se der erro, mostre quais colunas o Python está vendo
-        st.write("Colunas detectadas no seu Excel:", df.columns.tolist())
         return pd.DataFrame()
 
-    except FileNotFoundError:
-        st.error(
-            "Erro: O arquivo 'mega_sena_asloterias_ate_concurso_2954_sorteio.xlsx' não foi encontrado. Baixe da Caixa e coloque na pasta."
-        )
-        return pd.DataFrame()  # Retorna vazio pra não quebrar o app
 
-
+@st.cache_data
 def get_numeros_quentes_frios(df):
-    # Pega todos os números sorteados
+    if df.empty:
+        return pd.Series()
     todos_numeros = df[["D1", "D2", "D3", "D4", "D5", "D6"]].values.flatten()
     freq = pd.Series(todos_numeros).value_counts().sort_values(ascending=False)
 
@@ -79,7 +63,10 @@ def get_numeros_quentes_frios(df):
     return freq
 
 
+@st.cache_data
 def analise_poisson(df):
+    if df.empty:
+        return []
     # Analisa o dígito final (unidade) de todos os números
     todos_numeros = df[["D1", "D2", "D3", "D4", "D5", "D6"]].values.flatten()
     finais = [n % 10 for n in todos_numeros]
@@ -132,16 +119,6 @@ def analise_poisson(df):
 
 
 def verificar_quadrantes(numeros):
-    # Q1: 01-05, 11-15, 21-25... (Topo Esquerda)
-    # Simplificação: Dividir cartela em 4 retângulos de 15 números
-    # Q1: 01-15 (aprox), Q2: 16-30... (Essa é a lógica simples, a real é geométrica)
-
-    # Lógica Geométrica Precisa:
-    # Q1 (Sup Esq): Linhas 1-3, Col 1-5 (Num: 01-05, 11-15, 21-25)
-    # Q2 (Sup Dir): Linhas 1-3, Col 6-0 (Num: 06-10, 16-20, 26-30)
-    # Q3 (Inf Esq): Linhas 4-6, Col 1-5 (Num: 31-35, 41-45, 51-55)
-    # Q4 (Inf Dir): Linhas 4-6, Col 6-0 (Num: 36-40, 46-50, 56-60)
-
     q1 = [
         n
         for n in numeros
@@ -162,7 +139,6 @@ def verificar_quadrantes(numeros):
         for n in numeros
         if n in [36, 37, 38, 39, 40, 46, 47, 48, 49, 50, 56, 57, 58, 59, 60]
     ]
-
     return [len(q1), len(q2), len(q3), len(q4)]
 
 
@@ -286,7 +262,6 @@ def gerar_fechamento(numeros_base):
 def verificar_historico(numeros, df):
     # Transforma os números do usuário em um conjunto (set) para comparação rápida
     meus_nums = set(numeros)
-
     ja_saiu_sena = []
     ja_saiu_quina = []
     ja_saiu_quadra = []
@@ -314,7 +289,6 @@ def verificar_historico(numeros, df):
 
 # --- INTERFACE VISUAL ---
 def main():
-
     df = carregar_dados_reais()
 
     if df.empty:
@@ -350,7 +324,7 @@ def main():
             st.bar_chart(freq.tail(10))
 
         st.info(
-            f"🧬 **Análise de Poisson:** Os finais de dezena **{poisson_finais}** estão matematicamente atrasados. O Gerador tentará incluí-los."
+            f"🧬 **Análise de Poisson:** Os finais de dezena **{poisson_finais}** estão matematicamente atrasados."
         )
 
     with tab2:
@@ -369,6 +343,7 @@ def main():
                         )
                     )
                 )
+
                 if len(nums) != 6:
                     st.error("Digite exatamente 6 números entre 1 e 60.")
                 else:
@@ -381,21 +356,16 @@ def main():
                         relatorio["status"],
                     )
 
-                    # --- NOVIDADE: BACKTESTING ---
+                    # --- BACKTESTING ---
                     st.write("---")
                     st.subheader("📜 Raio-X Histórico")
-
-                    # Chama a função nova
                     senas, quinas, quadras = verificar_historico(nums, df)
 
                     col_hist1, col_hist2, col_hist3 = st.columns(3)
-
                     col_hist1.metric("Já deu Sena (6)?", f"{len(senas)} vezes")
                     if len(senas) > 0:
                         col_hist1.warning(f"Já saiu em: {senas[0]}")
-
                     col_hist2.metric("Já deu Quina (5)?", f"{len(quinas)} vezes")
-
                     col_hist3.metric("Já deu Quadra (4)?", f"{len(quadras)} vezes")
 
                     if len(senas) == 0:
@@ -419,7 +389,7 @@ def main():
                             unsafe_allow_html=True,
                         )
 
-                    # Visual Feature: O Volante
+                    # Volante
                     st.write("---")
                     st.write("📍 **Visualização no Volante:**")
                     fig, ax = plt.subplots(figsize=(6, 3))
@@ -447,10 +417,8 @@ def main():
                             color="white" if n in nums else "black",
                             bbox=dict(boxstyle="circle,pad=0.3", fc=color, ec="none"),
                         )
-
                     ax.axis("off")
                     st.pyplot(fig)
-
             except:
                 st.error("Formato inválido.")
 
@@ -459,33 +427,24 @@ def main():
         st.write(
             "Cria jogos combinando: **3 Quentes + 2 Frios + 1 Neutro** + Ajuste de Gauss + Poisson."
         )
-
         qtd_jogos = st.slider("Quantos jogos deseja gerar?", 1, 10, 3)
 
         if st.button("💎 Gerar Jogos Otimizados"):
             jogos_gerados = []
             progress = st.progress(0)
-
             for i in range(qtd_jogos):
                 jogo = gerar_jogo_perfeito(freq, poisson_finais)
                 jogos_gerados.append(jogo)
                 progress.progress((i + 1) / qtd_jogos)
 
             st.success("Jogos Calculados com Sucesso!")
+            texto_jogos = "LotoScience - Seus Jogos Otimizados\n\n"
 
             for i, jogo in enumerate(jogos_gerados):
                 st.markdown(f"**Jogo {i+1}:** `{' - '.join(map(str, jogo))}`")
-                # Validação rápida visual
                 val = validar_jogo(jogo)
                 st.caption(f"Score: {val['score']} | {val['status']}")
                 st.divider()
-
-            # --- EXPORTAR JOGOS ---
-            st.write("---")
-
-            # Prepara o texto para o arquivo
-            texto_jogos = "LotoScience - Seus Jogos Otimizados\n\n"
-            for i, jogo in enumerate(jogos_gerados):
                 texto_jogos += f"Jogo {i+1}: {jogo} \n"
 
             st.download_button(
@@ -498,7 +457,7 @@ def main():
     with tab4:
         st.subheader("📦 Gerador de Fechamentos (Combinatória)")
         st.write(
-            "Escolha de 7 a 12 números. O sistema gera TODOS os jogos possíveis para garantir o prêmio matemático."
+            "Escolha de 7 a 12 números para cercar o prêmio. O sistema gera TODOS os jogos possíveis para garantir o prêmio matemático."
         )
 
         entrada_base = st.text_input(
@@ -512,13 +471,10 @@ def main():
                     list(set([int(n) for n in entrada_base.replace(",", " ").split()]))
                 )
                 if len(base) < 7 or len(base) > 12:
-                    st.warning(
-                        "Para o MVP, escolha entre 7 e 12 números (para não travar o navegador)."
-                    )
+                    st.warning("Escolha entre 7 e 12 números.")
                 else:
                     jogos_fechamento = gerar_fechamento(base)
                     custo = len(jogos_fechamento) * 5.00
-
                     st.success(
                         f"Gerados {len(jogos_fechamento)} jogos. Custo real: R$ {custo:,.2f}"
                     )
@@ -528,11 +484,9 @@ def main():
                     for j in jogos_fechamento:
                         st.text(str(j))
                         txt_fech += f"{j}\n"
-
                     st.download_button(
                         "📥 Baixar Fechamento Completo", txt_fech, "fechamento.txt"
                     )
-
             except:
                 st.error("Erro nos números. Verifique a digitação.")
     with tab5:
@@ -554,6 +508,7 @@ def main():
 
             # 1. Processamento e Limpeza
             linhas = texto_bolao.strip().split("\n")
+
             for linha in linhas:
                 if not linha.strip():
                     continue  # Pula linhas vazias
@@ -618,7 +573,6 @@ def main():
             media_score = sum(scores) / len(scores)
 
             col_graph1, col_graph2 = st.columns([2, 1])
-
             with col_graph1:
                 st.markdown("##### 🔥 Mapa de Calor do Bolão")
                 st.caption(
@@ -761,6 +715,5 @@ def main():
                     )
 
 
-# --- BLOCO DE EXECUÇÃO ---
 if __name__ == "__main__":
     main()
