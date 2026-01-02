@@ -1,6 +1,6 @@
 import unittest
 import pandas as pd
-from app import (
+from main import (
     verificar_quadrantes,
     validar_jogo,
     verificar_historico,

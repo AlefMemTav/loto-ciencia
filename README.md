@@ -110,19 +110,37 @@ The system assigns a score from 0 to 100 for each play based on 4 pillars:
 
 ## File Structure
 ```
-lotoscience/
+loto-science/
 │
-├── .streamlit/          # Configuration folder
-│   └── config.toml      # Defines colors and theme (Dark/Light)
+├── .venv/                   # Seu ambiente virtual
 │
-├── data/                # Folder to store data
-│   └── mega_sena_*.xlsx   # Caixa data file
+├── .streamlit/              # Configuration folder
+│   └── config.toml          # Defines colors and theme (Dark/Light)
 │
-├── app.py               # Application
-├── requirements.txt     # Libraries to install
-├── .gitignore
-├── ARCHITECTURE.md      # System architecture
-└── README.md            # Instructions on how to use the project
+├── data/
+│   └── mega_sena*.xlsx      # Caixa data file
+│
+├── src/                     # Código Fonte
+│   ├── __init__.py
+│   ├── data_loader.py       # (Model) Carregamento e limpeza de dados
+│   ├── statistics.py        # (Model) Cálculos pesados (Frequência, Poisson, etc.)
+│   ├── validator.py         # (Controller) Regras de validação (Gauss, Pares, Score)
+│   ├── generator.py         # (Controller) Algoritmos de geração de jogos
+│   ├── constants.py         # Constantes (Listas de Primos, Moldura, etc.)
+│   └── utils.py             # Funções auxiliares genéricas
+│
+├── components/              # (View) Componentes visuais reutilizáveis
+│   ├── __init__.py
+│   ├── dashboard.py         # Conteúdo da Tab 1
+│   ├── validator_ui.py      # Conteúdo da Tab 2
+│   ├── generator_ui.py      # Conteúdo da Tab 3
+│   ├── closures_ui.py       # Conteúdo da Tab 4
+│   └── bolao_ui.py          # Conteúdo da Tab 5
+│
+├── app.py                   # Application (Main)
+├── requirements.txt         # Libraries to install
+├── ARCHITECTURE.md          # System architecture
+└── README.md                # Instructions on how to use the project
 ```
 
 ## Statistical Note
