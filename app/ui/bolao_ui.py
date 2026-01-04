@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from app.src.statistics import get_historico_jogos
 from app.src.validator import validar_jogo
 
 
-def render_bolao():
+def render_bolao(df):
     st.subheader("👥 Auditoria de Bolão")
     st.write(
         "Cole todos os jogos do seu bolão aqui. Vamos analisar a qualidade do grupo e se há erros (jogos repetidos ou mal distribuídos)."
@@ -14,6 +15,8 @@ def render_bolao():
         "Cole os jogos (um por linha):",
         placeholder="01 02 03 04 05 06\n10 12 14 16 18 20\n...",
     )
+
+    historico_set = get_historico_jogos(df)
 
     if st.button("🔍 Auditar Bolão"):
         # 1. Processamento dos Dados
@@ -40,10 +43,10 @@ def render_bolao():
             _renderizar_heatmap_bolao(todos_numeros)
 
         with col_tecnica:
-            _renderizar_analise_qualidade(jogos_validos, todos_numeros)
+            _renderizar_analise_qualidade(jogos_validos, todos_numeros, historico_set)
 
         # 5. Lista Simples e Erros
-        _renderizar_lista_resumo(jogos_validos)
+        _renderizar_lista_resumo(jogos_validos, historico_set)
 
         if jogos_invalidos:
             st.error(
@@ -51,7 +54,7 @@ def render_bolao():
             )
 
         # 6. Relatório Detalhado
-        _renderizar_detalhes_profundos(jogos_validos)
+        _renderizar_detalhes_profundos(jogos_validos, historico_set)
 
 
 # --- FUNÇÕES AUXILIARES (UI HELPERS) ---
@@ -178,11 +181,11 @@ def _renderizar_heatmap_bolao(todos_numeros):
     st.pyplot(fig)
 
 
-def _renderizar_analise_qualidade(jogos, todos_numeros):
+def _renderizar_analise_qualidade(jogos, todos_numeros, historico):
     """Calcula score médio e mostra números esquecidos."""
     st.markdown("##### 🌡️ Qualidade Técnica")
 
-    scores = [validar_jogo(j)["score"] for j in jogos]
+    scores = [validar_jogo(j, historico_jogos=historico)["score"] for j in jogos]
     media_score = sum(scores) / len(scores) if scores else 0
 
     st.metric("Score Médio do Grupo", f"{media_score:.0f}/100")
@@ -201,16 +204,16 @@ def _renderizar_analise_qualidade(jogos, todos_numeros):
         st.success("Parabéns! Vocês cercaram todos os 60 números.")
 
 
-def _renderizar_lista_resumo(jogos):
+def _renderizar_lista_resumo(jogos, historico):
     """Exibe o expander com a lista simples."""
     with st.expander("📋 Ver Lista Detalhada dos Jogos"):
         for i, jogo in enumerate(jogos):
-            val = validar_jogo(jogo)
+            val = validar_jogo(jogo, historico_jogos=historico)
             icone = "🟢" if val["score"] >= 80 else "🟡" if val["score"] >= 50 else "🔴"
             st.write(f"**Jogo {i+1}:** {jogo} {icone} (Score: {val['score']})")
 
 
-def _renderizar_detalhes_profundos(jogos):
+def _renderizar_detalhes_profundos(jogos, historico):
     """Exibe a seção final com cards detalhados jogo a jogo."""
     st.write("---")
     st.subheader("📋 Detalhes Jogo a Jogo")
@@ -219,7 +222,7 @@ def _renderizar_detalhes_profundos(jogos):
     )
 
     for i, jogo in enumerate(jogos):
-        val = validar_jogo(jogo)
+        val = validar_jogo(jogo, historico_jogos=historico)
 
         if val["score"] >= 80:
             icone, label = "🟢", "Excelente"

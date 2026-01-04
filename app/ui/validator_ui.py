@@ -1,7 +1,7 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 from app.src.validator import validar_jogo
-from app.src.statistics import verificar_historico_sena
+from app.src.statistics import get_historico_jogos, verificar_historico_sena
 
 
 def render_validator(df):
@@ -15,7 +15,7 @@ def render_validator(df):
         help="Separe por espaço, vírgula ou traço.",
     )
 
-    if st.button("🔍 Analisar Qualidade", type="primary", use_container_width=True):
+    if st.button("🔍 Analisar Qualidade", type="primary", width="stretch"):
         try:
             texto = entrada.replace(",", " ").replace("-", " ")
             nums = sorted(
@@ -28,32 +28,59 @@ def render_validator(df):
                 )
                 return
 
-            relatorio = validar_jogo(nums)
+            historico = get_historico_jogos(df)
+
+            relatorio = validar_jogo(nums, historico_jogos=historico)
 
             # --- ÁREA DE RESULTADOS (CARDS PRO) ---
             st.markdown("<br>", unsafe_allow_html=True)
             c1, c2 = st.columns(2)
-
-            # Definição de Cores baseada no Score
             score = relatorio["score"]
-            if score >= 80:
-                score_class = "status-good"
-                score_icon = "💎"
-            elif score >= 50:
-                score_class = "status-warn"
-                score_icon = "⚠️"
-            else:
-                score_class = "status-bad"
-                score_icon = "🗑️"
+            score_original = relatorio.get("score_original", 0)
+            ja_saiu = relatorio.get("ja_saiu", False)
 
-            # CARD SCORE
+            if ja_saiu:
+                score_class = "status-bad"
+                score_icon = "⛔"
+                # O Score Principal é 0 (para alertar perigo)
+                display_score = "0/100"
+
+                # O Delta mostra a qualidade real que foi perdida
+                delta_msg = f"Score Técnico: {score_original}/100"
+
+                # Define a classe neutra (cinza) para não confundir com sucesso
+                classe_css_delta = "status-off"
+            else:
+                # Lógica Normal
+                display_score = f"{score}/100"
+                if score >= 80:
+                    score_class = "status-good"
+                    score_icon = "💎"
+                elif score >= 50:
+                    score_class = "status-warn"
+                    score_icon = "⚠️"
+                else:
+                    score_class = "status-bad"
+                    score_icon = "🗑️"
+
+                delta_msg = f"{score_icon} {relatorio['status']}"
+                classe_css_delta = score_class
+
+            # CARD SCORE (Com a correção do style manual para o cinza)
             with c1:
+                # Se a classe for 'status-off', forçamos a cor cinza via style
+                estilo_extra = (
+                    "color: #94a3b8;" if classe_css_delta == "status-off" else ""
+                )
+
                 st.markdown(
                     f"""
                 <div class="custom-metric-card">
                     <div class="metric-label">Qualidade Técnica</div>
-                    <div class="metric-value">{score}/100</div>
-                    <div class="metric-delta {score_class}">{score_icon} {relatorio['status']}</div>
+                    <div class="metric-value">{display_score}</div>
+                    <div class="metric-delta {classe_css_delta}" style="{estilo_extra}">
+                        {delta_msg}
+                    </div>
                 </div>
                 """,
                     unsafe_allow_html=True,
@@ -105,7 +132,7 @@ def render_validator(df):
                         unsafe_allow_html=True,
                     )
                 elif "✅" in msg:
-                    st.caption(f"{msg}")  # Menos destaque para o que está bom
+                    st.caption(f"{msg}")
                 else:
                     st.markdown(
                         f"<span style='color:#f59e0b;'>{msg}</span>",

@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 import matplotlib.pyplot as plt
 from app.src.constants import (
     CANTOS,
@@ -16,25 +17,40 @@ from app.src.constants import (
     Q4,
     XIS,
 )
-from app.src.statistics import get_reis_da_sequencia
+from app.src.statistics import (
+    calcular_atrasos,
+    calcular_chi_quadrado,
+    get_reis_da_sequencia,
+    get_tabela_inteligencia,
+)
 
 
 def render_dashboard(df, freq, poisson_finais):
-    st.markdown("### 🔭 Panorama Geral da Mega-Sena")
-    st.caption("Resumo estatístico atualizado da base de dados oficial.")
+    st.markdown("### 🔭 O Raio-X da Mega-Sena")
+    st.write(
+        "Bem-vindo ao painel de inteligência. Aqui transformamos dados brutos em estratégias de jogo."
+    )
 
+    # 1. KPIs (Resumo Rápido)
     _render_kpis(freq, df)
+    st.markdown("---")
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    # 2. Oportunidades (O que o usuário quer ver primeiro)
+    _render_gap_bar_charts(df)
+    st.markdown("---")
 
+    # 3. Tendências de Longo Prazo (LLN e Quentes/Frios)
+    _render_bar_charts(freq, 15)
+    st.markdown("---")
+
+    # 4. Mapa Visual
+    # Preparação de dados para o mapa
     reis_seq = get_reis_da_sequencia(df)
     top_quentes = freq.head(15).index.tolist()
     top_frios = freq.tail(15).index.tolist()
 
-    # Tratamento seguro para último sorteio
     if not df.empty:
         ultimo_idx = df.index.max()
-        # Garante que é uma lista plana
         ultimo_sorteio = df.loc[
             ultimo_idx, ["D1", "D2", "D3", "D4", "D5", "D6"]
         ].values.tolist()
@@ -46,15 +62,15 @@ def render_dashboard(df, freq, poisson_finais):
         "Top 15 Mais Quentes": top_quentes,
         "Top 15 Mais Frios": top_frios,
         "Último Sorteio": ultimo_sorteio,
-        "Moldura": list(MOLDURA),
-        "Miolo": MIOLO,
+        "Moldura (Borda)": list(MOLDURA),
+        "Miolo (Centro)": MIOLO,
         "Cruz": CRUZ,
-        "Xis": XIS,
+        "Xis (Diagonais)": XIS,
         "Cantos": CANTOS,
         "Primos": PRIMOS,
-        "Perdidos": LOST_NUMBERS,
+        "Números 'Lost'": LOST_NUMBERS,
         "Fibonacci": FIBONACCI,
-        "Gêmeos": GEMEOS,
+        "Gêmeos (11, 22...)": GEMEOS,
         "Reis da Sequência": reis_seq,
         "Quadrante 1 (Sup. Esq)": Q1,
         "Quadrante 2 (Sup. Dir)": Q2,
@@ -63,20 +79,59 @@ def render_dashboard(df, freq, poisson_finais):
     }
 
     _render_heatmap_section(freq, conjuntos)
+    st.markdown("---")
 
-    st.divider()
-
+    # 5. Guia de Equilíbrio (Tabela de Probabilidades)
     _render_probability_report(df, conjuntos)
+    st.markdown("---")
 
-    st.divider()
+    # 6. Auditoria Técnica (Fica por último para não assustar)
+    st.subheader("🛡️ Auditoria de Integridade")
+    st.caption("Ferramentas matemáticas para validar se o sorteio é honesto.")
 
-    _render_bar_charts(freq, 15)
+    c1, c2 = st.columns(2)
 
-    if poisson_finais:
-        st.info("🧬 **Análise de Poisson:** Dígitos finais estatisticamente atrasados:")
-        cols = st.columns(len(poisson_finais))
-        for i, item in enumerate(poisson_finais):
-            cols[i].metric(f"Final {item['digito']}", f"p={item['p_value']}")
+    with c1:
+        st.markdown("**🔢 Análise de Finais (Poisson)**")
+        if poisson_finais:
+            st.warning(f"Detectamos {len(poisson_finais)} finais atrasados.")
+            cols = st.columns(len(poisson_finais))
+            for i, item in enumerate(poisson_finais):
+                cols[i].metric(
+                    f"Final {item['digito']}",
+                    f"p={item['p_value']}",
+                    help="Probabilidade estatística baixa. Indica que este final 'deveria' ter saído mais vezes.",
+                )
+        else:
+            st.success("✅ A distribuição dos finais (0-9) está normal.")
+            st.caption("Não há finais criticamente atrasados no momento.")
+
+    with c2:
+        st.markdown("**⚖️ Teste de Honestidade (Chi-Quadrado)**")
+        chi_res = calcular_chi_quadrado(df)
+
+        if chi_res:
+            cor = "green" if chi_res["p_value"] > 0.05 else "red"
+            texto = (
+                "Sorteio Honesto (Aleatório)"
+                if chi_res["p_value"] > 0.05
+                else "⚠️ Alerta de Padrão Suspeito"
+            )
+            msg_help = "O Teste Chi-Quadrado verifica se todos os números têm chances iguais de sair, como deveria ser numa loteria justa."
+
+            st.markdown(
+                f"""
+                <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; border-left: 5px solid {cor}; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="font-weight: bold; color: #334155; margin-bottom: 5px;">Status do Sistema:</div>
+                    <div style="font-size: 1.1em; color: {cor}; font-weight: 800;">{texto}</div>
+                    <div style="font-size: 0.8em; color: #64748b; margin-top: 5px;">P-Value: {chi_res['p_value']:.4f} (> 0.05 é ideal)</div>
+                </div>
+            """,
+                unsafe_allow_html=True,
+            )
+
+    # 7. Tabela Científica (Escondida para curiosos)
+    _render_z_score_gaps_section(df)
 
 
 def _render_kpis(freq, df):
@@ -91,13 +146,15 @@ def _render_kpis(freq, df):
 
     k1, k2, k3, k4 = st.columns(4)
 
+    # Usamos st.container para dar um leve isolamento visual se necessário,
+    # mas mantemos o HTML customizado que já funciona bem visualmente.
     with k1:
         st.markdown(
             f"""
         <div class="custom-metric-card">
-            <div class="metric-label">Total de Concursos</div>
+            <div class="metric-label">Total de Sorteios</div>
             <div class="metric-value">{len(df)}</div>
-            <div class="metric-delta status-good">Base Oficial</div>
+            <div class="metric-delta status-good">Desde 1996</div>
         </div>
         """,
             unsafe_allow_html=True,
@@ -108,8 +165,8 @@ def _render_kpis(freq, df):
             f"""
         <div class="custom-metric-card">
             <div class="metric-label">Rei da Mesa 🔥</div>
-            <div class="metric-value">{num_mais}</div>
-            <div class="metric-delta status-good">Saiu {qtd_mais}x</div>
+            <div class="metric-value">Nº {num_mais}</div>
+            <div class="metric-delta status-good">Saiu {qtd_mais} vezes</div>
         </div>
         """,
             unsafe_allow_html=True,
@@ -119,9 +176,9 @@ def _render_kpis(freq, df):
         st.markdown(
             f"""
         <div class="custom-metric-card">
-            <div class="metric-label">O Gelado ❄️</div>
-            <div class="metric-value">{num_menos}</div>
-            <div class="metric-delta status-bad">Saiu {qtd_menos}x</div>
+            <div class="metric-label">O Tímido ❄️</div>
+            <div class="metric-value">Nº {num_menos}</div>
+            <div class="metric-delta status-bad">Saiu {qtd_menos} vezes</div>
         </div>
         """,
             unsafe_allow_html=True,
@@ -131,38 +188,143 @@ def _render_kpis(freq, df):
         st.markdown(
             f"""
         <div class="custom-metric-card">
-            <div class="metric-label">Média de Saída</div>
-            <div class="metric-value">{media:.0f}</div>
-            <div class="metric-delta status-warn">Por Dezena</div>
+            <div class="metric-label">Média Esperada</div>
+            <div class="metric-value">~{media:.0f}</div>
+            <div class="metric-delta status-warn">Vezes por número</div>
         </div>
         """,
             unsafe_allow_html=True,
         )
 
 
+def _render_gap_bar_charts(df):
+    st.subheader("⏰ Relógio dos Atrasados")
+    st.write(
+        "Estes números estão 'dormindo' há muito tempo. Segundo a estatística, a chance deles acordarem aumenta a cada sorteio."
+    )
+
+    atrasos = calcular_atrasos(df)
+
+    # Mostra os 20 mais atrasados
+    top_atrasados = atrasos.head(20)
+
+    # Destaque visual
+    col_graph, col_info = st.columns([3, 1])
+
+    with col_graph:
+        st.bar_chart(top_atrasados, color="#ef4444", height=250)
+
+    with col_info:
+        maior_gap = atrasos.index[0]
+        tempo = atrasos.iloc[0]
+        st.markdown(
+            f"""
+            <div style="background-color: #fef2f2; padding: 15px; border-radius: 10px; border: 1px solid #fca5a5;">
+                <h4 style="color: #991b1b; margin:0;">🚨 Alerta</h4>
+                <p style="font-size: 0.9em; color: #7f1d1d;">
+                    O número <strong>{maior_gap}</strong> é o campeão de atraso.<br>
+                    Ele não aparece há <strong>{tempo} jogos</strong>.
+                </p>
+                <small style="color: #ef4444;">Alta probabilidade de retorno em breve.</small>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def _render_bar_charts(freq, num):
+    """
+    Renderiza gráficos de barra usando Altair para incluir a Linha de Média (LLN).
+    """
+    total_aparicoes = freq.sum()
+    media_teorica = total_aparicoes / 60
+
+    st.subheader("⚖️ Equilíbrio Matemático (LLN)")
+    st.markdown(
+        f"""
+        A linha vermelha pontilhada mostra onde todos os números **deveriam estar** (~{media_teorica:.0f} vezes).
+        """
+    )
+
+    c1, c2 = st.columns(2)
+
+    # --- GRÁFICO 1: QUENTES ---
+    with c1:
+        st.markdown(f"**🔥 Os {num} Mais Quentes** (Acima da Média)")
+        st.caption("Eles estão saindo mais do que o normal. Cuidado: podem esfriar.")
+
+        dados_quentes = freq.head(num).reset_index()
+        dados_quentes.columns = ["Dezena", "Frequencia"]
+
+        barras = (
+            alt.Chart(dados_quentes)
+            .mark_bar(color="#a79f28")
+            .encode(
+                x=alt.X("Dezena:O", sort="-y", title="Dezena"),
+                y=alt.Y("Frequencia", title="Saídas"),
+                tooltip=["Dezena", "Frequencia"],
+            )
+        )
+
+        regua = (
+            alt.Chart(pd.DataFrame({"y": [media_teorica]}))
+            .mark_rule(color="red", strokeDash=[5, 5], size=2)
+            .encode(y="y")
+        )
+
+        st.altair_chart(barras + regua, width="stretch")
+
+    # --- GRÁFICO 2: FRIOS ---
+    with c2:
+        st.markdown(f"**❄️ Os {num} Mais Frios** (Abaixo da Média)")
+        st.caption("Eles estão devendo aparições. A tendência é subirem.")
+
+        dados_frios = freq.tail(num).reset_index()
+        dados_frios.columns = ["Dezena", "Frequencia"]
+
+        barras_frias = (
+            alt.Chart(dados_frios)
+            .mark_bar(color="#17a2b8")
+            .encode(
+                x=alt.X("Dezena:O", sort="y", title="Dezena"),
+                y=alt.Y("Frequencia", title="Saídas"),
+                tooltip=["Dezena", "Frequencia"],
+            )
+        )
+
+        st.altair_chart(barras_frias + regua, width="stretch")
+
+
 def _render_heatmap_section(freq, conjuntos):
-    st.subheader("Mapa de Calor Interativo")
-    st.caption("Número em cima / Quantidade de vezes que saiu embaixo.")
+    st.subheader("🗺️ Mapa de Calor")
+    st.write(
+        "Visualize onde os números caem no volante. Use os filtros para ver padrões ocultos."
+    )
+
     col_graf, col_filtros = st.columns([3, 1])
 
     with col_filtros:
-        st.markdown("**🔎 Filtros de Análise**")
-        filtro = st.radio("Destaque:", list(conjuntos.keys()))
+        st.markdown("**🔎 Escolha um Padrão:**")
+        # Nomes mais amigáveis no selectbox são definidos nas chaves do dict 'conjuntos'
+        filtro = st.radio(
+            "Visualizar:", list(conjuntos.keys()), label_visibility="collapsed"
+        )
         nums_filtro = conjuntos[filtro]
-        if not freq.empty:
-            freq_filtro = freq[freq.index.isin(nums_filtro)]
-            media_grupo = freq_filtro.mean()
-            st.caption(f"Média de saída deste grupo: **{media_grupo:.1f}**")
 
-            quente_grupo = freq_filtro.idxmax()
-            st.caption(f"Mais quente do grupo: **{quente_grupo}**")
+        # Mini estatística do filtro selecionado
+        if not freq.empty:
+            st.markdown("---")
+            freq_filtro = freq[freq.index.isin(nums_filtro)]
+            media_grupo = freq_filtro.mean() if not freq_filtro.empty else 0
+            st.caption(
+                f"Neste grupo, cada número saiu em média **{media_grupo:.1f} vezes**."
+            )
 
     with col_graf:
         _plot_heatmap_matplotlib(freq, nums_filtro)
 
 
 def _plot_heatmap_matplotlib(freq, nums_filtro):
-    """Helper privado para desenhar o gráfico"""
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ax.set_xlim(-0.5, 9.5)
     ax.set_ylim(-0.5, 5.5)
@@ -225,81 +387,74 @@ def _plot_heatmap_matplotlib(freq, nums_filtro):
 
 
 def _render_probability_report(df, conjuntos):
-    st.subheader("📊 Relatório de Probabilidade por Filtro")
-    st.caption(
-        "Baseado em todo o histórico, qual a chance de um sorteio cair COMPLETAMENTE dentro destes grupos?"
+    st.subheader("📏 Guia de Equilíbrio (Quantos escolher?)")
+    st.write(
+        "Muitos jogadores perdem porque escolhem, por exemplo, 6 números Primos. A tabela abaixo mostra a **'Média Esperada'**, ou seja, quantos números de cada grupo você deve colocar no seu jogo."
     )
 
     if df.empty:
-        st.warning("Sem dados para calcular probabilidades.")
+        st.warning("Sem dados para calcular.")
         return
 
+    # O cálculo permanece o mesmo, apenas a apresentação muda
     dados_relatorio = []
-    # Pré-calcula sets (performance)
     historico_sets = [set(row) for row in df.values]
     total_concursos = len(historico_sets)
 
-    progresso = st.progress(0)
-
-    for i, (nome_filtro, lista_numeros) in enumerate(conjuntos.items()):
+    # Barra de progresso escondida ou rápida para não travar UI
+    # Para UX melhor, removemos a barra de progresso visual aqui pois é muito rápida e pisca na tela
+    for nome_filtro, lista_numeros in conjuntos.items():
         set_filtro = set(lista_numeros)
-
-        # Cálculo Estatístico
-        ocorrencias_full = sum(
-            1 for sorteio in historico_sets if sorteio.issubset(set_filtro)
-        )
-        probabilidade = (ocorrencias_full / total_concursos) * 100
-
         soma_acertos = sum(
             len(sorteio.intersection(set_filtro)) for sorteio in historico_sets
         )
         media_presenca = soma_acertos / total_concursos
 
+        # Simplificando para o usuário: Probabilidade de sair 6 números (Jogo Cheio)
+        ocorrencias_full = sum(
+            1 for sorteio in historico_sets if sorteio.issubset(set_filtro)
+        )
+        prob_full = (ocorrencias_full / total_concursos) * 100
+
         dados_relatorio.append(
             {
-                "Filtro": nome_filtro,
-                "Tamanho do Grupo": len(set_filtro),
-                "Jogos Completos (6 acertos)": ocorrencias_full,
-                "% Chance Histórica": f"{probabilidade:.4f}%",
-                "Média de Dezenas por Jogo": f"{media_presenca:.1f}",
+                "Grupo": nome_filtro,
+                "Média Ideal": f"{media_presenca:.1f}",  # O dado mais importante
+                "Chance de Jogo Completo": f"{prob_full:.4f}%",  # Dado secundário
+                "_raw_media": media_presenca,  # Para ordenação
             }
         )
-        progresso.progress((i + 1) / len(conjuntos))
-
-    progresso.empty()
 
     df_rel = pd.DataFrame(dados_relatorio)
-    df_rel = df_rel.sort_values(by="Jogos Completos (6 acertos)", ascending=False)
+    # Ordena pelos que têm maior presença média (mais relevantes)
+    df_rel = df_rel.sort_values(by="_raw_media", ascending=False)
 
-    st.dataframe(
-        df_rel,
-        column_config={
-            "Filtro": st.column_config.TextColumn("Grupo / Padrão"),
-            "Tamanho do Grupo": st.column_config.ProgressColumn(
-                "Tamanho (de 60)", format="%d", min_value=0, max_value=60
-            ),
-            "% Chance Histórica": st.column_config.NumberColumn(
-                "Probabilidade (Jogo Cheio)", format="%s"
-            ),
-            "Média de Dezenas por Jogo": st.column_config.NumberColumn(
-                "Média Esperada",
-                help="Quantos números desse grupo costumam sair em um sorteio normal.",
-            ),
-        },
-        hide_index=True,
-        width="stretch",
-    )
-
-    st.info(
-        "💡 **Interpretação:** Filtros pequenos raramente contêm as 6 dezenas. O segredo é olhar a **'Média de Dezenas'**. Exemplo: Se a média dos Primos é 2.0, seus jogos devem ter cerca de 2 primos, e não 6."
-    )
+    with st.expander("Ver Tabela Guia", expanded=True):
+        st.dataframe(
+            df_rel[["Grupo", "Média Ideal", "Chance de Jogo Completo"]],
+            column_config={
+                "Grupo": st.column_config.TextColumn("Grupo de Números"),
+                "Média Ideal": st.column_config.TextColumn(
+                    "Quantos Escolher?",
+                    help="Em um jogo de 6 números, quantos devem ser deste grupo? Ex: Se 'Pares' tem média 3.0, escolha 3 pares.",
+                ),
+                "Chance de Jogo Completo": st.column_config.TextColumn(
+                    "Risco de Jogo Cheio",
+                    help="Qual a chance dos 6 números sorteados serem TODOS deste grupo? Quanto menor, mais arriscado jogar só números deste grupo.",
+                ),
+            },
+            hide_index=True,
+            width="stretch",
+        )
 
 
-def _render_bar_charts(freq, num):
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown(f"#### 🔥 Top {num} Quentes")
-        st.bar_chart(freq.head(num), color="#a79f28")
-    with c2:
-        st.markdown(f"#### ❄️ Top {num} Frios")
-        st.bar_chart(freq.tail(num), color="#17a2b8")
+def _render_z_score_gaps_section(df):
+    with st.expander("🤓 Área Nerd: Dados Brutos (Z-Score & Gaps)"):
+        st.write(
+            "Estes são os dados matemáticos que alimentam o Gerador de Jogos. O 'Peso' define a probabilidade de escolha."
+        )
+        tabela = get_tabela_inteligencia(df)
+        st.dataframe(
+            tabela.style.background_gradient(subset=["Peso_Geracao"], cmap="Greens"),
+            width="stretch",
+        )

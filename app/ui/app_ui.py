@@ -49,10 +49,10 @@ def render_app_logic():
         render_validator(df)
 
     with abas[2]:
-        render_generator(freq, poisson_finais)
+        render_generator(df, freq, poisson_finais)
 
     with abas[3]:
         render_closures()
 
     with abas[4]:
-        render_bolao()
+        render_bolao(df)

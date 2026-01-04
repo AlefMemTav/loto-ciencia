@@ -12,7 +12,7 @@ def render_closures():
         "Seus números base:", placeholder="Ex: 01 02 03 04 05 06 07 08"
     )
 
-    if st.button("⚙️ Calcular Fechamento", use_container_width=True):
+    if st.button("⚙️ Calcular Fechamento", width="stretch"):
         try:
             base = sorted(
                 list(
@@ -52,7 +52,7 @@ def render_closures():
                         txt += f"{j}\n"
 
                 st.download_button(
-                    "📥 Baixar Arquivo", txt, "fechamento.txt", use_container_width=True
+                    "📥 Baixar Arquivo", txt, "fechamento.txt", width="stretch"
                 )
             else:
                 st.warning("⚠️ Escolha entre **7 e 12 números**.")

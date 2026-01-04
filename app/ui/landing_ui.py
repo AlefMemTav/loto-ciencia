@@ -48,11 +48,11 @@ def render_landing_page():
         # Botões de Ação
         b1, b2 = st.columns([1, 1.2])
         with b1:
-            if st.button("Iniciar Análise", type="primary", use_container_width=True):
+            if st.button("Iniciar Análise", type="primary", width="stretch"):
                 st.session_state.page = "app"
                 st.rerun()
         with b2:
-            if st.button("📖 Entender a Ciência", use_container_width=True):
+            if st.button("📖 Entender a Ciência", width="stretch"):
                 st.session_state.page = "how"
                 st.rerun()
 
@@ -126,7 +126,7 @@ def render_landing_page():
         """
         <div class="footer-container">
             <div class="footer-text">
-                © 2026 LotoScience • Desenvolvido com Inteligência Estatística.<br>
+                © 2026 LotoScience • Desenvolvido com Rigor Estatístico.<br>
                 <em>Loterias são jogos de azar. Jogue com responsabilidade. Probabilidade fixa de 1 em 50 mi.</em>
             </div>
         </div>
@@ -177,9 +177,9 @@ def render_como_funciona():
 
     st.divider()
 
-    st.markdown("## ⚙️ Os 3 Pilares do Algoritmo")
+    st.markdown("## ⚙️ Os 5 Pilares do Algoritmo")
 
-    col1, col2, col3 = st.columns(3, gap="medium")
+    col1, col2, col3, col4, col5 = st.columns(5, gap="medium")
 
     with col1:
         st.markdown("#### 1. A Curva de Gauss")
@@ -200,6 +200,20 @@ def render_como_funciona():
         st.caption("Filtro Financeiro")
         st.warning(
             "Comparamos seu jogo com padrões de massa. Se parecer com o de todo mundo, nós avisamos."
+        )
+
+    with col4:
+        st.markdown("#### 4. Distribuição de Finais")
+        st.caption("Filtro de Equilíbrio")
+        st.success(
+            "Garantimos que os finais (0-9) estejam distribuídos uniformemente, evitando concentrações arriscadas."
+        )
+
+    with col5:
+        st.markdown("#### 5. Z-Score, Gaps & Quadrantes")
+        st.caption("Filtro Avançado")
+        st.success(
+            "Utilizamos técnicas estatísticas para analisar padrões sutis e garantir diversidade numérica."
         )
 
     st.markdown("<br><br>", unsafe_allow_html=True)

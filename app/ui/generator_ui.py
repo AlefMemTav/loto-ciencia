@@ -3,7 +3,7 @@ from app.src.generator import gerar_jogo_perfeito
 from app.src.validator import validar_jogo
 
 
-def render_generator(freq, poisson_finais):
+def render_generator(df, freq, poisson_finais):
     st.markdown("### 🤖 Gerador Híbrido")
     st.write(
         "Nosso algoritmo mistura estatística (Quentes/Frios) com aleatoriedade controlada."
@@ -14,9 +14,7 @@ def render_generator(freq, poisson_finais):
         qtd = st.slider("Quantidade de Jogos:", 1, 10, 3)
     with c2:
         st.markdown("<br>", unsafe_allow_html=True)  # Alinhamento visual
-        btn_gerar = st.button(
-            "✨ Gerar Agora", type="primary", use_container_width=True
-        )
+        btn_gerar = st.button("✨ Gerar Agora", type="primary", width="stretch")
 
     if btn_gerar:
         digits_poisson = [item["digito"] for item in poisson_finais]
@@ -28,7 +26,7 @@ def render_generator(freq, poisson_finais):
 
         for i in range(qtd):
             bar_text.text(f"Minerando jogo otimizado {i+1} de {qtd}...")
-            jogo = gerar_jogo_perfeito(freq, digits_poisson)
+            jogo = gerar_jogo_perfeito(df, digits_poisson)
             jogos.append(jogo)
             bar.progress((i + 1) / qtd)
 
@@ -67,5 +65,5 @@ def render_generator(freq, poisson_finais):
             "📥 Baixar Jogos (.txt)",
             txt_out,
             "jogos_lotoscience.txt",
-            use_container_width=True,
+            width="stretch",
         )
