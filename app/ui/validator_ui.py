@@ -1,7 +1,11 @@
 import streamlit as st
 import matplotlib.pyplot as plt
 from app.src.validator import validar_jogo
-from app.src.statistics import get_historico_jogos, verificar_historico_sena
+from app.src.statistics import (
+    get_historico_jogos,
+    verificar_historico_sena,
+    analise_intervalo_confianca,
+)
 
 
 def render_validator(df):
@@ -15,7 +19,7 @@ def render_validator(df):
         help="Separe por espaço, vírgula ou traço.",
     )
 
-    if st.button("🔍 Analisar Qualidade", type="primary", width="stretch"):
+    if st.button("🔍 Analisar Qualidade", type="primary", use_container_width=True):
         try:
             texto = entrada.replace(",", " ").replace("-", " ")
             nums = sorted(
@@ -28,9 +32,12 @@ def render_validator(df):
                 )
                 return
 
+            # Busca ic_info e historico
             historico = get_historico_jogos(df)
+            ic_info = analise_intervalo_confianca(df)
 
-            relatorio = validar_jogo(nums, historico_jogos=historico)
+            # Passa ic_info para validação
+            relatorio = validar_jogo(nums, historico_jogos=historico, ic_info=ic_info)
 
             # --- ÁREA DE RESULTADOS (CARDS PRO) ---
             st.markdown("<br>", unsafe_allow_html=True)
@@ -42,16 +49,10 @@ def render_validator(df):
             if ja_saiu:
                 score_class = "status-bad"
                 score_icon = "⛔"
-                # O Score Principal é 0 (para alertar perigo)
                 display_score = "0/100"
-
-                # O Delta mostra a qualidade real que foi perdida
                 delta_msg = f"Score Técnico: {score_original}/100"
-
-                # Define a classe neutra (cinza) para não confundir com sucesso
                 classe_css_delta = "status-off"
             else:
-                # Lógica Normal
                 display_score = f"{score}/100"
                 if score >= 80:
                     score_class = "status-good"
@@ -66,9 +67,8 @@ def render_validator(df):
                 delta_msg = f"{score_icon} {relatorio['status']}"
                 classe_css_delta = score_class
 
-            # CARD SCORE (Com a correção do style manual para o cinza)
+            # CARD SCORE
             with c1:
-                # Se a classe for 'status-off', forçamos a cor cinza via style
                 estilo_extra = (
                     "color: #94a3b8;" if classe_css_delta == "status-off" else ""
                 )
@@ -86,11 +86,10 @@ def render_validator(df):
                     unsafe_allow_html=True,
                 )
 
-            # Lógica Risco
+            # CARD RISCO
             risco = relatorio.get("risco_divisao", "Desconhecido")
             risco_class = "status-good" if "Baixo" in risco else "status-bad"
 
-            # CARD RISCO
             with c2:
                 st.markdown(
                     f"""
@@ -114,6 +113,7 @@ def render_validator(df):
                 k1.warning(f"Já saiu em: {senas[0]}")
             k2.metric("Já deu Quina (5)?", f"{len(quinas)} vezes")
             k3.metric("Já deu Quadra (4)?", f"{len(quadras)} vezes")
+
             if senas:
                 st.error(
                     f"🚨 **ALERTA MÁXIMO:** Esses números já saíram em {senas[0]}! (Chance de repetir é quase nula)."
@@ -123,7 +123,20 @@ def render_validator(df):
                     "✅ **Inédito:** Essa combinação completa de 6 números nunca foi sorteada na história."
                 )
 
-            # Feedback Textual (Mensagens do Validador)
+            # Métricas detalhadas
+            st.markdown("---")
+            st.markdown("##### Métricas Técnicas")
+
+            metricas = relatorio.get("metricas", {})
+            col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+
+            col_m1.metric("Soma", metricas.get("soma", 0))
+            col_m2.metric("Entropia", f"{metricas.get('entropia', 0):.2f}")
+            col_m3.metric("Gini", f"{metricas.get('gini', 0):.3f}")
+            col_m4.metric("Pares", metricas.get("pares", 0))
+            col_m5.metric("Sequências", metricas.get("sequencias", 0))
+
+            # Feedback Textual
             st.markdown("##### 📝 Relatório do Analista")
             for msg in relatorio["msgs"]:
                 if "❌" in msg:
@@ -141,10 +154,25 @@ def render_validator(df):
 
             # Volante Visual
             st.markdown("---")
-            col_volante, col_vazio = st.columns([1, 1])
+            col_volante, col_info = st.columns([1, 1])
+
             with col_volante:
                 st.caption("Visualização Geométrica:")
                 _render_volante_aposta(nums)
+
+            with col_info:
+                st.markdown("##### 💡 Dicas")
+                if score >= 80:
+                    st.success("✅ Jogo de alta qualidade estatística!")
+                elif score >= 60:
+                    st.info("ℹ️ Jogo aceitável, mas pode melhorar.")
+                else:
+                    st.warning("⚠️ Considere gerar um novo jogo.")
+
+                if "ALTO" in risco:
+                    st.error(
+                        "💸 Padrão muito popular. Prêmio seria dividido com muitos ganhadores."
+                    )
 
         except Exception as e:
             st.error(
@@ -153,16 +181,16 @@ def render_validator(df):
 
 
 def _render_volante_aposta(nums):
+    """Renderiza o volante visual com os números marcados."""
     fig, ax = plt.subplots(figsize=(6, 3))
     ax.set_xlim(0, 11)
     ax.set_ylim(0, 7)
     ax.axis("off")
+
     for n in range(1, 61):
         row, col = (n - 1) // 10, (n - 1) % 10
-        # Cores alinhadas com a marca
-        color = (
-            "#d97706" if n in nums else "#f1f5f9"
-        )  # Accent se marcado, Cinza claro se não
+
+        color = "#d97706" if n in nums else "#f1f5f9"
         txt_col = "white" if n in nums else "#94a3b8"
         font_w = "bold" if n in nums else "normal"
 
@@ -176,4 +204,5 @@ def _render_volante_aposta(nums):
             fontweight=font_w,
             bbox=dict(boxstyle="circle,pad=0.3", fc=color, ec="none"),
         )
+
     st.pyplot(fig)

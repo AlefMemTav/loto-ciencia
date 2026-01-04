@@ -111,24 +111,30 @@ def render_dashboard(df, freq, poisson_finais):
         chi_res = calcular_chi_quadrado(df)
 
         if chi_res:
-            cor = "green" if chi_res["p_value"] > 0.05 else "red"
-            texto = (
-                "Sorteio Honesto (Aleatório)"
-                if chi_res["p_value"] > 0.05
-                else "⚠️ Alerta de Padrão Suspeito"
-            )
-            msg_help = "O Teste Chi-Quadrado verifica se todos os números têm chances iguais de sair, como deveria ser numa loteria justa."
+            p_chi = chi_res.get("p_chi", 0)
+            p_ks = chi_res.get("p_ks", 0)
 
+            # Se p_chi > 0.05, não rejeitamos a hipótese nula (distribuição é uniforme) -> Verde
+            is_honesto = p_chi > 0.05
+
+            cor = "green" if is_honesto else "red"
+            texto = (
+                "Aprovado (Distribuição Uniforme)" if is_honesto else "Alerta de Viés"
+            )
+
+            # Layout do card
             st.markdown(
                 f"""
-                <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; border-left: 5px solid {cor}; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <div style="font-weight: bold; color: #334155; margin-bottom: 5px;">Status do Sistema:</div>
-                    <div style="font-size: 1.1em; color: {cor}; font-weight: 800;">{texto}</div>
-                    <div style="font-size: 0.8em; color: #64748b; margin-top: 5px;">P-Value: {chi_res['p_value']:.4f} (> 0.05 é ideal)</div>
+                <div style="background-color: #f0fdf4; padding: 10px; border-radius: 5px; border-left: 5px solid {cor};">
+                    <strong>Status:</strong> {texto}<br>
+                    <small>Chi² p-value: {p_chi:.4f} (> 0.05 é ideal)</small><br>
+                    <small>KS p-value: {p_ks:.4f} (> 0.05 é ideal)</small>
                 </div>
-            """,
+                """,
                 unsafe_allow_html=True,
             )
+        else:
+            st.info("Dados insuficientes para teste Chi-Quadrado.")
 
     # 7. Tabela Científica (Escondida para curiosos)
     _render_z_score_gaps_section(df)
