@@ -21,10 +21,11 @@ from app.src.statistics import get_reis_da_sequencia
 
 def render_dashboard(df, freq, poisson_finais):
     st.markdown("### 🔭 Panorama Geral da Mega-Sena")
+    st.caption("Resumo estatístico atualizado da base de dados oficial.")
 
     _render_kpis(freq, df)
 
-    st.divider()
+    st.markdown("<br>", unsafe_allow_html=True)
 
     reis_seq = get_reis_da_sequencia(df)
     top_quentes = freq.head(15).index.tolist()
@@ -69,7 +70,7 @@ def render_dashboard(df, freq, poisson_finais):
 
     st.divider()
 
-    _render_bar_charts(freq, 10)
+    _render_bar_charts(freq, 15)
 
     if poisson_finais:
         st.info("🧬 **Análise de Poisson:** Dígitos finais estatisticamente atrasados:")
@@ -89,10 +90,54 @@ def _render_kpis(freq, df):
         num_mais, qtd_mais, num_menos, qtd_menos, media = 0, 0, 0, 0, 0
 
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total de Jogos", len(df))
-    k2.metric("Rei da Mesa (Mais Saiu)", f"Nº {num_mais}", f"{qtd_mais} vezes")
-    k3.metric("O Esquecido (Menos Saiu)", f"Nº {num_menos}", f"{qtd_menos} vezes")
-    k4.metric("Média", f"{media:.1f} vezes")
+
+    with k1:
+        st.markdown(
+            f"""
+        <div class="custom-metric-card">
+            <div class="metric-label">Total de Concursos</div>
+            <div class="metric-value">{len(df)}</div>
+            <div class="metric-delta status-good">Base Oficial</div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    with k2:
+        st.markdown(
+            f"""
+        <div class="custom-metric-card">
+            <div class="metric-label">Rei da Mesa 🔥</div>
+            <div class="metric-value">{num_mais}</div>
+            <div class="metric-delta status-good">Saiu {qtd_mais}x</div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    with k3:
+        st.markdown(
+            f"""
+        <div class="custom-metric-card">
+            <div class="metric-label">O Gelado ❄️</div>
+            <div class="metric-value">{num_menos}</div>
+            <div class="metric-delta status-bad">Saiu {qtd_menos}x</div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    with k4:
+        st.markdown(
+            f"""
+        <div class="custom-metric-card">
+            <div class="metric-label">Média de Saída</div>
+            <div class="metric-value">{media:.0f}</div>
+            <div class="metric-delta status-warn">Por Dezena</div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
 
 
 def _render_heatmap_section(freq, conjuntos):
