@@ -2,8 +2,10 @@ import math
 import numpy as np
 from collections import Counter
 
+from app.src.constants import QUAD_GEO_Q1, QUAD_GEO_Q2, QUAD_GEO_Q3, QUAD_GEO_Q4
 
-# ===== FUNÇÕES DE ANÁLISE ESPACIAL =====
+
+# ===== FUNÇÕES DE ANÁLISE ESPACIAL ====
 
 
 def _verificar_linhas(numeros):
@@ -32,14 +34,14 @@ def _verificar_linhas(numeros):
 
 def _verificar_quadrantes(numeros):
     """
-    Quadrantes lógicos (4 blocos de 15 números).
-    Q1: 1-15, Q2: 16-30, Q3: 31-45, Q4: 46-60
+    Quadrantes geométricos (layout 6×10 => quadrantes 3×5).
+    Q1: superior esquerdo; Q2: superior direito; Q3: inferior esquerdo; Q4: inferior direito.
     """
-    q1 = len([n for n in numeros if 1 <= n <= 15])
-    q2 = len([n for n in numeros if 16 <= n <= 30])
-    q3 = len([n for n in numeros if 31 <= n <= 45])
-    q4 = len([n for n in numeros if 46 <= n <= 60])
-
+    s = set(numeros)
+    q1 = len(s.intersection(QUAD_GEO_Q1))
+    q2 = len(s.intersection(QUAD_GEO_Q2))
+    q3 = len(s.intersection(QUAD_GEO_Q3))
+    q4 = len(s.intersection(QUAD_GEO_Q4))
     return [q1, q2, q3, q4]
 
 

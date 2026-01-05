@@ -11,10 +11,10 @@ from app.src.constants import (
     FIBONACCI,
     GEMEOS,
     MOLDURA,
-    Q1,
-    Q2,
-    Q3,
-    Q4,
+    QUAD_GEO_Q1,
+    QUAD_GEO_Q2,
+    QUAD_GEO_Q3,
+    QUAD_GEO_Q4,
     XIS,
 )
 from app.src.statistics import (
@@ -72,10 +72,10 @@ def render_dashboard(df, freq, poisson_finais):
         "Fibonacci": FIBONACCI,
         "Gêmeos (11, 22...)": GEMEOS,
         "Reis da Sequência": reis_seq,
-        "Quadrante 1 (Sup. Esq)": Q1,
-        "Quadrante 2 (Sup. Dir)": Q2,
-        "Quadrante 3 (Inf. Esq)": Q3,
-        "Quadrante 4 (Inf. Dir)": Q4,
+        "Quadrante 1 (Sup. Esq)": QUAD_GEO_Q1,
+        "Quadrante 2 (Sup. Dir)": QUAD_GEO_Q2,
+        "Quadrante 3 (Inf. Esq)": QUAD_GEO_Q3,
+        "Quadrante 4 (Inf. Dir)": QUAD_GEO_Q4,
     }
 
     _render_heatmap_section(freq, conjuntos)

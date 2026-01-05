@@ -19,14 +19,21 @@ LINHA_6 = list(range(51, 61))  # [51-60]
 
 LINHAS = [LINHA_1, LINHA_2, LINHA_3, LINHA_4, LINHA_5, LINHA_6]
 
-# ===== QUADRANTES (4 blocos de 15 números) =====
-# Divisão lógica: Superior/Inferior × Esquerda/Direita
-Q1 = list(range(1, 16))  # Superior Esquerdo [1-15]
-Q2 = list(range(16, 31))  # Superior Direito [16-30]
-Q3 = list(range(31, 46))  # Inferior Esquerdo [31-45]
-Q4 = list(range(46, 61))  # Inferior Direito [46-60]
+# ===== FAIXAS (4 blocos de 15 números) =====
+FAIXA_1_15 = list(range(1, 16))
+FAIXA_16_30 = list(range(16, 31))
+FAIXA_31_45 = list(range(31, 46))
+FAIXA_46_60 = list(range(46, 61))
+FAIXAS_15 = [FAIXA_1_15, FAIXA_16_30, FAIXA_31_45, FAIXA_46_60]
 
-QUADRANTES = [Q1, Q2, Q3, Q4]
+# ===== QUADRANTES GEOMÉTRICOS (layout 6×10 => quadrantes 3×5) =====
+# Superior: linhas 1-3 (1-30); Inferior: linhas 4-6 (31-60)
+# Esquerda: colunas 1-5; Direita: colunas 6-10
+QUAD_GEO_Q1 = [1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 21, 22, 23, 24, 25]  # Sup. Esq
+QUAD_GEO_Q2 = [6, 7, 8, 9, 10, 16, 17, 18, 19, 20, 26, 27, 28, 29, 30]  # Sup. Dir
+QUAD_GEO_Q3 = [31, 32, 33, 34, 35, 41, 42, 43, 44, 45, 51, 52, 53, 54, 55]  # Inf. Esq
+QUAD_GEO_Q4 = [36, 37, 38, 39, 40, 46, 47, 48, 49, 50, 56, 57, 58, 59, 60]  # Inf. Dir
+QUADRANTES_GEO = [QUAD_GEO_Q1, QUAD_GEO_Q2, QUAD_GEO_Q3, QUAD_GEO_Q4]
 
 # ===== PADRÕES GEOMÉTRICOS =====
 # Moldura (Bordas do volante)
