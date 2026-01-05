@@ -41,14 +41,35 @@ def render_landing_page():
 
         st.markdown(
             '<div class="hero-subtitle">Pare de jogar dinheiro fora com datas e superstições. '
-            "Utilize modelos estatísticos avançados para proteger seu patrimônio e otimizar suas apostas na Mega-Sena.</div>",
+            "Utilize modelos estatísticos avançados para proteger seu patrimônio e otimizar suas apostas nas Loterias da Caixa.</div>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            "<div style='margin-top:10px; color:#64748b; font-size:0.95rem;'>"
+            "Não aumenta sua probabilidade de ganhar; reduz padrões repetidos e o risco de dividir o prêmio."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            """
+            <div style="margin-top: 14px; margin-bottom: 10px; color:#334155; font-size:1.02rem; line-height:1.55">
+            <b>Em 30 segundos você consegue:</b>
+            <ul style="margin-top: 8px;">
+            <li><b>Raio‑X do jogo:</b> veja quais números estão “quentes”, “frios” e atrasados.</li>
+            <li><b>Validador anti‑padrão:</b> descubra se seu jogo está popular demais (risco de dividir prêmio).</li>
+            <li><b>Gerador inteligente:</b> crie jogos melhores em 1 clique; sem superstição.</li>
+            </ul>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 
         # Botões de Ação
         b1, b2 = st.columns([1, 1.2])
         with b1:
-            if st.button("Iniciar Análise", type="primary", width="stretch"):
+            if st.button("Começar agora", type="primary", width="stretch"):
                 st.session_state.page = "app"
                 st.rerun()
         with b2:
@@ -121,18 +142,7 @@ def render_landing_page():
             unsafe_allow_html=True,
         )
 
-    # -- FOOTER --
-    st.markdown(
-        """
-        <div class="footer-container">
-            <div class="footer-text">
-                © 2026 LotoScience • Desenvolvido com Rigor Estatístico.<br>
-                <em>Loterias são jogos de azar. Jogue com responsabilidade. Probabilidade fixa de 1 em 50 mi.</em>
-            </div>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    _render_footer()
 
 
 # --- PÁGINA: COMO FUNCIONA ---
@@ -217,3 +227,19 @@ def render_como_funciona():
         )
 
     st.markdown("<br><br>", unsafe_allow_html=True)
+
+    _render_footer()
+
+
+def _render_footer():
+    st.markdown(
+        """
+        <div class="footer-container">
+            <div class="footer-text">
+                © 2026 LotoScience • Feito com Rigor Estatístico.<br>
+                <em>Loterias são jogos de azar. Jogue com responsabilidade. Probabilidades baseadas na matemática oficial (1 em 50.063.860, 1 em 24.040.016, 1 em 3.268.760, respectivamente para Mega-Sena, Lotofácil, Quina).</em>
+            </div>
+        </div>
+    """,
+        unsafe_allow_html=True,
+    )

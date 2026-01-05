@@ -2,6 +2,7 @@ import random
 import numpy as np
 from itertools import combinations
 from app.src.validator import validar_jogo
+from app.src.games import GameConfig
 from app.src.statistics import (
     analise_intervalo_confianca,
     get_historico_jogos,
@@ -9,31 +10,30 @@ from app.src.statistics import (
 )
 
 
-def gerar_jogo_perfeito(df, finais_poisson=None, estrategia="balanceada"):
+def gerar_jogo_perfeito(
+    df, config: GameConfig, finais_poisson=None, estrategia="balanceada"
+):
     """
-    Gera um jogo usando Amostragem Ponderada baseada em Z-Score.
+    Gerador genérico para qualquer jogo (Mega-Sena, Quina, Lotofácil).
 
     Args:
-        df: DataFrame com histórico da Mega-Sena
-        finais_poisson: Lista de dígitos finais atrasados
-        estrategia: Modo de geração
-            - 'balanceada': 40% freq + 60% atraso (padrão)
-            - 'conservadora': 70% freq + 30% atraso (números quentes)
-            - 'agressiva': 20% freq + 80% atraso (regressão à média)
-            - 'pura': 100% aleatório (controle)
+        df: DataFrame com histórico
+        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
+        finais_poisson: Lista de dígitos finais atrasados (não usado)
+        estrategia: 'balanceada', 'conservadora', 'agressiva', 'pura'
 
     Returns:
-        Lista com 6 números ordenados
+        Lista com k números ordenados (6 para Mega, 5 para Quina, 15 para Lotofácil)
     """
     # 1. Busca dados
-    tabela = get_tabela_inteligencia(df)
-    historico = get_historico_jogos(df)
-    ic_info = analise_intervalo_confianca(df)
+    tabela = get_tabela_inteligencia(df, config)
+    historico = get_historico_jogos(df, config)
+    ic_info = analise_intervalo_confianca(df, config)
 
     if tabela.empty:
-        return sorted(random.sample(range(1, 61), 6))
+        return sorted(random.sample(range(1, config.n_numbers + 1), config.k))
 
-    numeros_disponiveis = tabela.index.tolist()
+    numeros_disponiveis = tabela.index.tolist()  # [1, 2, ..., N]
 
     # 2. Seleciona pesos conforme estratégia
     if estrategia == "conservadora":
@@ -41,7 +41,7 @@ def gerar_jogo_perfeito(df, finais_poisson=None, estrategia="balanceada"):
     elif estrategia == "agressiva":
         pesos_raw = tabela["Z_Freq"] * 0.20 + tabela["Z_Gap"] * 0.80
     elif estrategia == "pura":
-        pesos_raw = [1.0] * 60
+        pesos_raw = [1.0] * config.n_numbers
     else:  # balanceada (padrão)
         pesos_raw = tabela["Peso_Geracao"]
 
@@ -57,30 +57,50 @@ def gerar_jogo_perfeito(df, finais_poisson=None, estrategia="balanceada"):
     melhor_jogo = None
     melhor_score = -1
 
-    while tentativas < 10000:  # Reduzido de 20000
+    while tentativas < 10000:
         tentativas += 1
 
         # Gera candidato com amostragem ponderada
         pre_jogo = set()
-        candidatos = random.choices(numeros_disponiveis, weights=pesos, k=6)
+        candidatos = random.choices(numeros_disponiveis, weights=pesos, k=config.k)
         pre_jogo.update(candidatos)
 
-        while len(pre_jogo) < 6:
+        while len(pre_jogo) < config.k:
             novo = random.choices(numeros_disponiveis, weights=pesos, k=1)[0]
             pre_jogo.add(novo)
 
         jogo = sorted(list(pre_jogo))
 
         # 4. Validação
-        val = validar_jogo(jogo, historico_jogos=historico, ic_info=ic_info)
+        val = validar_jogo(
+            jogo,
+            config,
+            historico_jogos=historico,
+            ic_info=ic_info,
+            df_historico=df,
+        )
+
+        score_base = val["score"]
+        score_geom = val.get("metricas", {}).get("score_geom", None)
+
+        # default: não mexe se não tiver geometria
+        score_final = score_base
+
+        if score_geom is not None:
+            if estrategia == "pura":
+                # mantém "pura" como baseline, no máximo um leve desempate
+                score_final = score_base + (score_geom - 70) * 0.02
+            else:
+                # aplica geometria em todas as outras: balanceada/conservadora/agressiva
+                score_final = score_base + (score_geom - 70) * 0.12
 
         # Guarda o melhor
-        if val["score"] > melhor_score:
-            melhor_score = val["score"]
+        if score_final > melhor_score:
+            melhor_score = score_final
             melhor_jogo = jogo.copy()
 
         # Early stopping: aceita score >= 85 (excelente)
-        if val["score"] >= 85:
+        if val["score"] >= 85 and (score_geom is None or score_geom >= 60):
             return jogo
 
         # Fallback adaptativo: se já tentou 5000x, aceita >= 70
@@ -88,21 +108,27 @@ def gerar_jogo_perfeito(df, finais_poisson=None, estrategia="balanceada"):
             return melhor_jogo
 
     # Retorna o melhor encontrado
-    return melhor_jogo if melhor_jogo else sorted(random.sample(range(1, 61), 6))
+    return (
+        melhor_jogo
+        if melhor_jogo
+        else sorted(random.sample(range(1, config.n_numbers + 1), config.k))
+    )
 
 
 def gerar_multiplos_jogos(
     df,
+    config: GameConfig,
     quantidade=10,
     estrategia="balanceada",
     garantir_diversidade=True,
     finais_poisson=None,
 ):
     """
-    Gerador de múltiplos jogos com controle de diversidade.
+    Gerador de múltiplos jogos genéricos com controle de diversidade.
 
     Args:
         df: DataFrame histórico
+        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
         quantidade: Número de jogos a gerar
         estrategia: Modo de geração (ver gerar_jogo_perfeito)
         garantir_diversidade: Se True, evita jogos com mais de 4 números em comum
@@ -117,10 +143,14 @@ def gerar_multiplos_jogos(
     tentativas = 0
     max_tentativas = quantidade * 100
 
+    # Define limiar de sobreposição baseado no tamanho do jogo
+    # Mega (6): max 4 em comum | Quina (5): max 3 | Lotofácil (15): max 10
+    max_comum = max(2, int(config.k * 0.7))
+
     while len(jogos_gerados) < quantidade and tentativas < max_tentativas:
         tentativas += 1
 
-        jogo = gerar_jogo_perfeito(df, estrategia=estrategia)
+        jogo = gerar_jogo_perfeito(df, config, estrategia=estrategia)
         jogo_tuple = tuple(jogo)
 
         # Verifica duplicata
@@ -132,7 +162,7 @@ def gerar_multiplos_jogos(
             sobrepoe_muito = False
             for jogo_anterior in jogos_gerados:
                 comum = len(set(jogo).intersection(set(jogo_anterior)))
-                if comum > 4:
+                if comum > max_comum:
                     sobrepoe_muito = True
                     break
 
@@ -146,12 +176,18 @@ def gerar_multiplos_jogos(
 
 
 def gerar_com_restricoes(
-    df, numeros_fixos=None, numeros_evitados=None, estrategia="balanceada"
+    df,
+    config: GameConfig,
+    numeros_fixos=None,
+    numeros_evitados=None,
+    estrategia="balanceada",
 ):
     """
-    Gerador com restrições personalizadas.
+    Gerador genérico com restrições personalizadas.
 
     Args:
+        df: DataFrame histórico
+        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
         numeros_fixos: Lista de números que DEVEM estar no jogo
         numeros_evitados: Lista de números que NÃO podem estar no jogo
         estrategia: Modo de geração
@@ -159,9 +195,9 @@ def gerar_com_restricoes(
     Returns:
         Lista com 6 números ou dict com erro
     """
-    tabela = get_tabela_inteligencia(df)
-    historico = get_historico_jogos(df)
-    ic_info = analise_intervalo_confianca(df)
+    tabela = get_tabela_inteligencia(df, config)
+    historico = get_historico_jogos(df, config)
+    ic_info = analise_intervalo_confianca(df, config)
 
     if tabela.empty:
         return None
@@ -170,18 +206,20 @@ def gerar_com_restricoes(
     numeros_fixos = numeros_fixos or []
     numeros_evitados = numeros_evitados or []
 
-    if len(numeros_fixos) > 6:
-        return {"erro": "Não pode ter mais de 6 números fixos"}
+    if len(numeros_fixos) > config.k:
+        return {"erro": f"Não pode ter mais de {config.k} números fixos"}
 
     if set(numeros_fixos).intersection(set(numeros_evitados)):
         return {"erro": "Números fixos e evitados não podem se sobrepor"}
 
     # Pool disponível
     pool = [
-        n for n in range(1, 61) if n not in numeros_evitados and n not in numeros_fixos
+        n
+        for n in range(1, config.n_numbers + 1)
+        if n not in numeros_evitados and n not in numeros_fixos
     ]
 
-    if len(pool) + len(numeros_fixos) < 6:
+    if len(pool) + len(numeros_fixos) < config.k:
         return {"erro": "Pool insuficiente para gerar jogo"}
 
     # Pesos do pool
@@ -192,7 +230,7 @@ def gerar_com_restricoes(
     while tentativas < 5000:
         tentativas += 1
 
-        qtd_necessaria = 6 - len(numeros_fixos)
+        qtd_necessaria = config.k - len(numeros_fixos)
         complemento = []
 
         while len(complemento) < qtd_necessaria:
@@ -202,43 +240,48 @@ def gerar_com_restricoes(
 
         jogo = sorted(numeros_fixos + complemento)
 
-        val = validar_jogo(jogo, historico_jogos=historico, ic_info=ic_info)
+        val = validar_jogo(
+            jogo,
+            config,
+            historico_jogos=historico,
+            ic_info=ic_info,
+            df_historico=df,
+        )
 
         if val["score"] >= 75:
             return jogo
 
     # Fallback
-    complemento = random.sample(pool, 6 - len(numeros_fixos))
+    complemento = random.sample(pool, config.k - len(numeros_fixos))
     return sorted(numeros_fixos + complemento)
 
 
-def gerar_fechamento(numeros_base, max_combinacoes=1000):
+def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):
     """
-    Limita fechamentos grandes para evitar explosão combinatória.
+    Limita fechamentos genéricos grandes para evitar explosão combinatória.
 
     Args:
-        numeros_base: Lista de números base (7-12 recomendado)
+        numeros_base: Lista de números base
+        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
         max_combinacoes: Limite máximo de jogos
 
     Returns:
         Lista de jogos ou dict com erro
     """
-    if len(numeros_base) < 6:
+    if len(numeros_base) < config.k:
         return []
 
-    # Calcula número de combinações
     n = len(numeros_base)
 
-    # Usa math.comb do Python 3.8+
+    # Calcula número de combinações
     try:
         total_comb = np.math.factorial(n) // (
-            np.math.factorial(6) * np.math.factorial(n - 6)
+            np.math.factorial(config.k) * np.math.factorial(n - config.k)
         )
     except:
-        # Fallback para versões antigas
         from math import comb
 
-        total_comb = comb(n, 6)
+        total_comb = comb(n, config.k)
 
     if total_comb > max_combinacoes:
         return {
@@ -246,22 +289,21 @@ def gerar_fechamento(numeros_base, max_combinacoes=1000):
             f"Limite: {max_combinacoes:,}. Reduza a quantidade de números."
         }
 
-    comb_iter = combinations(numeros_base, 6)
+    comb_iter = combinations(numeros_base, config.k)
     return [sorted(list(c)) for c in comb_iter]
 
 
-def analise_estatistica_jogo(jogo, df):
+def analise_estatistica_jogo(jogo, df, config: GameConfig):
     """
-    Análise completa de um jogo específico.
-
-     Args:
-         jogo: Lista com 6 números
-         df: DataFrame histórico
-
-     Returns:
-         Dict com métricas estatísticas
+    Análise completa genérica de um jogo específico.
+    Args:
+        jogo: Lista de números do jogo
+        df: DataFrame histórico
+        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
+    Returns:
+        Dict com análise estatística
     """
-    tabela = get_tabela_inteligencia(df)
+    tabela = get_tabela_inteligencia(df, config)
 
     if tabela.empty:
         return None

@@ -1,14 +1,13 @@
 import streamlit as st
+from app.src.games import GameConfig
 from app.src.generator import gerar_jogo_perfeito, gerar_multiplos_jogos
 from app.src.validator import validar_jogo
 from app.src.statistics import analise_intervalo_confianca, get_historico_jogos
 
 
-def render_generator(df, freq, poisson_finais):
+def render_generator(df, freq, poisson_finais, config: GameConfig):
     st.markdown("### 🤖 Gerador Híbrido")
-    st.write(
-        "Nosso algoritmo mistura estatística (Quentes/Frios) com aleatoriedade controlada."
-    )
+    st.write(f"Algoritmo estatístico para gerar jogos otimizados da {config.name}.")
 
     # Opções de configuração
     col_config1, col_config2 = st.columns(2)
@@ -24,17 +23,17 @@ def render_generator(df, freq, poisson_finais):
         )
 
     diversidade = st.checkbox(
-        "Garantir diversidade (max 4 números em comum)", value=True
+        f"Garantir diversidade (max {int(config.k*0.7)} números em comum)",
+        value=True,
     )
 
     btn_gerar = st.button("✨ Gerar Agora", type="primary", use_container_width=True)
 
     if btn_gerar:
-        # Busca ic_info e historico
-        ic_info = analise_intervalo_confianca(df)
-        historico = get_historico_jogos(df)
+        # Busca dados
+        ic_info = analise_intervalo_confianca(df, config)
+        historico = get_historico_jogos(df, config)
 
-        # Preparação
         digits_poisson = (
             [item["digito"] for item in poisson_finais] if poisson_finais else None
         )
@@ -43,22 +42,20 @@ def render_generator(df, freq, poisson_finais):
         bar_text = st.empty()
         bar = st.progress(0)
 
-        # Usa nova função gerar_multiplos_jogos
         jogos = []
 
         if qtd == 1:
-            # Geração única
             bar_text.text("Minerando jogo otimizado...")
             jogo = gerar_jogo_perfeito(
-                df, finais_poisson=digits_poisson, estrategia=estrategia
+                df, config, finais_poisson=digits_poisson, estrategia=estrategia
             )
             jogos.append(jogo)
             bar.progress(1.0)
         else:
-            # Geração múltipla com diversidade
             bar_text.text(f"Minerando {qtd} jogos otimizados...")
             jogos = gerar_multiplos_jogos(
                 df,
+                config,
                 quantidade=qtd,
                 estrategia=estrategia,
                 garantir_diversidade=diversidade,
@@ -71,7 +68,6 @@ def render_generator(df, freq, poisson_finais):
 
         st.success(f"✅ {len(jogos)} jogos de alta performance encontrados!")
 
-        # Informação sobre estratégia usada
         if estrategia != "balanceada":
             emoji_estrategia = {"conservadora": "⏰", "agressiva": "🔥", "pura": "🎲"}
             st.info(
@@ -80,12 +76,11 @@ def render_generator(df, freq, poisson_finais):
 
         st.markdown("---")
 
-        txt_out = f"LotoScience - Jogos Gerados ({estrategia.title()})\n\n"
+        txt_out = f"LotoScience - Jogos {config.name} ({estrategia.title()})\n\n"
 
         # Exibição dos jogos
         for i, jogo in enumerate(jogos):
-            # Passa ic_info e historico para validação
-            val = validar_jogo(jogo, historico_jogos=historico, ic_info=ic_info)
+            val = validar_jogo(jogo, config, historico_jogos=historico, ic_info=ic_info)
 
             nums_fmt = "  ".join([f"{n:02d}" for n in jogo])
 
@@ -119,22 +114,22 @@ def render_generator(df, freq, poisson_finais):
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Download
         st.download_button(
             "📥 Baixar Jogos (.txt)",
             txt_out,
-            f"jogos_lotoscience_{estrategia}.txt",
+            f"jogos_{config.slug}_{estrategia}.txt",
             use_container_width=True,
         )
 
         # Expander com detalhes
         with st.expander("📊 Ver Análise Detalhada dos Jogos"):
             for i, jogo in enumerate(jogos):
-                val = validar_jogo(jogo, historico_jogos=historico, ic_info=ic_info)
+                val = validar_jogo(
+                    jogo, config, historico_jogos=historico, ic_info=ic_info
+                )
 
                 st.markdown(f"**Jogo {i+1}:** {jogo}")
 
-                # Métricas
                 metricas = val.get("metricas", {})
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Soma", metricas.get("soma", 0))
@@ -142,8 +137,7 @@ def render_generator(df, freq, poisson_finais):
                 col3.metric("Gini", metricas.get("gini", 0))
                 col4.metric("Pares", metricas.get("pares", 0))
 
-                # Mensagens
-                for msg in val["msgs"][:3]:  # Mostra só as 3 primeiras
+                for msg in val["msgs"][:3]:
                     st.caption(msg)
 
                 st.markdown("---")

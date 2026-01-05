@@ -1,54 +1,67 @@
 import math
 import numpy as np
+from app.ui.game_constants import get_constants_for_game
+from app.src.statistics import calcular_guia_equilibrio, avaliar_jogo_por_grupos
 from collections import Counter
-
-from app.src.constants import QUAD_GEO_Q1, QUAD_GEO_Q2, QUAD_GEO_Q3, QUAD_GEO_Q4
-
-
-# ===== FUNÇÕES DE ANÁLISE ESPACIAL ====
+from app.src.games import GameConfig
 
 
-def _verificar_linhas(numeros):
+# ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
+
+
+def _verificar_linhas(numeros, config: GameConfig):
     """
-    Usa o layout REAL do volante (6 linhas × 10 colunas).
-    Retorna [linha1, linha2, linha3, linha4, linha5, linha6].
+    Análise de linhas genérica baseada no layout.
+      Args:
+        numeros (list): Números selecionados no jogo.
+        config (GameConfig): Configuração do jogo.
+      Returns:
+        list: Contagem de números por linha.
     """
-    contagem = [0] * 6
+    layout = config.layout
+    contagem = [0] * layout.rows
 
     for num in numeros:
-        if 1 <= num <= 10:
-            contagem[0] += 1
-        elif 11 <= num <= 20:
-            contagem[1] += 1
-        elif 21 <= num <= 30:
-            contagem[2] += 1
-        elif 31 <= num <= 40:
-            contagem[3] += 1
-        elif 41 <= num <= 50:
-            contagem[4] += 1
-        elif 51 <= num <= 60:
-            contagem[5] += 1
+        linha_idx = (num - 1) // layout.cols
+        if 0 <= linha_idx < layout.rows:
+            contagem[linha_idx] += 1
 
     return contagem
 
 
-def _verificar_quadrantes(numeros):
+def _verificar_quadrantes(numeros, config: GameConfig):
     """
-    Quadrantes geométricos (layout 6×10 => quadrantes 3×5).
-    Q1: superior esquerdo; Q2: superior direito; Q3: inferior esquerdo; Q4: inferior direito.
+    Quadrantes geométricos derivados do layout.
+      Args:
+        numeros (list): Números selecionados no jogo.
+        config (GameConfig): Configuração do jogo.
+      Returns:
+        list: Contagem de números por quadrante.
     """
-    s = set(numeros)
-    q1 = len(s.intersection(QUAD_GEO_Q1))
-    q2 = len(s.intersection(QUAD_GEO_Q2))
-    q3 = len(s.intersection(QUAD_GEO_Q3))
-    q4 = len(s.intersection(QUAD_GEO_Q4))
-    return [q1, q2, q3, q4]
+    layout = config.layout
+    quads = [0, 0, 0, 0]
+
+    for num in numeros:
+        for i in range(1, 5):
+            if num in layout.quadrant_numbers(i):
+                quads[i - 1] += 1
+                break
+
+    return quads
 
 
-def _verificar_metades(numeros):
-    """Divide em Superior (1-30) e Inferior (31-60)."""
-    superior = len([n for n in numeros if n <= 30])
-    inferior = len([n for n in numeros if n > 30])
+def _verificar_metades(numeros, config: GameConfig):
+    """
+    Metades baseadas no n_numbers.
+      Args:
+        numeros (list): Números selecionados no jogo.
+        config (GameConfig): Configuração do jogo.
+      Returns:
+        dict: Contagem de números nas metades superior e inferior.
+    """
+    meio = config.n_numbers // 2
+    superior = len([n for n in numeros if n <= meio])
+    inferior = len([n for n in numeros if n > meio])
 
     return {"superior": superior, "inferior": inferior}
 
@@ -58,9 +71,16 @@ def _verificar_metades(numeros):
 
 def _calcular_entropia_shannon(numeros):
     """
-    Entropia de Shannon baseada nos intervalos (gaps).
+    Entropia de Shannon (gaps entre números).
     Detecta padrões visuais repetitivos.
+      Args:
+        numeros (list): Números selecionados no jogo.
+      Returns:
+        float: Valor da entropia de Shannon.
     """
+    if len(numeros) < 2:
+        return 0.0
+
     gaps = [numeros[i + 1] - numeros[i] for i in range(len(numeros) - 1)]
     counts = Counter(gaps)
     total = len(gaps)
@@ -74,16 +94,24 @@ def _calcular_entropia_shannon(numeros):
     return entropia
 
 
-def _calcular_coeficiente_gini(numeros):
+def _calcular_coeficiente_gini(numeros, config: GameConfig):
     """
-    Coeficiente de Gini para medir distribuição.
+    Coeficiente de Gini normalizado pelo n_numbers.
     Gini = 0 → Perfeitamente distribuído
     Gini → 1 → Muito concentrado
+      Args:
+        numeros (list): Números selecionados no jogo.
+        config (GameConfig): Configuração do jogo.
+      Returns:
+        float: Valor do coeficiente de Gini.
     """
-    norm = [(n - 1) / 59 for n in numeros]
+    norm = [(n - 1) / (config.n_numbers - 1) for n in numeros]
     norm_sorted = sorted(norm)
 
     n = len(norm_sorted)
+    if sum(norm_sorted) == 0:
+        return 0
+
     gini = (2 * sum((i + 1) * y for i, y in enumerate(norm_sorted))) / (
         n * sum(norm_sorted)
     ) - (n + 1) / n
@@ -94,11 +122,18 @@ def _calcular_coeficiente_gini(numeros):
 # ===== MÓDULOS DE ANÁLISE =====
 
 
-def _analise_tecnica(report, numeros, ic_info=None):
+def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
     """
-    Validação baseada em intervalos de confiança REAIS.
+    Validação técnica genérica baseada em intervalos de confiança reais.
+      Args:
+        report (dict): Relatório de análise.
+        numeros (list): Números selecionados no jogo.
+        config (GameConfig): Configuração do jogo.
+        ic_info (dict, optional): Informações de intervalo de confiança.
+      Returns:
+        None
     """
-    # Regra 1: Soma com IC baseado em dados históricos
+    # Regra 1: Soma com IC
     soma = sum(numeros)
 
     if ic_info:
@@ -116,84 +151,125 @@ def _analise_tecnica(report, numeros, ic_info=None):
                 f"❌ Soma ({soma}) fora do IC95% [{ic_95[0]}, {ic_95[1]}]"
             )
     else:
-        # Fallback: usa cálculo teórico
-        if 140 <= soma <= 240:
-            report["msgs"].append(f"✅ Soma ({soma}) na faixa esperada.")
+        # Fallback teórico: média = k * (N+1)/2
+        media_teorica = config.k * (config.n_numbers + 1) / 2
+        desvio_teorico = media_teorica * 0.15  # 15% de tolerância
+
+        if abs(soma - media_teorica) <= desvio_teorico:
+            report["msgs"].append(
+                f"✅ Soma ({soma}) próxima da média teórica ({media_teorica:.0f})."
+            )
         else:
-            report["score"] -= 20
-            report["msgs"].append(f"❌ Soma ({soma}) fora da faixa [140-240].")
+            report["score"] -= 15
+            report["msgs"].append(
+                f"⚠️ Soma ({soma}) desviada da média ({media_teorica:.0f})."
+            )
 
     # Regra 2: Pares e Ímpares
     pares = sum(1 for n in numeros if n % 2 == 0)
+    k = config.k
 
-    if pares in [0, 6]:
+    # Proporção esperada: ~50%
+    ideal_min = int(k * 0.35)
+    ideal_max = int(k * 0.65)
+
+    if pares in [0, k]:
         report["score"] -= 25
-        report["msgs"].append("❌ Desequilíbrio extremo Par/Ímpar (6/0 ou 0/6).")
-    elif pares not in [2, 3, 4]:
+        report["msgs"].append(
+            f"❌ Desequilíbrio extremo Par/Ímpar ({pares}/{k-pares})."
+        )
+    elif pares < ideal_min or pares > ideal_max:
         report["score"] -= 10
         report["msgs"].append(f"⚠️ Distribuição Par/Ímpar subótima ({pares} pares).")
     else:
         report["msgs"].append(f"✅ Distribuição Par/Ímpar equilibrada ({pares} pares).")
 
-    # Regra 3: LINHAS
-    linhas = _verificar_linhas(numeros)
-    linhas_vazias = linhas.count(0)
+    # Regra 3: Linhas (só para jogos de 6+ números)
+    if k >= 5:
+        linhas = _verificar_linhas(numeros, config)
+        linhas_vazias = linhas.count(0)
+        max_vazias_aceitavel = max(1, config.layout.rows - 3)
 
-    if linhas_vazias >= 3:
-        report["score"] -= 20
-        report["msgs"].append(
-            f"❌ {linhas_vazias} linhas vazias (muito concentrado verticalmente)."
-        )
-    elif linhas_vazias == 2:
-        report["score"] -= 10
-        report["msgs"].append("⚠️ 2 linhas vazias (concentração moderada).")
-    else:
-        report["msgs"].append(
-            f"✅ Apenas {linhas_vazias} linha(s) vazia(s) (boa distribuição vertical)."
-        )
+        if linhas_vazias > max_vazias_aceitavel:
+            report["score"] -= 15
+            report["msgs"].append(
+                f"❌ {linhas_vazias} linhas vazias (muito concentrado)."
+            )
+        elif linhas_vazias > 1:
+            report["score"] -= 5
+            report["msgs"].append(f"⚠️ {linhas_vazias} linhas vazias.")
 
-    # Regra 4: Metades (Superior/Inferior)
-    metades = _verificar_metades(numeros)
+    # Regra 4: Metades
+    metades = _verificar_metades(numeros, config)
     sup = metades["superior"]
     inf = metades["inferior"]
 
-    if sup in [0, 6] or inf in [0, 6]:
-        report["score"] -= 15
+    # Proporção extrema (> 80% em uma metade)
+    if sup == 0 or inf == 0:
+        report["score"] -= 20
         report["msgs"].append(
-            f"❌ Desequilíbrio vertical extremo ({sup} superior, {inf} inferior)."
+            f"❌ Desequilíbrio total ({sup} superior, {inf} inferior)."
         )
-    elif abs(sup - inf) >= 4:
-        report["score"] -= 5
+    elif abs(sup - inf) >= k * 0.6:
+        report["score"] -= 10
         report["msgs"].append(
-            f"⚠️ Leve desequilíbrio vertical ({sup} superior, {inf} inferior)."
+            f"⚠️ Desequilíbrio vertical ({sup} superior, {inf} inferior)."
         )
 
     # Regra 5: Finais
-    finais = [n % 10 for n in numeros]
-    contagem = Counter(finais)
-    max_repeticao = max(contagem.values())
+    if config.k <= 6:  # Aplica apenas para Mega (6) e Quina (5)
+        finais = [n % 10 for n in numeros]
+        contagem = Counter(finais)
+        max_repeticao = max(contagem.values()) if contagem else 0
 
-    if max_repeticao >= 4:
-        report["score"] -= 20
-        report["msgs"].append(f"❌ {max_repeticao} números com mesmo final.")
-    elif max_repeticao == 3:
-        report["score"] -= 5
-        report["msgs"].append(f"⚠️ 3 números com mesmo final.")
-    else:
-        report["msgs"].append("✅ Finais bem distribuídos.")
+        # DEFINIÇÃO DE LIMITES
+        # Para Quina e Mega, ter 2 repetidos é normal (aprovado).
+        # Ter 3 repetidos é incomum (Alerta).
+        # Ter 4 ou mais é estatisticamente improvável (Erro).
+
+        limite_alerta = 3
+        limite_erro = 4
+
+        if max_repeticao >= limite_erro:
+            report["score"] -= 15
+            report["msgs"].append(
+                f"❌ Vício de Final: {max_repeticao} números terminam igual."
+            )
+        elif max_repeticao == limite_alerta:
+            report["score"] -= 5
+            report["msgs"].append(f"⚠️ Concentração: 3 números com final igual.")
+        else:
+            if max_repeticao <= 2:
+                report["msgs"].append("✅ Finais bem distribuídos.")
 
 
-def _analise_entropia(report, numeros):
-    """Detecta padrões visuais no volante."""
+def _analise_entropia(report, numeros, config: GameConfig):
+    """
+    Detecta padrões visuais repetitivos.
+        Args:
+            report (dict): Relatório de análise.
+            numeros (list): Números selecionados no jogo.
+            config (GameConfig): Configuração do jogo.
+        Returns:
+            None
+    """
+    if len(numeros) < 3:
+        return  # Não faz sentido para jogos muito pequenos
+
     entropia = _calcular_entropia_shannon(numeros)
 
-    if entropia < 1.0:
-        report["score"] -= 30
+    # Ajusta limiares baseado no tamanho do jogo
+    k = config.k
+    limiar_baixo = 0.5 if k <= 6 else 1.0
+    limiar_alto = 2.0 if k <= 6 else 3.0
+
+    if entropia < limiar_baixo:
+        report["score"] -= 25
         report["msgs"].append(
             f"❌ Entropia Baixa ({entropia:.2f}): Padrão visual detectado."
         )
         report["risco_divisao"] = "ALTO"
-    elif entropia > 2.0:
+    elif entropia > limiar_alto:
         report["score"] += 5
         report["msgs"].append(
             f"✅ Entropia Alta ({entropia:.2f}): Excelente aleatoriedade."
@@ -202,20 +278,34 @@ def _analise_entropia(report, numeros):
         report["msgs"].append(f"✅ Entropia Normal ({entropia:.2f}).")
 
 
-def _analise_popularidade(report, numeros):
-    """Detecta padrões populares que aumentam risco de divisão de prêmio."""
+def _analise_popularidade(report, numeros, config: GameConfig):
+    """
+    Detecta padrões populares que aumentam risco de divisão.
+        Args:
+            report (dict): Relatório de análise.
+            numeros (list): Números selecionados no jogo.
+            config (GameConfig): Configuração do jogo.
+        Returns:
+            None
+    """
     seqs = sum(1 for i in range(len(numeros) - 1) if numeros[i + 1] == numeros[i] + 1)
     datas = len([n for n in numeros if n <= 31])
     lost_nums = {4, 8, 15, 16, 23, 42}
     qtd_lost = len(set(numeros).intersection(lost_nums))
 
     pontos_risco = 0
+    k = config.k
 
-    if seqs > 1:
+    # Sequências
+    if seqs > k * 0.3:  # Mais de 30% são sequenciais
         pontos_risco += 2
-    if datas >= 4:
+
+    # Datas (só relevante para Mega-Sena e Quina)
+    if config.n_numbers >= 50 and datas >= k * 0.6:
         pontos_risco += 2
-    if qtd_lost >= 4:
+
+    # Lost numbers
+    if qtd_lost >= min(4, k // 2):
         pontos_risco += 3
 
     current_risk = report.get("risco_divisao", "Baixo")
@@ -224,12 +314,12 @@ def _analise_popularidade(report, numeros):
         report["risco_divisao"] = "ALTO"
         if pontos_risco >= 3:
             report["msgs"].append(
-                "💸 Jogo popular (múltiplas datas/Lost). Risco alto de divisão."
+                "💸 Jogo popular (padrões comuns). Risco alto de divisão."
             )
             report["score"] -= 20
     elif pontos_risco >= 1:
         report["risco_divisao"] = "Médio"
-        report["msgs"].append("⚠️ Contém padrões populares (Datas ou Sequências).")
+        report["msgs"].append("⚠️ Contém padrões populares.")
         report["score"] -= 10
     else:
         if current_risk != "ALTO":
@@ -237,44 +327,125 @@ def _analise_popularidade(report, numeros):
             report["msgs"].append("💎 Aposta Blindada: Padrão único.")
 
 
-def _analise_distribuicao_espacial(report, numeros):
-    """Análise de distribuição espacial avançada."""
-    gini = _calcular_coeficiente_gini(numeros)
+def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
+    """
+    Análise de distribuição espacial.
+        Args:
+            report (dict): Relatório de análise.
+            numeros (list): Números selecionados no jogo.
+            config (GameConfig): Configuração do jogo.
+        Returns:
+            None
+    """
+    gini = _calcular_coeficiente_gini(numeros, config)
 
     if gini < 0.15:
         report["score"] += 5
         report["msgs"].append(f"✅ Distribuição espacial ótima (Gini: {gini:.3f}).")
-    elif gini > 0.40:
+    elif gini > 0.45:
         report["score"] -= 10
         report["msgs"].append(f"⚠️ Concentração espacial alta (Gini: {gini:.3f}).")
     else:
         report["msgs"].append(f"✅ Distribuição espacial aceitável (Gini: {gini:.3f}).")
 
 
-def _analise_primos(report, numeros):
+def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
     """
-    Análise de números primos.
-    Histórico da Mega: ~35% dos números sorteados são primos.
+    Penaliza concentração em padrões geométricos (moldura/miolo/cruz/xis/cantos)
+    e premia proximidade da média ideal histórica (quando df_historico existir).
     """
+    constants = get_constants_for_game(config)
+    grupos = {
+        "moldura": constants["moldura"],
+        "miolo": constants["miolo"],
+        "cruz": constants["cruz"],
+        "xis": constants["xis"],
+        "cantos": constants["cantos"],
+    }
+
+    if df_historico is None or df_historico.empty:
+        # fallback simples: só detecta extremos (não tenta “média ideal”)
+        jogo = set(numeros)
+        k = config.k
+        for nome, nums_grupo in grupos.items():
+            presentes = len(jogo & set(nums_grupo))
+            report["metricas"][f"geom_{nome}"] = presentes
+            if k > 0 and presentes >= int(k * 0.8):
+                report["score"] -= 10
+                report["msgs"].append(
+                    f"⚠️ Concentração geométrica alta em {nome} ({presentes}/{k})."
+                )
+                report["risco_divisao"] = "Médio"
+        return
+
+    guia = calcular_guia_equilibrio(df_historico, grupos, config)
+    res = avaliar_jogo_por_grupos(numeros, guia, grupos, config)
+
+    report["metricas"]["score_geom"] = res["score_geom"]
+    report["metricas"]["geom_detalhes"] = res["detalhes"]
+
+    # Ajuste no score técnico: leve, para não dominar o validador
+    if res["score_geom"] >= 85:
+        report["score"] += 4
+        report["msgs"].append("✅ Geometria equilibrada (bom anti-padrão).")
+    elif res["score_geom"] >= 70:
+        report["msgs"].append("✅ Geometria aceitável.")
+    elif res["score_geom"] >= 50:
+        report["score"] -= 5
+        report["msgs"].append(
+            "⚠️ Geometria um pouco concentrada (risco de padrão visual)."
+        )
+    else:
+        report["score"] -= 12
+        report["msgs"].append("❌ Geometria muito concentrada (padrão visual forte).")
+        # sobe risco de divisão porque padrão “bonito” é popular
+        report["risco_divisao"] = "ALTO"
+
+
+def _analise_primos(report, numeros, config: GameConfig):
+    """
+    Análise de números primos (só relevante para jogos de 1-60).
+        Args:
+            report (dict): Relatório de análise.
+            numeros (list): Números selecionados no jogo.
+            config (GameConfig): Configuração do jogo.
+        Returns:
+            None
+    """
+    if config.n_numbers > 60:
+        return  # Não aplicável para Quina (80)
+
     primos = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59}
     qtd_primos = len([n for n in numeros if n in primos])
 
-    # Esperado: 2-3 primos (35% de 6 = 2.1)
-    if qtd_primos in [2, 3]:
+    k = config.k
+    # Proporção esperada: ~30% dos números até 60 são primos
+    esperado = int(k * 0.3)
+
+    if abs(qtd_primos - esperado) <= 1:
         report["msgs"].append(f"✅ {qtd_primos} números primos (distribuição natural).")
-    elif qtd_primos in [1, 4]:
+    elif abs(qtd_primos - esperado) == 2:
         report["msgs"].append(f"⚠️ {qtd_primos} números primos (aceitável).")
     else:
         report["score"] -= 5
-        report["msgs"].append(f"⚠️ {qtd_primos} números primos (distribuição atípica).")
+        report["msgs"].append(f"⚠️ {qtd_primos} números primos (atípico).")
 
 
 # ===== FUNÇÃO PRINCIPAL =====
 
 
-def validar_jogo(numeros, historico_jogos=None, ic_info=None):
+def validar_jogo(
+    numeros, config: GameConfig, historico_jogos=None, ic_info=None, df_historico=None
+):
     """
-    Validador completo com análises avançadas.
+    Validador genérico para qualquer jogo.
+        Args:
+            numeros (list): Números selecionados no jogo.
+            config (GameConfig): Configuração do jogo.
+            historico_jogos (set, optional): Conjunto de jogos já sorteados.
+            ic_info (dict, optional): Informações adicionais para análise.
+        Returns:
+            dict: Relatório de análise do jogo.
     """
     report = {
         "score": 100,
@@ -293,26 +464,29 @@ def validar_jogo(numeros, historico_jogos=None, ic_info=None):
             report["ja_saiu"] = True
 
     # 2. Análises técnicas
-    _analise_tecnica(report, numeros, ic_info)
-    _analise_entropia(report, numeros)
-    _analise_popularidade(report, numeros)
-    _analise_distribuicao_espacial(report, numeros)
-    _analise_primos(report, numeros)
+    _analise_tecnica(report, numeros, config, ic_info)
+    _analise_entropia(report, numeros, config)
+    _analise_popularidade(report, numeros, config)
+    _analise_distribuicao_espacial(report, numeros, config)
+    _analise_geometrica(report, numeros, config, df_historico=df_historico)
+    _analise_primos(report, numeros, config)
 
     # 3. Calcula score técnico
     score_tecnico = max(0, min(100, report["score"]))
     report["score_original"] = score_tecnico
 
     # 4. Métricas adicionais
-    report["metricas"] = {
-        "soma": sum(numeros),
-        "entropia": round(_calcular_entropia_shannon(numeros), 3),
-        "gini": round(_calcular_coeficiente_gini(numeros), 3),
-        "pares": sum(1 for n in numeros if n % 2 == 0),
-        "sequencias": sum(
-            1 for i in range(len(numeros) - 1) if numeros[i + 1] == numeros[i] + 1
-        ),
-    }
+    report["metricas"].update(
+        {
+            "soma": sum(numeros),
+            "entropia": round(_calcular_entropia_shannon(numeros), 3),
+            "gini": round(_calcular_coeficiente_gini(numeros, config), 3),
+            "pares": sum(1 for n in numeros if n % 2 == 0),
+            "sequencias": sum(
+                1 for i in range(len(numeros) - 1) if numeros[i + 1] == numeros[i] + 1
+            ),
+        }
+    )
 
     # 5. Penalidade final
     if report["ja_saiu"]:

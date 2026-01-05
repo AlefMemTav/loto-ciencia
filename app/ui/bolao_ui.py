@@ -1,36 +1,39 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from app.src.games import GameConfig
 from app.src.statistics import analise_intervalo_confianca, get_historico_jogos
 from app.src.validator import validar_jogo
+from app.ui.game_constants import get_constants_for_game
 
 
-def render_bolao(df):
+def render_bolao(df, config: GameConfig):
     st.subheader("👥 Auditoria de Bolão")
     st.write(
-        "Cole todos os jogos do seu bolão aqui. Vamos analisar a qualidade do grupo e se há erros (jogos repetidos ou mal distribuídos)."
+        f"Cole todos os jogos do seu bolão  da {config.name} aqui. Vamos analisar a qualidade do grupo e se há erros (jogos repetidos ou mal distribuídos)."
     )
-
+    nums_exemplo1 = " ".join([f"{n:02d}" for n in range(4, 4 + config.k)])
+    nums_exemplo2 = " ".join([f"{n:02d}" for n in range(10, 10 + config.k)])
     texto_bolao = st.text_area(
         "Cole os jogos (um por linha):",
-        placeholder="01 02 03 04 05 06\n10 12 14 16 18 20\n...",
+        placeholder=f"{nums_exemplo1}\n{nums_exemplo2}\n...",
     )
 
-    historico_set = get_historico_jogos(df)
+    historico_set = get_historico_jogos(df, config)
 
     if st.button("🔍 Auditar Bolão"):
         # 1. Processamento dos Dados
         jogos_validos, jogos_invalidos, todos_numeros = _processar_input_jogos(
-            texto_bolao
+            texto_bolao, config
         )
-        ic_info = analise_intervalo_confianca(df)
+        ic_info = analise_intervalo_confianca(df, config)
 
         if not jogos_validos:
             st.warning("Nenhum jogo válido identificado. Verifique a formatação.")
             st.stop()
 
         # 2. Cálculo de Estatísticas
-        stats = _calcular_estatisticas_grupo(jogos_validos, todos_numeros)
+        stats = _calcular_estatisticas_grupo(jogos_validos, todos_numeros, config)
 
         # 3. Renderização dos Cards (KPIs)
         _renderizar_cards_kpi(stats)
@@ -41,29 +44,28 @@ def render_bolao(df):
         col_grafico, col_tecnica = st.columns([2, 1])
 
         with col_grafico:
-            _renderizar_heatmap_bolao(todos_numeros)
+            _renderizar_heatmap_bolao(todos_numeros, config)
 
         with col_tecnica:
             _renderizar_analise_qualidade(
-                jogos_validos, todos_numeros, historico_set, ic_info
+                jogos_validos, todos_numeros, historico_set, ic_info, config
             )
 
         # 5. Lista Simples e Erros
-        _renderizar_lista_resumo(jogos_validos, historico_set, ic_info)
-
+        _renderizar_lista_resumo(jogos_validos, historico_set, ic_info, config)
         if jogos_invalidos:
             st.error(
                 f"Ignoramos {len(jogos_invalidos)} linhas que não pareciam jogos válidos."
             )
 
         # 6. Relatório Detalhado
-        _renderizar_detalhes_profundos(jogos_validos, historico_set, ic_info)
+        _renderizar_detalhes_profundos(jogos_validos, historico_set, ic_info, config)
 
 
 # --- FUNÇÕES AUXILIARES (UI HELPERS) ---
 
 
-def _processar_input_jogos(texto):
+def _processar_input_jogos(texto, config: GameConfig):
     """Lê o texto bruto e separa em jogos válidos e inválidos."""
     validos = []
     invalidos = []
@@ -79,7 +81,7 @@ def _processar_input_jogos(texto):
             nums = sorted(
                 list(set([int(n) for n in limpa.split() if n.strip().isdigit()]))
             )
-            if len(nums) == 6 and all(1 <= n <= 60 for n in nums):
+            if len(nums) == config.k and all(1 <= n <= config.n_numbers for n in nums):
                 validos.append(nums)
                 todos_nums.extend(nums)
             else:
@@ -90,7 +92,7 @@ def _processar_input_jogos(texto):
     return validos, invalidos, todos_nums
 
 
-def _calcular_estatisticas_grupo(jogos, todos_numeros):
+def _calcular_estatisticas_grupo(jogos, todos_numeros, config: GameConfig):
     """Calcula métricas financeiras e de cobertura."""
     qtd = len(jogos)
     custo = qtd * 6.00
@@ -100,7 +102,7 @@ def _calcular_estatisticas_grupo(jogos, todos_numeros):
     tem_duplicata = len(jogos_tuple) != len(set(jogos_tuple))
 
     unicos = len(set(todos_numeros))
-    cobertura_perc = (unicos / 60) * 100
+    cobertura_perc = (unicos / config.n_numbers) * 100
 
     return {
         "qtd": qtd,
@@ -108,6 +110,7 @@ def _calcular_estatisticas_grupo(jogos, todos_numeros):
         "duplicata": tem_duplicata,
         "unicos": unicos,
         "cobertura": cobertura_perc,
+        "universo": config.n_numbers,
     }
 
 
@@ -117,7 +120,8 @@ def _renderizar_cards_kpi(stats):
     k1.metric("Total de Jogos", stats["qtd"])
     k2.metric("Custo Total", f"R$ {stats['custo']:,.2f}")
     k3.metric(
-        "Cobertura do Volante", f"{stats['unicos']}/60 ({stats['cobertura']:.0f}%)"
+        "Cobertura do Volante",
+        f"{stats['unicos']}/{stats['universo']} ({stats['cobertura']:.0f}%)",
     )
 
     if stats["duplicata"]:
@@ -129,8 +133,7 @@ def _renderizar_cards_kpi(stats):
         k4.metric("Duplicatas?", "Não", delta="Ok")
 
 
-def _renderizar_heatmap_bolao(todos_numeros):
-    """Gera e exibe o mapa de calor com Matplotlib."""
+def _renderizar_heatmap_bolao(todos_numeros, config: GameConfig):
     st.markdown("##### 🔥 Mapa de Calor do Bolão")
     st.caption(
         "Quais números seu grupo está jogando mais? (Mais escuro = Mais apostado)"
@@ -139,41 +142,47 @@ def _renderizar_heatmap_bolao(todos_numeros):
     contagem = pd.Series(todos_numeros).value_counts().sort_index()
     max_freq = contagem.max() if not contagem.empty else 1
 
-    fig, ax = plt.subplots(figsize=(6, 3.5))
-    ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(-0.5, 5.5)
-    ax.axis("off")
+    layout = config.layout
 
-    for n in range(1, 61):
+    base_w = 6.8
+    aspect = layout.rows / layout.cols if layout.cols else 1.0
+    fig_h = max(3.2, base_w * aspect)
+    fig, ax = plt.subplots(figsize=(base_w, fig_h))
+
+    ax.set_xlim(-0.5, layout.cols - 0.5)
+    ax.set_ylim(-0.5, layout.rows - 0.5)
+    ax.axis("off")
+    ax.set_aspect("equal", adjustable="box")
+
+    # raio adaptativo
+    r = 0.40
+    if min(layout.rows, layout.cols) <= 5:
+        r = 0.34
+    elif min(layout.rows, layout.cols) >= 8:
+        r = 0.38
+    theme = get_constants_for_game(config)
+    heat_color = theme["heat_color"]
+    for n in range(1, config.n_numbers + 1):
         qtd = contagem.get(n, 0)
 
-        # Lógica de cor
         if qtd == 0:
             color = "#f0f0f0"
             alpha = 1
         else:
-            color = "green"
+            color = heat_color
             alpha = 0.2 + (0.8 * (qtd / max_freq))
 
-        ax.add_patch(
-            plt.Circle(((n - 1) % 10, 5 - (n - 1) // 10), 0.4, color=color, alpha=alpha)
-        )
+        row, col = config.layout.pos(n)
+        y = config.layout.rows - 1 - row
 
-        # Texto do número
-        ax.text(
-            (n - 1) % 10,
-            5 - (n - 1) // 10,
-            str(n),
-            ha="center",
-            va="center",
-            fontsize=6,
-        )
+        ax.add_patch(plt.Circle((col, y), r, color=color, alpha=alpha))
 
-        # Texto da quantidade (se houver)
+        ax.text(col, y, str(n), ha="center", va="center", fontsize=6)
+
         if qtd > 0:
             ax.text(
-                (n - 1) % 10,
-                5 - (n - 1) // 10 - 0.25,
+                col,
+                y - 0.25,
                 f"x{qtd}",
                 ha="center",
                 va="center",
@@ -184,12 +193,12 @@ def _renderizar_heatmap_bolao(todos_numeros):
     st.pyplot(fig)
 
 
-def _renderizar_analise_qualidade(jogos, todos_numeros, historico, ic_info):
+def _renderizar_analise_qualidade(jogos, todos_numeros, historico, ic_info, config):
     """Calcula score médio e mostra números esquecidos."""
     st.markdown("##### 🌡️ Qualidade Técnica")
 
     scores = [
-        validar_jogo(j, historico_jogos=historico, ic_info=ic_info)["score"]
+        validar_jogo(j, config, historico_jogos=historico, ic_info=ic_info)["score"]
         for j in jogos
     ]
     media_score = sum(scores) / len(scores) if scores else 0
@@ -202,24 +211,26 @@ def _renderizar_analise_qualidade(jogos, todos_numeros, historico, ic_info):
         st.success("O bolão está bem equilibrado.")
 
     st.markdown("**Números Esquecidos:**")
-    esquecidos = [str(n) for n in range(1, 61) if n not in todos_numeros]
+    esquecidos = [
+        str(n) for n in range(1, config.n_numbers + 1) if n not in todos_numeros
+    ]
 
     if esquecidos:
         st.caption(f"Vocês não jogaram: {', '.join(esquecidos)}")
     else:
-        st.success("Parabéns! Vocês cercaram todos os 60 números.")
+        st.success(f"Parabéns! Vocês cercaram todos os {config.n_numbers} números.")
 
 
-def _renderizar_lista_resumo(jogos, historico, ic_info):
+def _renderizar_lista_resumo(jogos, historico, ic_info, config):
     """Exibe o expander com a lista simples."""
     with st.expander("📋 Ver Lista Detalhada dos Jogos"):
         for i, jogo in enumerate(jogos):
-            val = validar_jogo(jogo, historico_jogos=historico, ic_info=ic_info)
+            val = validar_jogo(jogo, config, historico_jogos=historico, ic_info=ic_info)
             icone = "🟢" if val["score"] >= 80 else "🟡" if val["score"] >= 50 else "🔴"
             st.write(f"**Jogo {i+1}:** {jogo} {icone} (Score: {val['score']})")
 
 
-def _renderizar_detalhes_profundos(jogos, historico, ic_info):
+def _renderizar_detalhes_profundos(jogos, historico, ic_info, config):
     """Exibe a seção final com cards detalhados jogo a jogo."""
     st.write("---")
     st.subheader("📋 Detalhes Jogo a Jogo")
@@ -228,7 +239,7 @@ def _renderizar_detalhes_profundos(jogos, historico, ic_info):
     )
 
     for i, jogo in enumerate(jogos):
-        val = validar_jogo(jogo, historico_jogos=historico, ic_info=ic_info)
+        val = validar_jogo(jogo, config, historico_jogos=historico, ic_info=ic_info)
 
         if val["score"] >= 80:
             icone, label = "🟢", "Excelente"

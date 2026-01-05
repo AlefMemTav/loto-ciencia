@@ -1,18 +1,23 @@
 import streamlit as st
-from app.src.generator import gerar_fechamento
+from app.src.generator import (
+    gerar_fechamento,
+)
+from app.src.games import GameConfig
 
 
-def render_closures():
+def render_closures(config: GameConfig):
     st.markdown("### 📦 Fechamentos Matemáticos")
     st.info(
-        "Cercar números garante prêmios menores. Escolha de 7 a 12 números e geraremos todas as combinações matemáticas possíveis."
+        f"Cercar números garante prêmios menores na {config.name}. Escolha de {config.k+1} a {config.k+6} números "
+        f"e geraremos todas as combinações matemáticas possíveis."
     )
 
     entrada_base = st.text_input(
-        "Seus números base:", placeholder="Ex: 01 02 03 04 05 06 07 08"
+        "Seus números base:",
+        placeholder=f"Ex: " + " ".join([f"{n:02d}" for n in range(1, config.k + 3)]),
     )
 
-    if st.button("⚙️ Calcular Fechamento", width="stretch"):
+    if st.button("⚙️ Calcular Fechamento", use_container_width=True):
         try:
             base = sorted(
                 list(
@@ -26,13 +31,28 @@ def render_closures():
                 )
             )
 
-            if 7 <= len(base) <= 12:
-                jogos = gerar_fechamento(base)
+            if not all(1 <= n <= config.n_numbers for n in base):
+                st.error(
+                    f"❌ Todos os números devem estar entre 1 e {config.n_numbers}."
+                )
+                return
+
+            min_base = config.k + 1
+            max_base = config.k + 6
+
+            if min_base <= len(base) <= max_base:
+
+                resultado = gerar_fechamento(base, config)
+
+                if isinstance(resultado, dict) and "erro" in resultado:
+                    st.error(resultado["erro"])
+                    return
+
+                jogos = resultado
                 custo = len(jogos) * 5.00
 
                 st.success(f"Operação realizada! Geramos **{len(jogos)} jogos**.")
 
-                # Card de Custo
                 st.markdown(
                     f"""
                 <div class="custom-metric-card" style="max-width: 300px; margin: 0 auto;">
@@ -52,9 +72,12 @@ def render_closures():
                         txt += f"{j}\n"
 
                 st.download_button(
-                    "📥 Baixar Arquivo", txt, "fechamento.txt", width="stretch"
+                    "📥 Baixar Arquivo",
+                    txt,
+                    f"fechamento_{config.slug}.txt",
+                    use_container_width=True,
                 )
             else:
-                st.warning("⚠️ Escolha entre **7 e 12 números**.")
-        except Exception:
-            st.error("Erro na leitura. Verifique se digitou apenas números.")
+                st.warning(f"⚠️ Escolha entre **{min_base} e {max_base} números**.")
+        except Exception as e:
+            st.error(f"Erro: {e}")

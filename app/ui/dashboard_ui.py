@@ -2,87 +2,78 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import matplotlib.pyplot as plt
-from app.src.constants import (
-    CANTOS,
-    CRUZ,
-    LOST_NUMBERS,
-    MIOLO,
-    PRIMOS,
-    FIBONACCI,
-    GEMEOS,
-    MOLDURA,
-    QUAD_GEO_Q1,
-    QUAD_GEO_Q2,
-    QUAD_GEO_Q3,
-    QUAD_GEO_Q4,
-    XIS,
-)
+from app.src.games import GameConfig
 from app.src.statistics import (
     calcular_atrasos,
     calcular_chi_quadrado,
+    calcular_coeficiente_variacao,
     get_reis_da_sequencia,
     get_tabela_inteligencia,
 )
+from app.ui.game_constants import get_constants_for_game
 
 
-def render_dashboard(df, freq, poisson_finais):
-    st.markdown("### 🔭 O Raio-X da Mega-Sena")
+def render_dashboard(df, freq, poisson_finais, config: GameConfig):
+    constants = get_constants_for_game(config)
+    color = constants.get("heat_color", "#ef4444")
+    st.markdown(
+        f"<h3>🔭 O Raio-X da <span style='color: {color};'>{config.name}</span></h3>",
+        unsafe_allow_html=True,
+    )
     st.write(
         "Bem-vindo ao painel de inteligência. Aqui transformamos dados brutos em estratégias de jogo."
     )
 
     # 1. KPIs (Resumo Rápido)
-    _render_kpis(freq, df)
+    _render_kpis(freq, df, config)
     st.markdown("---")
 
     # 2. Oportunidades (O que o usuário quer ver primeiro)
-    _render_gap_bar_charts(df)
+    _render_gap_bar_charts(df, config)
     st.markdown("---")
 
     # 3. Tendências de Longo Prazo (LLN e Quentes/Frios)
-    _render_bar_charts(freq, 15)
+    _render_bar_charts(freq, 15, config)
     st.markdown("---")
 
     # 4. Mapa Visual
     # Preparação de dados para o mapa
-    reis_seq = get_reis_da_sequencia(df)
+    reis_seq = get_reis_da_sequencia(df, config)
     top_quentes = freq.head(15).index.tolist()
     top_frios = freq.tail(15).index.tolist()
 
     if not df.empty:
         ultimo_idx = df.index.max()
-        ultimo_sorteio = df.loc[
-            ultimo_idx, ["D1", "D2", "D3", "D4", "D5", "D6"]
-        ].values.tolist()
+        ultimo_sorteio = df.loc[ultimo_idx, config.draw_cols].values.tolist()
     else:
         ultimo_sorteio = []
 
     conjuntos = {
-        "Todos os Números": list(range(1, 61)),
+        "Todos os Números": list(range(1, config.n_numbers + 1)),
         "Top 15 Mais Quentes": top_quentes,
         "Top 15 Mais Frios": top_frios,
         "Último Sorteio": ultimo_sorteio,
-        "Moldura (Borda)": list(MOLDURA),
-        "Miolo (Centro)": MIOLO,
-        "Cruz": CRUZ,
-        "Xis (Diagonais)": XIS,
-        "Cantos": CANTOS,
-        "Primos": PRIMOS,
-        "Números 'Lost'": LOST_NUMBERS,
-        "Fibonacci": FIBONACCI,
-        "Gêmeos (11, 22...)": GEMEOS,
+        "Moldura (Borda)": constants["moldura"],
+        "Miolo (Centro)": constants["miolo"],
+        "Cruz": constants["cruz"],
+        "Xis (Diagonais)": constants["xis"],
+        "Cantos": constants["cantos"],
+        "Primos": constants["primos"],
+        "Números 'Lost'": constants["lost_numbers"],
+        "Fibonacci": constants["fibonacci"],
+        "Gêmeos (11, 22...)": constants["gemeos"],
         "Reis da Sequência": reis_seq,
-        "Quadrante 1 (Sup. Esq)": QUAD_GEO_Q1,
-        "Quadrante 2 (Sup. Dir)": QUAD_GEO_Q2,
-        "Quadrante 3 (Inf. Esq)": QUAD_GEO_Q3,
-        "Quadrante 4 (Inf. Dir)": QUAD_GEO_Q4,
+        "Quadrante 1 (Sup. Esq)": config.layout.quadrant_numbers(1),
+        "Quadrante 2 (Sup. Dir)": config.layout.quadrant_numbers(2),
+        "Quadrante 3 (Inf. Esq)": config.layout.quadrant_numbers(3),
+        "Quadrante 4 (Inf. Dir)": config.layout.quadrant_numbers(4),
     }
 
-    _render_heatmap_section(freq, conjuntos)
+    _render_heatmap_section(freq, conjuntos, config)
     st.markdown("---")
 
     # 5. Guia de Equilíbrio (Tabela de Probabilidades)
-    _render_probability_report(df, conjuntos)
+    _render_probability_report(df, conjuntos, config)
     st.markdown("---")
 
     # 6. Auditoria Técnica (Fica por último para não assustar)
@@ -107,8 +98,8 @@ def render_dashboard(df, freq, poisson_finais):
             st.caption("Não há finais criticamente atrasados no momento.")
 
     with c2:
-        st.markdown("**⚖️ Teste de Honestidade (Chi-Quadrado)**")
-        chi_res = calcular_chi_quadrado(df)
+        st.markdown(f"**⚖️ Teste de Honestidade (Chi-Quadrado) para a {config.name}**")
+        chi_res = calcular_chi_quadrado(df, config)
 
         if chi_res:
             p_chi = chi_res.get("p_chi", 0)
@@ -136,11 +127,26 @@ def render_dashboard(df, freq, poisson_finais):
         else:
             st.info("Dados insuficientes para teste Chi-Quadrado.")
 
+        cv_res = calcular_coeficiente_variacao(df, config)
+        if cv_res:
+            st.markdown(f"**📉 Coeficiente de Variação (CV) para a {config.name}**")
+            st.caption(
+                "Mede quão uniforme está a frequência dos números (quanto menor, mais uniforme)."
+            )
+
+            st.metric(
+                "CV (%)",
+                f"{cv_res['coeficiente_variacao']:.2f}",
+                help=cv_res["interpretacao"],
+            )
+        else:
+            st.info("Dados insuficientes para calcular o CV.")
+
     # 7. Tabela Científica (Escondida para curiosos)
-    _render_z_score_gaps_section(df)
+    _render_z_score_gaps_section(df, config)
 
 
-def _render_kpis(freq, df):
+def _render_kpis(freq, df, config: GameConfig):
     if not freq.empty:
         num_mais = freq.idxmax()
         qtd_mais = freq.max()
@@ -160,7 +166,7 @@ def _render_kpis(freq, df):
         <div class="custom-metric-card">
             <div class="metric-label">Total de Sorteios</div>
             <div class="metric-value">{len(df)}</div>
-            <div class="metric-delta status-good">Desde 1996</div>
+            <div class="metric-delta status-good">Desde {config.start_year}</div>
         </div>
         """,
             unsafe_allow_html=True,
@@ -203,13 +209,13 @@ def _render_kpis(freq, df):
         )
 
 
-def _render_gap_bar_charts(df):
+def _render_gap_bar_charts(df, config: GameConfig):
     st.subheader("⏰ Relógio dos Atrasados")
     st.write(
         "Estes números estão 'dormindo' há muito tempo. Segundo a estatística, a chance deles acordarem aumenta a cada sorteio."
     )
 
-    atrasos = calcular_atrasos(df)
+    atrasos = calcular_atrasos(df, config)
 
     # Mostra os 20 mais atrasados
     top_atrasados = atrasos.head(20)
@@ -238,12 +244,12 @@ def _render_gap_bar_charts(df):
         )
 
 
-def _render_bar_charts(freq, num):
+def _render_bar_charts(freq, num, config: GameConfig):
     """
     Renderiza gráficos de barra usando Altair para incluir a Linha de Média (LLN).
     """
     total_aparicoes = freq.sum()
-    media_teorica = total_aparicoes / 60
+    media_teorica = total_aparicoes / config.n_numbers
 
     st.subheader("⚖️ Equilíbrio Matemático (LLN)")
     st.markdown(
@@ -301,7 +307,7 @@ def _render_bar_charts(freq, num):
         st.altair_chart(barras_frias + regua, width="stretch")
 
 
-def _render_heatmap_section(freq, conjuntos):
+def _render_heatmap_section(freq, conjuntos, config: GameConfig):
     st.subheader("🗺️ Mapa de Calor")
     st.write(
         "Visualize onde os números caem no volante. Use os filtros para ver padrões ocultos."
@@ -327,75 +333,97 @@ def _render_heatmap_section(freq, conjuntos):
             )
 
     with col_graf:
-        _plot_heatmap_matplotlib(freq, nums_filtro)
+        _plot_heatmap_matplotlib(freq, nums_filtro, config)
 
 
-def _plot_heatmap_matplotlib(freq, nums_filtro):
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.set_xlim(-0.5, 9.5)
-    ax.set_ylim(-0.5, 5.5)
+def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
+    layout = config.layout
+
+    # --- FIGSIZE responsivo por layout (mantém aparência entre jogos) ---
+    # base_w controla tamanho geral; altura acompanha aspect ratio
+    base_w = 8.0
+    aspect = layout.rows / layout.cols if layout.cols else 1.0
+    fig_h = max(3.2, base_w * aspect)
+    fig, ax = plt.subplots(figsize=(base_w, fig_h))
+
+    ax.set_xlim(-0.5, layout.cols - 0.5)
+    ax.set_ylim(-0.5, layout.rows - 0.5)
     ax.axis("off")
+
+    # Garante círculos “perfeitos” e evita distorção por grid retangular
+    ax.set_aspect("equal", adjustable="box")
+
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
 
-    max_val = freq.max() if not freq.empty else 1
-    min_val = freq.min() if not freq.empty else 0
+    maxval = freq.max() if not freq.empty else 1
+    minval = freq.min() if not freq.empty else 0
+    nums_filtro_set = set(nums_filtro)
 
-    for n in range(1, 61):
-        row = (n - 1) // 10
-        col = (n - 1) % 10
+    # raio adaptativo (Lotofácil 5x5 precisa menor)
+    r = 0.42
+    if min(layout.rows, layout.cols) <= 5:
+        r = 0.36
+    elif min(layout.rows, layout.cols) >= 8:
+        r = 0.40
+
+    for n in range(1, config.n_numbers + 1):
+        row, col = config.layout.pos(n)
         val = freq.get(n, 0)
 
-        if n in nums_filtro:
+        # y invertido para manter “topo = linhas iniciais”
+        y = config.layout.rows - 1 - row
+        theme = get_constants_for_game(config)
+        heat_color = theme["heat_color"]
+        if n in nums_filtro_set:
             intensity = (
-                0.1 + (0.9 * ((val - min_val) / (max_val - min_val)))
-                if max_val > min_val
+                0.1 + 0.9 * (val - minval) / (maxval - minval)
+                if maxval != minval
                 else 0.5
             )
-            face = "green"
+            face = heat_color
             alpha = intensity
             edge = "#444"
             lw = 1.5
-            txt_col = "white" if intensity > 0.6 else "black"
+            txtcol = "white" if intensity > 0.6 else "black"
             weight = "bold"
         else:
             face = "#f0f0f0"
             alpha = 0.3
             edge = "#e0e0e0"
             lw = 0.5
-            txt_col = "#ccc"
+            txtcol = "#ccc"
             weight = "normal"
 
-        ax.add_patch(
-            plt.Circle((col, 5 - row), 0.42, color=face, alpha=alpha, ec=edge, lw=lw)
-        )
+        ax.add_patch(plt.Circle((col, y), r, color=face, alpha=alpha, ec=edge, lw=lw))
         ax.text(
             col,
-            5 - row + 0.1,
+            y + 0.10,
             str(n),
             ha="center",
             va="center",
-            color=txt_col,
+            color=txtcol,
             fontweight=weight,
             fontsize=10,
         )
-        if n in nums_filtro:
+
+        if n in nums_filtro_set:
             ax.text(
                 col,
-                5 - row - 0.15,
+                y - 0.15,
                 str(val),
                 ha="center",
                 va="center",
-                color=txt_col,
+                color=txtcol,
                 fontsize=7,
             )
 
-    st.pyplot(fig, width="stretch")
+    st.pyplot(fig, use_container_width=True)
 
 
-def _render_probability_report(df, conjuntos):
+def _render_probability_report(df, conjuntos, config: GameConfig):
     st.subheader("📏 Guia de Equilíbrio (Quantos escolher?)")
     st.write(
-        "Muitos jogadores perdem porque escolhem, por exemplo, 6 números Primos. A tabela abaixo mostra a **'Média Esperada'**, ou seja, quantos números de cada grupo você deve colocar no seu jogo."
+        "Muitos jogadores perdem porque desequilibram a escolha dos números. A tabela abaixo mostra a **'Média Esperada'**, ou seja, quantos números de cada grupo você deve colocar no seu jogo."
     )
 
     if df.empty:
@@ -442,11 +470,11 @@ def _render_probability_report(df, conjuntos):
                 "Grupo": st.column_config.TextColumn("Grupo de Números"),
                 "Média Ideal": st.column_config.TextColumn(
                     "Quantos Escolher?",
-                    help="Em um jogo de 6 números, quantos devem ser deste grupo? Ex: Se 'Pares' tem média 3.0, escolha 3 pares.",
+                    help=f"Em um jogo de {config.k} números, quantos devem ser deste grupo? Ex: Se 'Pares' tem média 3.0, escolha 3 pares.",
                 ),
                 "Chance de Jogo Completo": st.column_config.TextColumn(
                     "Risco de Jogo Cheio",
-                    help="Qual a chance dos 6 números sorteados serem TODOS deste grupo? Quanto menor, mais arriscado jogar só números deste grupo.",
+                    help=f"Qual a chance dos {config.k} números sorteados serem TODOS deste grupo? Quanto menor, mais arriscado jogar só números deste grupo.",
                 ),
             },
             hide_index=True,
@@ -454,12 +482,12 @@ def _render_probability_report(df, conjuntos):
         )
 
 
-def _render_z_score_gaps_section(df):
+def _render_z_score_gaps_section(df, config: GameConfig):
     with st.expander("🤓 Área Nerd: Dados Brutos (Z-Score & Gaps)"):
         st.write(
             "Estes são os dados matemáticos que alimentam o Gerador de Jogos. O 'Peso' define a probabilidade de escolha."
         )
-        tabela = get_tabela_inteligencia(df)
+        tabela = get_tabela_inteligencia(df, config)
         st.dataframe(
             tabela.style.background_gradient(subset=["Peso_Geracao"], cmap="Greens"),
             width="stretch",

@@ -2,43 +2,59 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from scipy.stats import poisson, chisquare, kstest
-from typing import Dict, List, Tuple
+from app.src.games import GameConfig
+
+
+def _flatten_draws(df, config: GameConfig):
+    return df[config.draw_cols].values.flatten()
 
 
 @st.cache_data
-def get_numeros_quentes_frios(df):
+def get_numeros_quentes_frios(df, config: GameConfig):
     """Retorna contagem de frequência de todos os números."""
     if df.empty:
         return pd.Series()
-    todos = df[["D1", "D2", "D3", "D4", "D5", "D6"]].values.flatten()
+    todos = _flatten_draws(df, config)
     return pd.Series(todos).value_counts().sort_values(ascending=False)
 
 
 @st.cache_data
-def analise_poisson(df, alpha=0.05):
-    """
-    Análise bilateral e detecção de EXCESSO também.
-    Detecta dígitos finais com desvios para CIMA ou para BAIXO.
-    """
+def analise_poisson(df, config: GameConfig, alpha=0.05):
     if df.empty:
         return []
 
-    numeros = df[["D1", "D2", "D3", "D4", "D5", "D6"]].values.flatten()
+    numeros = _flatten_draws(df, config)
     finais = pd.Series([n % 10 for n in numeros])
-    total = len(finais)
-    lambda_esperado = total * 0.10
+    total_bolas_sorteadas = len(finais)
 
     resultado = []
 
+    # Conta quantos números no universo (1..N) terminam com cada dígito
+    # Ex Mega (60): final 1 aparece 6x (1,11,21,31,41,51) -> Prob 6/60 = 10%
+    # Ex Loto (25): final 1 aparece 3x (1,11,21) -> Prob 3/25 = 12%
+    # Ex Loto (25): final 6 aparece 2x (6,16) -> Prob 2/25 = 8%
+
+    universo = list(range(1, config.n_numbers + 1))
+    finais_universo = [n % 10 for n in universo]
+    contagem_teorica = pd.Series(finais_universo).value_counts().sort_index()
+
     for digito in range(10):
+        # Probabilidade teórica exata para este jogo
+        prob_teorica = contagem_teorica.get(digito, 0) / config.n_numbers
+
+        # Lambda ajustado
+        lambda_esperado = total_bolas_sorteadas * prob_teorica
+
         observado = (finais == digito).sum()
 
-        # Teste bilateral: muito abaixo OU muito acima
+        # Evita erro se lambda for 0 (jogo muito pequeno, improvável mas seguro)
+        if lambda_esperado == 0:
+            continue
+
+        # Teste bilateral (Poisson)
         p_inferior = poisson.cdf(observado, lambda_esperado)
         p_superior = 1 - poisson.cdf(observado - 1, lambda_esperado)
-
-        # Usa o menor p-value (mais extremo)
-        p_value = min(p_inferior, p_superior) * 2  # Correção de Bonferroni
+        p_value = min(p_inferior, p_superior) * 2
 
         if p_value < alpha:
             tipo = "Déficit" if observado < lambda_esperado else "Excesso"
@@ -50,7 +66,7 @@ def analise_poisson(df, alpha=0.05):
                     "desvio": observado - lambda_esperado,
                     "tipo": tipo,
                     "p_value": round(p_value, 5),
-                    "interpretacao": f"Desvio estatisticamente relevante ({tipo})",
+                    "interpretacao": f"Desvio ({tipo}) - Esperado: {prob_teorica:.1%}",
                 }
             )
 
@@ -58,45 +74,129 @@ def analise_poisson(df, alpha=0.05):
 
 
 @st.cache_data
-def get_historico_jogos(df):
+def get_historico_jogos(df, config: GameConfig):
     """SET de jogos já sorteados para lookup O(1)."""
     if df.empty:
         return set()
-    jogos = df[["D1", "D2", "D3", "D4", "D5", "D6"]].values
+    jogos = df[config.draw_cols].values
     return set(tuple(sorted(jogo)) for jogo in jogos)
 
 
-def verificar_historico_sena(numeros, df):
-    """Verifica acertos históricos com vetorização."""
-    meus_nums = set(numeros)
-    ja_saiu_sena, ja_saiu_quina, ja_saiu_quadra = [], [], []
+@st.cache_data
+def calcular_guia_equilibrio(df, conjuntos: dict, config: GameConfig) -> dict:
+    """
+    Calcula, para cada grupo (ex. moldura/miolo/cruz/xis/cantos),
+    a presença média por sorteio e o risco de "jogo cheio"
+    (todos os k números dentro do grupo).
+    Retorna dict: {nome_grupo: {"media_ideal": float, "risco_cheio": float}}
+    """
+    if df.empty:
+        return {}
 
-    # Vetorização completa (muito mais rápido)
+    historico_sets = [set(row) for row in df[config.draw_cols].values]
+    total_concursos = len(historico_sets)
+
+    out = {}
+    for nome, numeros_grupo in conjuntos.items():
+        set_grupo = set(numeros_grupo)
+
+        # média de interseção (quantos números do grupo aparecem por sorteio)
+        soma_acertos = sum(len(sorteio & set_grupo) for sorteio in historico_sets)
+        media_ideal = soma_acertos / total_concursos
+
+        # risco do evento extremo: sorteio inteiro dentro do grupo
+        ocorrencias_full = sum(
+            1 for sorteio in historico_sets if sorteio.issubset(set_grupo)
+        )
+        risco_cheio = (ocorrencias_full / total_concursos) * 100
+
+        out[nome] = {"media_ideal": media_ideal, "risco_cheio": risco_cheio}
+
+    return out
+
+
+def avaliar_jogo_por_grupos(
+    numeros: list, guia: dict, conjuntos: dict, config: GameConfig
+) -> dict:
+    """
+    Avalia um jogo contra o guia (média ideal).
+    Retorna detalhes e um score geométrico (0..100) separado do score técnico.
+    """
+    jogo = set(numeros)
+    k = config.k
+
+    detalhes = {}
+    penalidade = 0.0
+
+    # pesos: dão mais importância aos padrões geométricos do que aos numéricos
+    pesos = {
+        "moldura": 1.2,
+        "miolo": 1.2,
+        "cruz": 1.0,
+        "xis": 1.0,
+        "cantos": 0.6,
+    }
+
+    for nome, numeros_grupo in conjuntos.items():
+        if nome not in guia:
+            continue
+
+        presentes = len(jogo & set(numeros_grupo))
+        ideal = guia[nome]["media_ideal"]
+        risco_cheio = guia[nome]["risco_cheio"]
+
+        detalhes[nome] = {
+            "presentes": presentes,
+            "ideal": round(float(ideal), 2),
+            "risco_cheio": round(float(risco_cheio), 4),
+        }
+
+        # penaliza desvio do ideal (em "quantidade de dezenas")
+        w = pesos.get(nome, 0.5)
+        penalidade += w * abs(presentes - ideal)
+
+        # penaliza extremos: muito concentrado em um grupo
+        if k > 0 and presentes >= int(k * 0.8):
+            penalidade += 2.0 * w
+
+    # converte penalidade para score: quanto menor a penalidade, melhor
+    # escala simples que funciona bem para k=5/6/15
+    score_geom = max(0, min(100, int(100 - penalidade * 12)))
+
+    return {"score_geom": score_geom, "detalhes": detalhes}
+
+
+def verificar_historico(numeros, df, config: GameConfig, alvos=None):
+    meus = set(numeros)
+    if alvos is None:
+        # default: top 3 faixas abaixo do cheio
+        alvos = [config.k, config.k - 1, config.k - 2]
+
+    res = {a: [] for a in alvos}
     for idx, row in df.iterrows():
-        sorteio = set(row[["D1", "D2", "D3", "D4", "D5", "D6"]].values)
-        acertos = len(meus_nums.intersection(sorteio))
-
-        concurso_info = f"Conc. {idx}"
-
-        if acertos == 6:
-            ja_saiu_sena.append(concurso_info)
-        elif acertos == 5:
-            ja_saiu_quina.append(concurso_info)
-        elif acertos == 4:
-            ja_saiu_quadra.append(concurso_info)
-
-    return ja_saiu_sena, ja_saiu_quina, ja_saiu_quadra
+        sorteio = set(row[config.draw_cols].values)
+        acertos = len(meus.intersection(sorteio))
+        if acertos in res:
+            res[acertos].append(f"Conc. {idx}")
+    return res
 
 
 @st.cache_data
-def get_reis_da_sequencia(df):
-    """Identifica números que mais formam pares consecutivos."""
+def get_reis_da_sequencia(df, config: GameConfig):
+    """
+    Identifica números que mais formam pares consecutivos (genérico por jogo).
+        Args:
+           df (pd.DataFrame): DataFrame com os resultados dos sorteios.
+           config (GameConfig): Configuração do jogo.
+        Returns:
+           List[int]: Lista dos números que mais frequentemente aparecem em pares consecutivos.
+    """
     if df.empty:
         return []
 
     todos_pares = []
     for _, row in df.iterrows():
-        sorteio = sorted(row[["D1", "D2", "D3", "D4", "D5", "D6"]].values)
+        sorteio = sorted(row[config.draw_cols].values)
         for i in range(len(sorteio) - 1):
             if sorteio[i + 1] == sorteio[i] + 1:
                 todos_pares.append((sorteio[i], sorteio[i + 1]))
@@ -114,7 +214,7 @@ def get_reis_da_sequencia(df):
 
 
 @st.cache_data
-def calcular_atrasos(df):
+def calcular_atrasos(df, config: GameConfig):
     """
     Adiciona normalização por tamanho da base.
     Gap relativo = Gap absoluto / Total de jogos.
@@ -126,14 +226,14 @@ def calcular_atrasos(df):
     total_concursos = len(df)
 
     # Vetorização otimizada
-    stacked = df[["D1", "D2", "D3", "D4", "D5", "D6"]].stack().reset_index()
+    stacked = df[config.draw_cols].stack().reset_index()
     stacked.columns = ["Concurso", "Col", "Numero"]
     ultima_aparicao = stacked.groupby("Numero")["Concurso"].max()
 
     atrasos = {}
     atrasos_relativos = {}
 
-    for n in range(1, 61):
+    for n in range(1, config.n_numbers + 1):
         if n in ultima_aparicao:
             gap_absoluto = ultimo_concurso - ultima_aparicao[n]
             atrasos[n] = gap_absoluto
@@ -146,7 +246,7 @@ def calcular_atrasos(df):
 
 
 @st.cache_data
-def get_tabela_inteligencia(df):
+def get_tabela_inteligencia(df, config: GameConfig):
     """
     Sistema de pesos MATEMATICAMENTE CORRETO.
     Usa Z-Scores normalizados e combinação calibrada.
@@ -154,10 +254,10 @@ def get_tabela_inteligencia(df):
     if df.empty:
         return pd.DataFrame()
 
-    freq = get_numeros_quentes_frios(df).sort_index()
-    atrasos = calcular_atrasos(df).sort_index()
+    freq = get_numeros_quentes_frios(df, config).sort_index()
+    atrasos = calcular_atrasos(df, config).sort_index()
 
-    df_stats = pd.DataFrame(index=range(1, 61))
+    df_stats = pd.DataFrame(index=range(1, config.n_numbers + 1))
     df_stats["Frequencia"] = freq
     df_stats["Atraso"] = atrasos
     df_stats = df_stats.fillna(0)
@@ -192,28 +292,27 @@ def get_tabela_inteligencia(df):
 
 
 @st.cache_data
-def calcular_chi_quadrado(df):
+def calcular_chi_quadrado(df, config: GameConfig):
     """
-    Adiciona testes complementares.
     Chi² + Kolmogorov-Smirnov para robustez.
     """
     if df.empty:
         return None
 
-    todos_numeros = df[["D1", "D2", "D3", "D4", "D5", "D6"]].values.flatten()
+    todos_numeros = _flatten_draws(df, config)
     contagem = pd.Series(todos_numeros).value_counts().sort_index()
-    contagem = contagem.reindex(range(1, 61), fill_value=0)
+    contagem = contagem.reindex(range(1, config.n_numbers + 1), fill_value=0)
 
     f_obs = contagem.values
     total_bolas = len(todos_numeros)
-    f_esp = [total_bolas / 60] * 60
+    f_esp = [total_bolas / config.n_numbers] * config.n_numbers
 
     # Teste Chi-Quadrado
     chi2_stat, p_chi = chisquare(f_obs, f_exp=f_esp)
 
     # Teste KS (Kolmogorov-Smirnov) para uniformidade
-    uniform_sample = np.linspace(1, 60, len(todos_numeros))
-    ks_stat, p_ks = kstest(sorted(todos_numeros), lambda x: x / 60)
+    uniform_sample = np.linspace(1, config.n_numbers, len(todos_numeros))
+    ks_stat, p_ks = kstest(sorted(todos_numeros), lambda x: x / config.n_numbers)
 
     # Interpretação combinada
     if p_chi > 0.05 and p_ks > 0.05:
@@ -238,7 +337,7 @@ def calcular_chi_quadrado(df):
 
 
 @st.cache_data
-def analise_intervalo_confianca(df):
+def analise_intervalo_confianca(df, config: GameConfig):
     """
     Análise de intervalos de confiança para soma.
     Baseado na distribuição real dos dados.
@@ -246,7 +345,7 @@ def analise_intervalo_confianca(df):
     if df.empty:
         return None
 
-    somas = df[["D1", "D2", "D3", "D4", "D5", "D6"]].sum(axis=1)
+    somas = df[config.draw_cols].sum(axis=1)
 
     # Estatísticas descritivas
     media = somas.mean()
@@ -271,15 +370,15 @@ def analise_intervalo_confianca(df):
 
 
 @st.cache_data
-def calcular_coeficiente_variacao(df):
+def calcular_coeficiente_variacao(df, config: GameConfig):
     """
-    MELHORIA 7: NOVO - Mede a estabilidade da aleatoriedade.
+    Mede a estabilidade da aleatoriedade.
     CV baixo = números saem com frequência similar (bom sinal).
     """
     if df.empty:
         return None
 
-    freq = get_numeros_quentes_frios(df)
+    freq = get_numeros_quentes_frios(df, config)
 
     # Coeficiente de Variação = (Desvio / Média) × 100
     cv = (freq.std() / freq.mean()) * 100

@@ -1,21 +1,26 @@
 import streamlit as st
+import pandas as pd
 import matplotlib.pyplot as plt
+from app.src.games import GameConfig
 from app.src.validator import validar_jogo
 from app.src.statistics import (
     get_historico_jogos,
-    verificar_historico_sena,
     analise_intervalo_confianca,
+    verificar_historico,
 )
+from app.ui.board_ui import render_volante_marcado
 
 
-def render_validator(df):
+def render_validator(df, config: GameConfig):
     st.markdown("### 🧪 Laboratório de Validação")
-    st.write("Digite seus números para passar pelo nosso crivo estatístico.")
+    st.write(f"Digite seus números da {config.name} para validação estatística.")
 
-    # Input melhorado
+    # Placeholder dinâmico
+    nums_exemplo = " ".join([f"{n:02d}" for n in range(4, 4 + config.k)])
+
     entrada = st.text_input(
-        "Seus 6 números:",
-        placeholder="Ex: 04 12 25 33 41 58",
+        f"Seus {config.k} números:",
+        placeholder=f"Ex: {nums_exemplo}",
         help="Separe por espaço, vírgula ou traço.",
     )
 
@@ -26,20 +31,33 @@ def render_validator(df):
                 list(set([int(n) for n in texto.split() if n.strip().isdigit()]))
             )
 
-            if len(nums) != 6:
+            # Validação dinâmica
+            if len(nums) != config.k:
                 st.warning(
-                    "⚠️ Precisamos de **exatamente 6 números** únicos (entre 1 e 60)."
+                    f"⚠️ Precisamos de **exatamente {config.k} números** únicos (entre 1 e {config.n_numbers})."
                 )
                 return
 
-            # Busca ic_info e historico
-            historico = get_historico_jogos(df)
-            ic_info = analise_intervalo_confianca(df)
+            if not all(1 <= n <= config.n_numbers for n in nums):
+                st.error(
+                    f"❌ Todos os números devem estar entre 1 e {config.n_numbers}."
+                )
+                return
 
-            # Passa ic_info para validação
-            relatorio = validar_jogo(nums, historico_jogos=historico, ic_info=ic_info)
+            # Busca dados
+            historico = get_historico_jogos(df, config)
+            ic_info = analise_intervalo_confianca(df, config)
 
-            # --- ÁREA DE RESULTADOS (CARDS PRO) ---
+            # Validação
+            relatorio = validar_jogo(
+                nums,
+                config,
+                historico_jogos=historico,
+                ic_info=ic_info,
+                df_historico=df,
+            )
+
+            # Cards de resultado
             st.markdown("<br>", unsafe_allow_html=True)
             c1, c2 = st.columns(2)
             score = relatorio["score"]
@@ -47,38 +65,27 @@ def render_validator(df):
             ja_saiu = relatorio.get("ja_saiu", False)
 
             if ja_saiu:
-                score_class = "status-bad"
-                score_icon = "⛔"
                 display_score = "0/100"
                 delta_msg = f"Score Técnico: {score_original}/100"
                 classe_css_delta = "status-off"
             else:
                 display_score = f"{score}/100"
                 if score >= 80:
-                    score_class = "status-good"
                     score_icon = "💎"
                 elif score >= 50:
-                    score_class = "status-warn"
                     score_icon = "⚠️"
                 else:
-                    score_class = "status-bad"
                     score_icon = "🗑️"
-
                 delta_msg = f"{score_icon} {relatorio['status']}"
-                classe_css_delta = score_class
+                classe_css_delta = "status-good" if score >= 80 else "status-warn"
 
-            # CARD SCORE
             with c1:
-                estilo_extra = (
-                    "color: #94a3b8;" if classe_css_delta == "status-off" else ""
-                )
-
                 st.markdown(
                     f"""
                 <div class="custom-metric-card">
                     <div class="metric-label">Qualidade Técnica</div>
                     <div class="metric-value">{display_score}</div>
-                    <div class="metric-delta {classe_css_delta}" style="{estilo_extra}">
+                    <div class="metric-delta {classe_css_delta}">
                         {delta_msg}
                     </div>
                 </div>
@@ -86,7 +93,6 @@ def render_validator(df):
                     unsafe_allow_html=True,
                 )
 
-            # CARD RISCO
             risco = relatorio.get("risco_divisao", "Desconhecido")
             risco_class = "status-good" if "Baixo" in risco else "status-bad"
 
@@ -101,33 +107,17 @@ def render_validator(df):
                 """,
                     unsafe_allow_html=True,
                 )
-
             # --- DETALHES ---
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Histórico (Backtesting)
-            senas, quinas, quadras = verificar_historico_sena(nums, df)
-            k1, k2, k3 = st.columns(3)
-            k1.metric("Já deu Sena (6)?", f"{len(senas)} vezes")
-            if len(senas) > 0:
-                k1.warning(f"Já saiu em: {senas[0]}")
-            k2.metric("Já deu Quina (5)?", f"{len(quinas)} vezes")
-            k3.metric("Já deu Quadra (4)?", f"{len(quadras)} vezes")
+            _render_backtesting(df, config, nums)
 
-            if senas:
-                st.error(
-                    f"🚨 **ALERTA MÁXIMO:** Esses números já saíram em {senas[0]}! (Chance de repetir é quase nula)."
-                )
-            else:
-                st.caption(
-                    "✅ **Inédito:** Essa combinação completa de 6 números nunca foi sorteada na história."
-                )
-
-            # Métricas detalhadas
-            st.markdown("---")
-            st.markdown("##### Métricas Técnicas")
+            # Métricas
+            st.markdown("##### 📊 Métricas Técnicas")
 
             metricas = relatorio.get("metricas", {})
+            _render_geometric_metrics(metricas)
+
             col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
 
             col_m1.metric("Soma", metricas.get("soma", 0))
@@ -136,7 +126,7 @@ def render_validator(df):
             col_m4.metric("Pares", metricas.get("pares", 0))
             col_m5.metric("Sequências", metricas.get("sequencias", 0))
 
-            # Feedback Textual
+            # Mensagens
             st.markdown("##### 📝 Relatório do Analista")
             for msg in relatorio["msgs"]:
                 if "❌" in msg:
@@ -152,14 +142,13 @@ def render_validator(df):
                         unsafe_allow_html=True,
                     )
 
-            # Volante Visual
+            # Volante visual (usando board_ui genérico)
             st.markdown("---")
-            col_volante, col_info = st.columns([1, 1])
 
+            col_volante, col_info = st.columns([1, 1])
             with col_volante:
                 st.caption("Visualização Geométrica:")
-                _render_volante_aposta(nums)
-
+                render_volante_marcado(nums, config)
             with col_info:
                 st.markdown("##### 💡 Dicas")
                 if score >= 80:
@@ -171,38 +160,91 @@ def render_validator(df):
 
                 if "ALTO" in risco:
                     st.error(
-                        "💸 Padrão muito popular. Prêmio seria dividido com muitos ganhadores."
+                        "💸 Padrão muito popular. Se saisse, o prêmio seria dividido com muitos ganhadores."
                     )
 
         except Exception as e:
             st.error(
-                f"Não entendi esses números. Tente digitar assim: 05 10 15 20 25 30. ({e})"
+                f"Não entendi esses números. Tente digitar assim: {nums_exemplo}. ({e})"
             )
 
 
-def _render_volante_aposta(nums):
-    """Renderiza o volante visual com os números marcados."""
-    fig, ax = plt.subplots(figsize=(6, 3))
-    ax.set_xlim(0, 11)
-    ax.set_ylim(0, 7)
-    ax.axis("off")
+def _render_backtesting(df, config, nums):
+    with st.expander("Histórico (Backtesting)", expanded=False):
+        alvos = [config.k, config.k - 1, config.k - 2]
+        res = verificar_historico(nums, df, config, alvos=alvos)
 
-    for n in range(1, 61):
-        row, col = (n - 1) // 10, (n - 1) % 10
+        k1, k2, k3 = st.columns(3)
 
-        color = "#d97706" if n in nums else "#f1f5f9"
-        txt_col = "white" if n in nums else "#94a3b8"
-        font_w = "bold" if n in nums else "normal"
+        with k1:
+            hits = config.k
+            achou = res.get(hits, [])
+            st.metric(f"Já Saiu {hits} acertos (jogo cheio)?", len(achou))
+            if achou:
+                st.caption(", ".join(achou[:10]) + ("..." if len(achou) > 10 else ""))
 
-        ax.text(
-            col + 0.5,
-            6 - row - 0.5,
-            str(n),
-            ha="center",
-            va="center",
-            color=txt_col,
-            fontweight=font_w,
-            bbox=dict(boxstyle="circle,pad=0.3", fc=color, ec="none"),
-        )
+        with k2:
+            hits = config.k - 1
+            achou = res.get(hits, [])
+            st.metric(f"Já Saiu {hits} acertos?", len(achou))
+            if achou:
+                st.caption(", ".join(achou[:10]) + ("..." if len(achou) > 10 else ""))
 
-    st.pyplot(fig)
+        with k3:
+            hits = config.k - 2
+            achou = res.get(hits, [])
+            st.metric(f"Já Saiu {hits} acertos?", len(achou))
+            if achou:
+                st.caption(", ".join(achou[:10]) + ("..." if len(achou) > 10 else ""))
+
+
+def _render_geometric_metrics(metricas):
+    geom = metricas.get("geom_detalhes", None)
+    score_geom = metricas.get("score_geom", None)
+
+    if geom:
+        with st.expander("Geometria do Volante (padrões visuais)", expanded=False):
+            if score_geom is not None:
+                st.caption(f"Score Geométrico: {score_geom}/100")
+
+            linhas = []
+            ordem = ["moldura", "miolo", "cruz", "xis", "cantos"]
+            nomes = {
+                "moldura": "Moldura",
+                "miolo": "Miolo",
+                "cruz": "Cruz",
+                "xis": "Xis",
+                "cantos": "Cantos",
+            }
+
+            for key in ordem:
+                if key not in geom:
+                    continue
+                item = geom[key]
+                linhas.append(
+                    {
+                        "Grupo": nomes.get(key, key),
+                        "No jogo": int(item.get("presentes", 0)),
+                        "Ideal (média)": float(item.get("ideal", 0.0)),
+                        "Risco jogo cheio (%)": float(item.get("risco_cheio", 0.0)),
+                    }
+                )
+
+            df_geom = pd.DataFrame(linhas)
+            st.dataframe(
+                df_geom,
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Grupo": st.column_config.TextColumn("Grupo"),
+                    "No jogo": st.column_config.NumberColumn("No jogo", format="%d"),
+                    "Ideal (média)": st.column_config.NumberColumn(
+                        "Ideal (média)", format="%.2f"
+                    ),
+                    "Risco jogo cheio (%)": st.column_config.NumberColumn(
+                        "Risco jogo cheio (%)", format="%.4f"
+                    ),
+                },
+            )
+    else:
+        pass
