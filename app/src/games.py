@@ -82,35 +82,6 @@ class GameConfig:
         """Calcula a densidade do jogo (Aposta / Universo)."""
         return self.bet_size / self.n_numbers
 
-    @property
-    def min_geom_score(self) -> int:
-        """
-        FÓRMULA AUTOMÁTICA DE SCORE GEOMÉTRICO
-        Define a tolerância visual baseada na densidade do tabuleiro.
-        Mega (10% ocupado) -> Exige Score 54+
-        Loto (60% ocupado) -> Aceita Score 24+
-        """
-        # Fórmula: Base 60 - (Penalidade * Densidade)
-        score = 60 - (60 * self.density)
-        return max(15, int(score))
-
-    @property
-    def geo_weights(self) -> Dict[str, float]:
-        """
-        CALIBRAGEM AUTOMÁTICA DE PESOS
-        Define a severidade da punição baseada na densidade.
-        Jogos densos (Loto) têm pesos leves. Jogos vazios (Mega) têm pesos pesados.
-        """
-        base = max(0.5, 3.4 - (4.0 * self.density))
-
-        return {
-            "moldura": round(base * 1.0, 1),
-            "miolo": round(base * 1.2, 1),
-            "cruz": round(base * 1.0, 1),
-            "xis": round(base * 1.0, 1),
-            "cantos": round(base * 0.6, 1),  # Cantos valem menos (alta variância)
-        }
-
 
 def _draw_cols(k: int) -> List[str]:
     return [f"D{i}" for i in range(1, k + 1)]
@@ -169,9 +140,9 @@ LOTOFACIL = GameConfig(
         "11, 12, 13, 14 ou 15 números."
     ),
     target_score_excellent=70,
-    target_score_accept=60,  # Aceitável para parar o gerador
-    final_digit_alert=4,  # Normal ter até 3 finais iguais. Alerta em 4.
-    final_digit_error=5,  # Erro em 5+
+    target_score_accept=60,
+    final_digit_alert=4,
+    final_digit_error=5,
 )
 
 LOTOMANIA = GameConfig(
@@ -183,7 +154,7 @@ LOTOMANIA = GameConfig(
     draw_cols=_draw_cols(20),
     layout=BoardLayout(rows=10, cols=10, n_numbers=100),
     start_year=1999,
-    gauss_range="2000-3000",  # Soma de 50 números é muito maior
+    gauss_range="2000-3000",
     odds_text="1 em 11.372.635",
     game_price=3.00,
     how_to_play=(
@@ -191,10 +162,8 @@ LOTOMANIA = GameConfig(
         "São sorteados 20 números. Ganha quem acerta 20, 19, 18, 17, 16, 15 ou "
         "nenhum número (0 acertos)."
     ),
-    # Ajustes de Regras para 50 números
     target_score_excellent=80,
     target_score_accept=65,
-    # Em 50 números, finais se repetem muito (ex: cinco finais 1)
     final_digit_alert=6,
     final_digit_error=8,
 )

@@ -2,10 +2,16 @@ import streamlit as st
 from app.src.generator import gerar_fechamento
 from app.src.logger import logger
 from app.src.games import GameConfig
+from app.ui.game_constants import get_constants_for_game
 
 
 def render_closures(config: GameConfig):
-    st.markdown("### 📦 Fechamentos Matemáticos")
+    constants = get_constants_for_game(config)
+    color = constants.get("heat_color", "#ef4444")
+    st.markdown(
+        f"<h3> 📦 Fechamentos Matemáticos da <span style='color: {color};'>{config.name}</span></h3>",
+        unsafe_allow_html=True,
+    )
 
     qtd_aposta = config.bet_size
 

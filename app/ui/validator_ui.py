@@ -1,3 +1,4 @@
+# app/ui/validator_ui.py
 import streamlit as st
 import pandas as pd
 from app.src.logger import logger
@@ -9,10 +10,16 @@ from app.src.statistics import (
     verificar_historico,
 )
 from app.ui.board_ui import render_volante_marcado
+from app.ui.game_constants import get_constants_for_game
 
 
 def render_validator(df, config: GameConfig):
-    st.markdown("### 🧪 Laboratório de Validação")
+    constants = get_constants_for_game(config)
+    color = constants.get("heat_color", "#ef4444")
+    st.markdown(
+        f"<h3> 🧪 Laboratório de Validação da <span style='color: {color};'>{config.name}</span></h3>",
+        unsafe_allow_html=True,
+    )
     st.write(f"Digite seus números da {config.name} para validação estatística.")
 
     qtd_aposta = config.bet_size
@@ -25,14 +32,13 @@ def render_validator(df, config: GameConfig):
         help="Separe por espaço, vírgula ou traço.",
     )
 
-    if st.button("🔍 Analisar Qualidade", type="primary", width="stretch"):
+    if st.button("🔬 Analisar Qualidade", type="primary", width="stretch"):
         try:
             texto = entrada.replace(",", " ").replace("-", " ")
             nums = sorted(
                 list(set([int(n) for n in texto.split() if n.strip().isdigit()]))
             )
 
-            # Lotomania: Valida se tem 50 números, não 20.
             if len(nums) != qtd_aposta:
                 st.warning(
                     f"⚠️ Precisamos de **exatamente {qtd_aposta} números** únicos (entre 1 e {config.n_numbers})."
@@ -117,7 +123,7 @@ def render_validator(df, config: GameConfig):
                 """,
                     unsafe_allow_html=True,
                 )
-            # --- DETALHES ---
+
             st.markdown("<br>", unsafe_allow_html=True)
 
             _render_backtesting(df, config, nums)
@@ -126,7 +132,12 @@ def render_validator(df, config: GameConfig):
             st.markdown("##### 📊 Métricas Técnicas")
 
             metricas = relatorio.get("metricas", {})
+
+            # Renderiza métricas geométricas com nova estrutura
             _render_geometric_metrics(metricas)
+
+            # Renderiza métricas avançadas (Hamming, Quadrantes)
+            _render_advanced_metrics(metricas)
 
             col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
 
@@ -152,7 +163,7 @@ def render_validator(df, config: GameConfig):
                         unsafe_allow_html=True,
                     )
 
-            # Volante visual (usando board_ui genérico)
+            # Volante visual
             st.markdown("---")
 
             col_volante, col_info = st.columns([1, 1])
@@ -170,7 +181,7 @@ def render_validator(df, config: GameConfig):
 
                 if "ALTO" in risco:
                     st.error(
-                        "💸 Padrão muito popular. Se saisse, o prêmio seria dividido com muitos ganhadores."
+                        "💸 Padrão muito popular. Se saísse, o prêmio seria dividido com muitos ganhadores."
                     )
 
         except Exception as e:
@@ -183,10 +194,8 @@ def render_validator(df, config: GameConfig):
 def _render_backtesting(df, config, nums):
     with st.expander("Histórico (Backtesting)", expanded=False):
         if config.slug == "loto_mania_sorteio":
-            # Lotomania: Busca 20, 19, 18... e ZERO (que também paga)
             alvos = [20, 19, 18, 0]
         else:
-            # Padrão: Busca Jogo Cheio, -1 e -2
             alvos = [config.k, config.k - 1, config.k - 2]
 
         res = verificar_historico(nums, df, config, alvos=alvos)
@@ -198,7 +207,6 @@ def _render_backtesting(df, config, nums):
                 hits = alvo
                 achou = res.get(hits, [])
 
-                # Label especial para Lotomania (0 acertos)
                 if config.slug == "loto_mania_sorteio" and hits == 0:
                     label = "Zero Acertos (🏆)"
                 elif hits == config.k:
@@ -209,16 +217,16 @@ def _render_backtesting(df, config, nums):
                 st.metric(label, len(achou))
 
                 if achou:
-                    # Mostra os primeiros concursos onde ocorreu
                     st.caption(", ".join(achou[:5]) + ("..." if len(achou) > 5 else ""))
 
 
 def _render_geometric_metrics(metricas):
+    """Renderiza métricas geométricas com nova estrutura estatística"""
     geom = metricas.get("geom_detalhes", None)
     score_geom = metricas.get("score_geom", None)
 
     if geom:
-        with st.expander("Geometria do Volante (padrões visuais)", expanded=False):
+        with st.expander("Geometria do Volante (análise estatística)", expanded=False):
             if score_geom is not None:
                 st.caption(f"Score Geométrico: {score_geom}/100")
 
@@ -240,8 +248,9 @@ def _render_geometric_metrics(metricas):
                     {
                         "Grupo": nomes.get(key, key),
                         "No jogo": int(item.get("presentes", 0)),
-                        "Ideal (média)": float(item.get("ideal", 0.0)),
-                        "Risco jogo cheio (%)": float(item.get("risco_cheio", 0.0)),
+                        "Média histórica": float(item.get("media_historica", 0.0)),
+                        "Z-Score": float(item.get("z_score", 0.0)),
+                        "Categoria": item.get("categoria", "Normal"),
                     }
                 )
 
@@ -253,13 +262,79 @@ def _render_geometric_metrics(metricas):
                 column_config={
                     "Grupo": st.column_config.TextColumn("Grupo"),
                     "No jogo": st.column_config.NumberColumn("No jogo", format="%d"),
-                    "Ideal (média)": st.column_config.NumberColumn(
-                        "Ideal (média)", format="%.2f"
+                    "Média histórica": st.column_config.NumberColumn(
+                        "Média histórica", format="%.2f"
                     ),
-                    "Risco jogo cheio (%)": st.column_config.NumberColumn(
-                        "Risco jogo cheio (%)", format="%.4f"
+                    "Z-Score": st.column_config.NumberColumn(
+                        "Z-Score",
+                        format="%.2f",
+                        help="Quantos desvios-padrão do normal. |Z| > 2 é raro.",
                     ),
+                    "Categoria": st.column_config.TextColumn("Categoria"),
                 },
             )
-    else:
-        pass
+
+
+def _render_advanced_metrics(metricas):
+    """Renderiza métricas avançadas (Hamming, Quadrantes, Regressão)"""
+
+    # 1. Distância de Hamming
+    hamming = metricas.get("hamming_min", None)
+    similaridade = metricas.get("similaridade_max", None)
+
+    if hamming and hamming != "N/A":
+        with st.expander("🔍 Análise de Similaridade (Hamming)", expanded=False):
+            col1, col2 = st.columns(2)
+            col1.metric(
+                "Distância Mínima",
+                hamming,
+                help="Quantos números diferentes do sorteio mais próximo",
+            )
+            col2.metric(
+                "Similaridade Máx.",
+                f"{similaridade:.1%}",
+                help="0% = totalmente diferente, 100% = idêntico",
+            )
+
+    # 2. Quadrantes
+    quadrantes = metricas.get("quadrantes", None)
+    if quadrantes and quadrantes.get("detalhes"):
+        with st.expander("🗺️ Distribuição por Quadrantes", expanded=False):
+            score_q = quadrantes.get("score_quadrantes", 100)
+            st.caption(f"Score de Quadrantes: {score_q}/100")
+
+            detalhes = quadrantes["detalhes"]
+            linhas = []
+            for q in ["Q1", "Q2", "Q3", "Q4"]:
+                if q in detalhes:
+                    item = detalhes[q]
+                    linhas.append(
+                        {
+                            "Quadrante": q,
+                            "Números": item["presentes"],
+                            "Esperado": item["esperado"],
+                            "Z-Score": item["z_score"],
+                            "Status": item["categoria"],
+                        }
+                    )
+
+            df_quad = pd.DataFrame(linhas)
+            st.dataframe(df_quad, hide_index=True, width="stretch")
+
+    # 3. Regressão à Média (informativo)
+    regressao = metricas.get("regressao", None)
+    if regressao:
+        with st.expander("📈 Validação: Regressão à Média", expanded=False):
+            st.caption("Evidência histórica de que números atrasados tendem a sair:")
+            col1, col2, col3 = st.columns(3)
+            col1.metric(
+                "Correlação ρ",
+                regressao["correlacao"],
+                help="Correlação entre atraso e saída futura",
+            )
+            col2.metric(
+                "Taxa de Retorno",
+                f"{regressao['taxa_retorno']:.1%}",
+                help="% dos números atrasados que saíram",
+            )
+            col3.metric("Interpretação", regressao["interpretacao"])

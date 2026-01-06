@@ -103,14 +103,22 @@ def gerar_jogo_perfeito(
             melhor_score = score_final
             melhor_jogo = jogo.copy()
 
-        # Early stopping inteligente
+        # Early stopping com limites dinâmicos baseados em estatística
+        # Critérios:
+        # 1. Score técnico >= target excellent (85 para Mega, 70 para Lotofácil, etc)
+        # 2. Score geométrico >= 50 (significa que não há padrões extremos)
+        #    Nota: 50 é um limiar conservador - padrões "Normais" ficam 70-100
+
+        score_geom_minimo = 50  # Limiar baseado na nova análise estatística
+
         if val["score"] >= config.target_score_excellent and (
-            score_geom is None or score_geom >= config.min_geom_score
+            score_geom is None or score_geom >= score_geom_minimo
         ):
             # Log de sucesso (Performance)
             duration = time.time() - start_time
             logger.info(
-                f"[{config.name}] Jogo encontrado em {tentativas} tentativas ({duration:.3f}s). Score: {val['score']}"
+                f"[{config.name}] Jogo encontrado em {tentativas} tentativas ({duration:.3f}s). "
+                f"Score: {val['score']}, Geom: {score_geom}"
             )
             return jogo
 
@@ -120,6 +128,7 @@ def gerar_jogo_perfeito(
                 f"[{config.name}] Fallback acionado em 5000 tentativas. Melhor Score: {melhor_score}"
             )
             return melhor_jogo
+
     logger.warning(
         f"[{config.name}] Limite de 10k tentativas atingido. Retornando melhor esforço (Score {melhor_score})."
     )
@@ -193,6 +202,7 @@ def gerar_multiplos_jogos(
 
         jogos_gerados.append(jogo)
         jogos_set.add(jogo_tuple)
+
     logger.info(f"Lote finalizado. {len(jogos_gerados)} jogos gerados.")
     return jogos_gerados
 
@@ -312,6 +322,7 @@ def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):
             "erro": f"Fechamento de {n} números gera {total_comb:,} jogos. "
             f"Limite: {max_combinacoes:,}. Reduza a quantidade de números."
         }
+
     logger.info(
         f"Gerando fechamento para {config.name}: {n} números base -> {total_comb} jogos."
     )

@@ -29,26 +29,18 @@ def analise_poisson(df, config: GameConfig, alpha=0.05):
 
     resultado = []
 
-    # Conta quantos números no universo (1..N) terminam com cada dígito
-    # Ex Mega (60): final 1 aparece 6x (1,11,21,31,41,51) -> Prob 6/60 = 10%
     universo = list(range(1, config.n_numbers + 1))
     finais_universo = [n % 10 for n in universo]
     contagem_teorica = pd.Series(finais_universo).value_counts().sort_index()
 
     for digito in range(10):
-        # Probabilidade teórica exata para este jogo
         prob_teorica = contagem_teorica.get(digito, 0) / config.n_numbers
-
-        # Lambda ajustado
         lambda_esperado = total_bolas_sorteadas * prob_teorica
-
         observado = (finais == digito).sum()
 
-        # Evita erro se lambda for 0
         if lambda_esperado == 0:
             continue
 
-        # Teste bilateral (Poisson)
         p_inferior = poisson.cdf(observado, lambda_esperado)
         p_superior = 1 - poisson.cdf(observado - 1, lambda_esperado)
         p_value = min(p_inferior, p_superior) * 2
@@ -79,98 +71,6 @@ def get_historico_jogos(df, config: GameConfig):
     return set(tuple(sorted(jogo)) for jogo in jogos)
 
 
-@st.cache_data
-def calcular_guia_equilibrio(df, conjuntos: dict, config: GameConfig) -> dict:
-    """
-    Calcula, para cada grupo (ex. moldura/miolo/cruz/xis/cantos),
-    a presença média por sorteio e o risco de "jogo cheio"
-    (todos os k números dentro do grupo).
-    Retorna dict: {nome_grupo: {"media_ideal": float, "risco_cheio": float}}
-    """
-    if df.empty:
-        return {}
-
-    historico_sets = [set(row) for row in df[config.draw_cols].values]
-    total_concursos = len(historico_sets)
-
-    out = {}
-    for nome, numeros_grupo in conjuntos.items():
-        set_grupo = set(numeros_grupo)
-
-        # média de interseção (quantos números do grupo aparecem por sorteio)
-        soma_acertos = sum(len(sorteio & set_grupo) for sorteio in historico_sets)
-        media_ideal = soma_acertos / total_concursos
-
-        # risco do evento extremo: sorteio inteiro dentro do grupo
-        ocorrencias_full = sum(
-            1 for sorteio in historico_sets if sorteio.issubset(set_grupo)
-        )
-        risco_cheio = (ocorrencias_full / total_concursos) * 100
-
-        out[nome] = {"media_ideal": media_ideal, "risco_cheio": risco_cheio}
-
-    return out
-
-
-def avaliar_jogo_por_grupos(
-    numeros: list, guia: dict, conjuntos: dict, config: GameConfig
-) -> dict:
-    """
-    Avalia um jogo contra o guia (média ideal).
-    Pesos adaptativos baseados no jogo.
-    """
-    jogo = set(numeros)
-
-    # CORREÇÃO: Usar o tamanho do jogo atual, não o k do sorteio.
-    # Isso resolve o problema da Lotomania (aposta 50 vs sorteio 20)
-    qtd_jogada = len(numeros)
-
-    detalhes = {}
-    penalidade = 0.0
-
-    # Pesos adaptativos vêm da config
-    pesos = config.geo_weights
-
-    for nome, numeros_grupo in conjuntos.items():
-        if nome not in guia:
-            continue
-
-        presentes = len(jogo & set(numeros_grupo))
-
-        # Na Lotomania, não podemos comparar 'presentes' (base 50) com 'ideal' (base 20).
-        # Precisamos projetar o ideal para a escala da aposta.
-        # Ex: Se no sorteio (20) a média da moldura é 4.
-        # Na aposta (50), a média esperada é 4 * (50/20) = 10.
-        ideal_raw = guia[nome]["media_ideal"]
-
-        if config.k != qtd_jogada and config.k > 0:
-            fator_projecao = qtd_jogada / config.k
-            ideal = ideal_raw * fator_projecao
-        else:
-            ideal = ideal_raw
-
-        risco_cheio = guia[nome]["risco_cheio"]
-
-        detalhes[nome] = {
-            "presentes": presentes,
-            "ideal": round(float(ideal), 2),
-            "risco_cheio": round(float(risco_cheio), 4),
-        }
-
-        # penaliza desvio do ideal
-        w = pesos.get(nome, 0.5)
-        penalidade += w * abs(presentes - ideal)
-
-        # penaliza extremos: muito concentrado em um grupo
-        if qtd_jogada > 0 and presentes >= int(qtd_jogada * 0.8):
-            penalidade += 2.0 * w
-
-    # Score geométrico
-    score_geom = max(0, min(100, int(100 - penalidade * 12)))
-
-    return {"score_geom": score_geom, "detalhes": detalhes}
-
-
 def verificar_historico(numeros, df, config: GameConfig, alvos=None):
     meus = set(numeros)
     if alvos is None:
@@ -187,14 +87,7 @@ def verificar_historico(numeros, df, config: GameConfig, alvos=None):
 
 @st.cache_data
 def get_reis_da_sequencia(df, config: GameConfig):
-    """
-    Identifica números que mais formam pares consecutivos (genérico por jogo).
-        Args:
-           df (pd.DataFrame): DataFrame com os resultados dos sorteios.
-           config (GameConfig): Configuração do jogo.
-        Returns:
-           List[int]: Lista dos números que mais frequentemente aparecem em pares consecutivos.
-    """
+    """Identifica números que mais formam pares consecutivos."""
     if df.empty:
         return []
 

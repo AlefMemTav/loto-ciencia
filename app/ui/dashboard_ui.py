@@ -11,6 +11,10 @@ from app.src.statistics import (
     get_tabela_inteligencia,
 )
 from app.ui.game_constants import get_constants_for_game
+from app.src.advanced_statistics import (
+    calcular_distribuicoes_geometricas,
+    calcular_taxa_regressao,
+)
 
 
 def render_dashboard(df, freq, poisson_finais, config: GameConfig):
@@ -142,6 +146,9 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
         else:
             st.info("Dados insuficientes para calcular o CV.")
 
+    # NOVO: Validação de Regressão à Média
+    _render_regression_analysis(df, config)
+
     # 7. Tabela Científica (Escondida para curiosos)
     _render_z_score_gaps_section(df, config)
 
@@ -158,8 +165,6 @@ def _render_kpis(freq, df, config: GameConfig):
 
     k1, k2, k3, k4 = st.columns(4)
 
-    # Usamos st.container para dar um leve isolamento visual se necessário,
-    # mas mantemos o HTML customizado que já funciona bem visualmente.
     with k1:
         st.markdown(
             f"""
@@ -317,7 +322,6 @@ def _render_heatmap_section(freq, conjuntos, config: GameConfig):
 
     with col_filtros:
         st.markdown("**🔎 Escolha um Padrão:**")
-        # Nomes mais amigáveis no selectbox são definidos nas chaves do dict 'conjuntos'
         filtro = st.radio(
             "Visualizar:", list(conjuntos.keys()), label_visibility="collapsed"
         )
@@ -339,8 +343,6 @@ def _render_heatmap_section(freq, conjuntos, config: GameConfig):
 def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
     layout = config.layout
 
-    # --- FIGSIZE responsivo por layout (mantém aparência entre jogos) ---
-    # base_w controla tamanho geral; altura acompanha aspect ratio
     base_w = 8.0
     aspect = layout.rows / layout.cols if layout.cols else 1.0
     fig_h = max(3.2, base_w * aspect)
@@ -350,7 +352,6 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
     ax.set_ylim(-0.5, layout.rows - 0.5)
     ax.axis("off")
 
-    # Garante círculos “perfeitos” e evita distorção por grid retangular
     ax.set_aspect("equal", adjustable="box")
 
     plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
@@ -359,7 +360,6 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
     minval = freq.min() if not freq.empty else 0
     nums_filtro_set = set(nums_filtro)
 
-    # raio adaptativo (Lotofácil 5x5 precisa menor)
     r = 0.42
     if min(layout.rows, layout.cols) <= 5:
         r = 0.36
@@ -370,10 +370,10 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
         row, col = config.layout.pos(n)
         val = freq.get(n, 0)
 
-        # y invertido para manter “topo = linhas iniciais”
         y = config.layout.rows - 1 - row
         theme = get_constants_for_game(config)
         heat_color = theme["heat_color"]
+
         if n in nums_filtro_set:
             intensity = (
                 0.1 + 0.9 * (val - minval) / (maxval - minval)
@@ -421,65 +421,177 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
 
 
 def _render_probability_report(df, conjuntos, config: GameConfig):
-    st.subheader("📏 Guia de Equilíbrio (Quantos escolher?)")
+    """
+    Usa análise estatística avançada com distribuições empíricas.
+    Mostra média, desvio-padrão e percentis baseados em dados reais.
+    """
+    st.subheader("📊 Guia de Equilíbrio (Análise Estatística)")
     st.write(
-        "Muitos jogadores perdem porque desequilibram a escolha dos números. A tabela abaixo mostra a **'Média Esperada'**, ou seja, quantos números de cada grupo você deve colocar no seu jogo."
+        "Baseado em **análise estatística real** dos sorteios históricos. "
+        "A tabela mostra quantos números de cada grupo aparecem tipicamente nos sorteios."
     )
 
     if df.empty:
         st.warning("Sem dados para calcular.")
         return
 
-    # O cálculo permanece o mesmo, apenas a apresentação muda
+    # Filtra apenas os grupos geométricos relevantes para a análise
+    grupos_geometricos = {
+        "Moldura (Borda)": conjuntos["Moldura (Borda)"],
+        "Miolo (Centro)": conjuntos["Miolo (Centro)"],
+        "Cruz": conjuntos["Cruz"],
+        "Xis (Diagonais)": conjuntos["Xis (Diagonais)"],
+        "Cantos": conjuntos["Cantos"],
+        "Quadrante 1 (Sup. Esq)": conjuntos["Quadrante 1 (Sup. Esq)"],
+        "Quadrante 2 (Sup. Dir)": conjuntos["Quadrante 2 (Sup. Dir)"],
+        "Quadrante 3 (Inf. Esq)": conjuntos["Quadrante 3 (Inf. Esq)"],
+        "Quadrante 4 (Inf. Dir)": conjuntos["Quadrante 4 (Inf. Dir)"],
+    }
+
+    # Calcula distribuições empíricas usando nova função estatística
+    distribuicoes = calcular_distribuicoes_geometricas(df, grupos_geometricos, config)
+
+    if not distribuicoes:
+        st.info("Dados insuficientes para análise estatística.")
+        return
+
+    # Prepara dados para a tabela
     dados_relatorio = []
-    historico_sets = [set(row) for row in df.values]
-    total_concursos = len(historico_sets)
 
-    # Barra de progresso escondida ou rápida para não travar UI
-    # Para UX melhor, removemos a barra de progresso visual aqui pois é muito rápida e pisca na tela
-    for nome_filtro, lista_numeros in conjuntos.items():
-        set_filtro = set(lista_numeros)
-        soma_acertos = sum(
-            len(sorteio.intersection(set_filtro)) for sorteio in historico_sets
-        )
-        media_presenca = soma_acertos / total_concursos
-
-        # Simplificando para o usuário: Probabilidade de sair 6 números (Jogo Cheio)
-        ocorrencias_full = sum(
-            1 for sorteio in historico_sets if sorteio.issubset(set_filtro)
-        )
-        prob_full = (ocorrencias_full / total_concursos) * 100
+    for nome, dist in distribuicoes.items():
+        # Ajuste para jogos grandes (Lotomania: aposta 50 vs sorteio 20)
+        if config.k != config.bet_size and config.k > 0:
+            fator = config.bet_size / config.k
+            mean_ajustada = dist.mean * fator
+            std_ajustada = dist.std * fator
+            p5_ajustado = dist.percentiles[5] * fator
+            p95_ajustado = dist.percentiles[95] * fator
+        else:
+            mean_ajustada = dist.mean
+            std_ajustada = dist.std
+            p5_ajustado = dist.percentiles[5]
+            p95_ajustado = dist.percentiles[95]
 
         dados_relatorio.append(
             {
-                "Grupo": nome_filtro,
-                "Média Ideal": f"{media_presenca:.1f}",  # O dado mais importante
-                "Chance de Jogo Completo": f"{prob_full:.4f}%",  # Dado secundário
-                "_raw_media": media_presenca,  # Para ordenação
+                "Grupo": nome,
+                "Média (μ)": f"{mean_ajustada:.2f}",
+                "Desvio (σ)": f"{std_ajustada:.2f}",
+                "Intervalo Normal": f"{p5_ajustado:.1f} - {p95_ajustado:.1f}",
+                "_raw_media": mean_ajustada,
             }
         )
 
     df_rel = pd.DataFrame(dados_relatorio)
-    # Ordena pelos que têm maior presença média (mais relevantes)
     df_rel = df_rel.sort_values(by="_raw_media", ascending=False)
 
-    with st.expander("Ver Tabela Guia", expanded=True):
+    with st.expander("Ver Tabela Estatística Completa", expanded=True):
+        st.caption(
+            f"💡 **Como usar:** Procure manter seus jogos dentro do 'Intervalo Normal' (90% dos sorteios históricos). "
+            f"Por exemplo, se a Moldura tem média de 2.5, escolha 2-3 números da borda."
+        )
+
         st.dataframe(
-            df_rel[["Grupo", "Média Ideal", "Chance de Jogo Completo"]],
+            df_rel[["Grupo", "Média (μ)", "Desvio (σ)", "Intervalo Normal"]],
             column_config={
                 "Grupo": st.column_config.TextColumn("Grupo de Números"),
-                "Média Ideal": st.column_config.TextColumn(
-                    "Média no Sorteio",
-                    help=f"Em média, quantos números deste grupo aparecem nos {config.k} sorteados? Use isso como referência proporcional.",
+                "Média (μ)": st.column_config.TextColumn(
+                    "Média Histórica",
+                    help=f"Quantos números deste grupo aparecem, em média, nos sorteios de {config.k} números.",
                 ),
-                "Chance de Jogo Completo": st.column_config.TextColumn(
-                    "Risco de Sorteio Cheio",
-                    help=f"Qual a chance dos {config.k} números sorteados serem TODOS deste grupo? Quanto menor, mais arriscado focar sua aposta só nisso.",
+                "Desvio (σ)": st.column_config.TextColumn(
+                    "Desvio-Padrão",
+                    help="Medida de variabilidade. Menor = mais consistente.",
+                ),
+                "Intervalo Normal": st.column_config.TextColumn(
+                    "Faixa Esperada (90%)",
+                    help="90% dos sorteios históricos ficaram dentro desta faixa. Sair muito deste intervalo é estatisticamente raro.",
                 ),
             },
             hide_index=True,
             width="stretch",
         )
+
+        st.info(
+            "📈 **Nota Estatística:** Esta análise usa distribuições empíricas reais "
+            "ao invés de heurísticas fixas. Os valores mostram o comportamento histórico "
+            f"dos últimos {len(df)} sorteios da {config.name}."
+        )
+
+
+def _render_regression_analysis(df, config: GameConfig):
+    """
+    Exibe análise de regressão à média validando a estratégia "agressiva".
+    """
+    regressao = calcular_taxa_regressao(df, config, janela=100)
+
+    if not regressao:
+        return
+
+    with st.expander("📈 Validação: Regressão à Média Funciona?", expanded=False):
+        st.markdown(
+            "**Pergunta:** Números atrasados realmente tendem a sair? "
+            "Analisamos os últimos 100 sorteios para validar esta hipótese estatística."
+        )
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            cor = (
+                "green"
+                if regressao["correlacao"] > 0.2
+                else "orange" if regressao["correlacao"] > 0.1 else "red"
+            )
+            st.markdown(
+                f"""
+                <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid {cor};">
+                    <strong>Correlação (ρ)</strong><br>
+                    <span style="font-size: 1.5em; color: {cor};">{regressao['correlacao']}</span><br>
+                    <small>Entre atraso e saída futura</small>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col2:
+            st.markdown(
+                f"""
+                <div style="background-color: #eff6ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                    <strong>Taxa de Retorno</strong><br>
+                    <span style="font-size: 1.5em; color: #1e40af;">{regressao['taxa_retorno']:.1%}</span><br>
+                    <small>Atrasados que voltaram</small>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with col3:
+            st.markdown(
+                f"""
+                <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                    <strong>Interpretação</strong><br>
+                    <span style="font-size: 1.1em; color: #92400e;">{regressao['interpretacao']}</span><br>
+                    <small>p-value: {regressao['p_value']:.4f}</small>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        if regressao["correlacao"] > 0.2:
+            st.success(
+                "✅ **Evidência forte de regressão à média!** "
+                "Isso valida estratégias que priorizam números atrasados (modo 'Agressivo' no gerador)."
+            )
+        elif regressao["correlacao"] > 0.1:
+            st.info(
+                "ℹ️ **Evidência moderada de regressão.** "
+                "Há alguma tendência, mas não é muito forte."
+            )
+        else:
+            st.warning(
+                "⚠️ **Sem evidência clara.** "
+                "Neste período específico, números atrasados não mostraram tendência forte de retorno."
+            )
 
 
 def _render_z_score_gaps_section(df, config: GameConfig):

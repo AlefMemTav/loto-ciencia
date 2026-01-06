@@ -1,23 +1,24 @@
 import math
 import numpy as np
 from app.ui.game_constants import get_constants_for_game
-from app.src.statistics import calcular_guia_equilibrio, avaliar_jogo_por_grupos
 from collections import Counter
 from app.src.games import GameConfig
+
+from app.src.advanced_statistics import (
+    calcular_distribuicoes_geometricas,
+    avaliar_jogo_geometria_estatistica,
+    penalizar_por_similaridade,
+    calcular_distribuicao_quadrantes,
+    avaliar_quadrantes_estatistico,
+    calcular_taxa_regressao,
+)
 
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
 
 
 def _verificar_linhas(numeros, config: GameConfig):
-    """
-    Análise de linhas genérica baseada no layout.
-      Args:
-        numeros (list): Números selecionados no jogo.
-        config (GameConfig): Configuração do jogo.
-      Returns:
-        list: Contagem de números por linha.
-    """
+    """Análise de linhas genérica baseada no layout."""
     layout = config.layout
     contagem = [0] * layout.rows
 
@@ -30,14 +31,7 @@ def _verificar_linhas(numeros, config: GameConfig):
 
 
 def _verificar_quadrantes(numeros, config: GameConfig):
-    """
-    Quadrantes geométricos derivados do layout.
-      Args:
-        numeros (list): Números selecionados no jogo.
-        config (GameConfig): Configuração do jogo.
-      Returns:
-        list: Contagem de números por quadrante.
-    """
+    """Quadrantes geométricos derivados do layout."""
     layout = config.layout
     quads = [0, 0, 0, 0]
 
@@ -51,14 +45,7 @@ def _verificar_quadrantes(numeros, config: GameConfig):
 
 
 def _verificar_metades(numeros, config: GameConfig):
-    """
-    Metades baseadas no n_numbers.
-      Args:
-        numeros (list): Números selecionados no jogo.
-        config (GameConfig): Configuração do jogo.
-      Returns:
-        dict: Contagem de números nas metades superior e inferior.
-    """
+    """Metades baseadas no n_numbers."""
     meio = config.n_numbers // 2
     superior = len([n for n in numeros if n <= meio])
     inferior = len([n for n in numeros if n > meio])
@@ -73,10 +60,6 @@ def _calcular_entropia_shannon(numeros):
     """
     Entropia de Shannon (gaps entre números).
     Detecta padrões visuais repetitivos.
-      Args:
-        numeros (list): Números selecionados no jogo.
-      Returns:
-        float: Valor da entropia de Shannon.
     """
     if len(numeros) < 2:
         return 0.0
@@ -99,11 +82,6 @@ def _calcular_coeficiente_gini(numeros, config: GameConfig):
     Coeficiente de Gini normalizado pelo n_numbers.
     Gini = 0 → Perfeitamente distribuído
     Gini → 1 → Muito concentrado
-      Args:
-        numeros (list): Números selecionados no jogo.
-        config (GameConfig): Configuração do jogo.
-      Returns:
-        float: Valor do coeficiente de Gini.
     """
     norm = [(n - 1) / (config.n_numbers - 1) for n in numeros]
     norm_sorted = sorted(norm)
@@ -123,21 +101,11 @@ def _calcular_coeficiente_gini(numeros, config: GameConfig):
 
 
 def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
-    """
-    Validação técnica genérica baseada em intervalos de confiança reais.
-      Args:
-        report (dict): Relatório de análise.
-        numeros (list): Números selecionados no jogo.
-        config (GameConfig): Configuração do jogo.
-        ic_info (dict, optional): Informações de intervalo de confiança.
-      Returns:
-        None
-    """
+    """Validação técnica genérica baseada em intervalos de confiança reais."""
     # Regra 1: Soma com IC
     soma = sum(numeros)
 
     # Só usa histórico se o tamanho do jogo for igual ao do sorteio
-    # (Evita usar IC da Lotomania(20) para validar aposta(50))
     usar_historico = ic_info and (len(numeros) == config.k)
 
     if usar_historico:
@@ -156,9 +124,8 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
             )
     else:
         qtd_numeros = len(numeros)
-        # Fallback teórico: média = qtd * (N+1)/2
         media_teorica = qtd_numeros * (config.n_numbers + 1) / 2
-        desvio_teorico = media_teorica * 0.20  # Tolerância de 20%
+        desvio_teorico = media_teorica * 0.20
 
         if abs(soma - media_teorica) <= desvio_teorico:
             report["msgs"].append(
@@ -189,14 +156,9 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
         report["msgs"].append(f"✅ Distribuição Par/Ímpar equilibrada ({pares} pares).")
 
     # Regra 3: Linhas
-    # Verifica linhas vazias. Se o jogo for muito denso (Lotomania), difícil ter linhas vazias.
     if config.layout.rows > 0:
         linhas = _verificar_linhas(numeros, config)
         linhas_vazias = linhas.count(0)
-
-        # Aceita mais linhas vazias em jogos pequenos (Mega) e menos em jogos grandes (Lotomania)
-        # Lógica adaptativa: Max vazio = (Rows - Qtd/Cols) aprox?
-        # Simplificação: Mega(6nums, 6rows) -> aceita 4 vazias. Mania(50nums, 10rows) -> aceita 1 vazia.
 
         limit_vazias = max(1, config.layout.rows - int(qtd_numeros / 2))
 
@@ -243,24 +205,15 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
 
 
 def _analise_entropia(report, numeros, config: GameConfig):
-    """
-    Detecta padrões visuais repetitivos.
-        Args:
-            report (dict): Relatório de análise.
-            numeros (list): Números selecionados no jogo.
-            config (GameConfig): Configuração do jogo.
-        Returns:
-            None
-    """
+    """Detecta padrões visuais repetitivos."""
     if len(numeros) < 3:
         return
 
     entropia = _calcular_entropia_shannon(numeros)
 
-    # Limiares ajustados
     k = len(numeros)
     limiar_baixo = 0.5 if k <= 6 else 1.0
-    limiar_alto = 2.0 if k <= 6 else 3.5  # Aumentei para suportar Lotomania/Lotofácil
+    limiar_alto = 2.0 if k <= 6 else 3.5
 
     if entropia < limiar_baixo:
         report["score"] -= 25
@@ -278,33 +231,23 @@ def _analise_entropia(report, numeros, config: GameConfig):
 
 
 def _analise_popularidade(report, numeros, config: GameConfig):
-    """
-    Detecta padrões populares que aumentam risco de divisão.
-        Args:
-            report (dict): Relatório de análise.
-            numeros (list): Números selecionados no jogo.
-            config (GameConfig): Configuração do jogo.
-        Returns:
-            None
-    """
+    """Detecta padrões populares que aumentam risco de divisão."""
     seqs = sum(1 for i in range(len(numeros) - 1) if numeros[i + 1] == numeros[i] + 1)
     datas = len([n for n in numeros if n <= 31])
     lost_nums = {4, 8, 15, 16, 23, 42}
     qtd_lost = len(set(numeros).intersection(lost_nums))
 
     pontos_risco = 0
-    qtd = len(numeros)  # Tamanho da aposta (6, 15, 50, etc)
+    qtd = len(numeros)
 
-    # Sequências:
+    # Sequências
     limite_seq = max(1, int(qtd * 0.6))
     if seqs > limite_seq:
         pontos_risco += 2
         report["msgs"].append(f"⚠️ Muitas sequências ({seqs}).")
 
-    # Datas (1-31):
+    # Datas (1-31)
     limite_datas = int(qtd * 0.70)
-
-    # Trava de segurança: Se o jogo for pequeno (Mega), garante tolerância mínima de 3
     if qtd <= 6:
         limite_datas = max(limite_datas, 4)
 
@@ -336,19 +279,9 @@ def _analise_popularidade(report, numeros, config: GameConfig):
 
 
 def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
-    """
-    Análise de distribuição espacial.
-        Args:
-            report (dict): Relatório de análise.
-            numeros (list): Números selecionados no jogo.
-            config (GameConfig): Configuração do jogo.
-        Returns:
-            None
-    """
+    """Análise de distribuição espacial."""
     gini = _calcular_coeficiente_gini(numeros, config)
 
-    # Gini para Lotomania (50 pontos em 100) tende a ser baixo (bem distribuído).
-    # Ajuste leve nos limites.
     if gini < 0.15:
         report["score"] += 5
         report["msgs"].append(f"✅ Distribuição espacial ótima (Gini: {gini:.3f}).")
@@ -361,9 +294,12 @@ def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
 
 def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
     """
-    Penaliza concentração em padrões geométricos.
-    Agora usa limiares DINÂMICOS baseados na densidade do jogo.
+    Análise geométrica baseada em estatística, não heurística.
     """
+    if df_historico is None or df_historico.empty:
+        report["msgs"].append("ℹ️ Análise geométrica indisponível (sem histórico)")
+        return
+
     constants = get_constants_for_game(config)
     grupos = {
         "moldura": constants["moldura"],
@@ -372,75 +308,100 @@ def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
         "xis": constants["xis"],
         "cantos": constants["cantos"],
     }
-    qtd = len(numeros)
 
-    if df_historico is None or df_historico.empty:
-        # fallback simples
-        jogo = set(numeros)
-        for nome, nums_grupo in grupos.items():
-            presentes = len(jogo & set(nums_grupo))
-            report["metricas"][f"geom_{nome}"] = presentes
-            if qtd > 0 and presentes >= int(qtd * 0.8):
-                report["score"] -= 10
-                report["msgs"].append(
-                    f"⚠️ Concentração geométrica alta em {nome} ({presentes}/{qtd})."
-                )
-                report["risco_divisao"] = "Médio"
-        return
+    # 1. Calcula distribuições empíricas
+    distribuicoes = calcular_distribuicoes_geometricas(df_historico, grupos, config)
 
-    guia = calcular_guia_equilibrio(df_historico, grupos, config)
-    res = avaliar_jogo_por_grupos(numeros, guia, grupos, config)
+    # 2. Avalia o jogo usando estatística
+    resultado = avaliar_jogo_geometria_estatistica(
+        numeros, grupos, distribuicoes, config
+    )
 
-    score_geom = res["score_geom"]
+    score_geom = resultado["score_geom"]
     report["metricas"]["score_geom"] = score_geom
-    report["metricas"]["geom_detalhes"] = res["detalhes"]
+    report["metricas"]["geom_detalhes"] = resultado["detalhes"]
 
-    baseline = config.min_geom_score
-    target_excelente = min(95, baseline + 20)
-    target_critico = max(10, baseline - 15)
+    # 3. Penalidades baseadas em significância estatística
+    detalhes = resultado["detalhes"]
 
-    if score_geom >= target_excelente:
-        report["score"] += 5
-        report["msgs"].append(f"✅ Geometria equilibrada.")
-    elif score_geom >= baseline:
-        # Zona aceitável: não ganha bônus, mas não perde ponto
-        report["msgs"].append(f"✅ Geometria aceitável.")
-    elif score_geom >= target_critico:
-        report["score"] -= 2
-        report["msgs"].append(f"⚠️ Geometria um pouco concentrada.")
-    else:
-        report["score"] -= 3
-        report["msgs"].append(f"❌ Geometria muito concentrada.")
-        # Só marca alto risco se for realmente muito baixo
+    extremos = sum(1 for d in detalhes.values() if d["categoria"] == "Extremo")
+    muito_raros = sum(1 for d in detalhes.values() if d["categoria"] == "Muito Raro")
+    raros = sum(1 for d in detalhes.values() if d["categoria"] == "Raro")
+
+    if extremos >= 2:
+        report["score"] -= 15
+        report["msgs"].append("⚠️ Múltiplos padrões geométricos extremos (p < 0.001)")
         report["risco_divisao"] = "ALTO"
+    elif extremos >= 1:
+        report["score"] -= 10
+        report["msgs"].append("⚠️ Padrão geométrico extremo detectado")
+    elif muito_raros >= 2:
+        report["score"] -= 8
+        report["msgs"].append("⚠️ Geometria incomum (múltiplos padrões raros)")
+    elif raros >= 3:
+        report["score"] -= 5
+        report["msgs"].append("ℹ️ Alguns padrões geométricos atípicos")
+    else:
+        report["msgs"].append("✅ Geometria dentro do esperado historicamente")
+
+    # Detalha os padrões mais problemáticos (apenas extremos/muito raros)
+    for nome, det in detalhes.items():
+        if det["categoria"] in ["Extremo", "Muito Raro"]:
+            report["msgs"].append(
+                f"  • {nome.title()}: {det['presentes']} números "
+                f"(μ={det['media_historica']}, z={det['z_score']})"
+            )
 
 
 def _analise_primos(report, numeros, config: GameConfig):
-    """
-    Análise de números primos (só relevante para jogos de 1-60).
-        Args:
-            report (dict): Relatório de análise.
-            numeros (list): Números selecionados no jogo.
-            config (GameConfig): Configuração do jogo.
-        Returns:
-            None
-    """
+    """Análise de números primos (só relevante para jogos até 60)."""
     if config.n_numbers > 60:
-        return  # Não aplicável para Quina/Lotomania (muitos números)
+        return
 
     primos = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59}
     qtd_primos = len([n for n in numeros if n in primos])
 
     qtd = len(numeros)
-    # Proporção esperada: ~30% dos números até 60 são primos
     esperado = int(qtd * 0.3)
 
-    # Tolerância de +/- 2
     if abs(qtd_primos - esperado) <= 2:
         report["msgs"].append(f"✅ {qtd_primos} números primos (distribuição natural).")
     else:
         report["score"] -= 5
         report["msgs"].append(f"⚠️ {qtd_primos} números primos (atípico).")
+
+
+def _analises_avancadas(report, numeros, config: GameConfig, df_historico):
+    """
+    Módulo completo de análises avançadas baseadas em dados.
+    - Distância de Hamming
+    - Quadrantes estatísticos
+    - Regressão à média (informativo)
+    """
+    if df_historico is None or df_historico.empty:
+        return
+
+    # 1. Distância de Hamming
+    penalizar_por_similaridade(report, numeros, df_historico, config)
+
+    # 2. Quadrantes estatísticos
+    stats_quad = calcular_distribuicao_quadrantes(df_historico, config)
+    resultado_quad = avaliar_quadrantes_estatistico(numeros, config, stats_quad)
+    report["metricas"]["quadrantes"] = resultado_quad
+
+    if resultado_quad["score_quadrantes"] < 60:
+        report["score"] -= 5
+        report["msgs"].append("⚠️ Distribuição de quadrantes atípica")
+
+    # 3. Validação de Regressão (informativo apenas)
+    regressao = calcular_taxa_regressao(df_historico, config)
+    if regressao:
+        report["metricas"]["regressao"] = regressao
+
+        if regressao["correlacao"] > 0.2:
+            report["msgs"].append(
+                f"ℹ️ Evidência de regressão à média (ρ={regressao['correlacao']})"
+            )
 
 
 # ===== FUNÇÃO PRINCIPAL =====
@@ -451,13 +412,7 @@ def validar_jogo(
 ):
     """
     Validador genérico para qualquer jogo.
-        Args:
-            numeros (list): Números selecionados no jogo.
-            config (GameConfig): Configuração do jogo.
-            historico_jogos (set, optional): Conjunto de jogos já sorteados.
-            ic_info (dict, optional): Informações adicionais para análise.
-        Returns:
-            dict: Relatório de análise do jogo.
+    Usa análises estatísticas avançadas.
     """
     report = {
         "score": 100,
@@ -471,9 +426,6 @@ def validar_jogo(
 
     # 1. Verificação de histórico
     if historico_jogos:
-        # IMPORTANTE: Só verificamos duplicata exata se o tamanho da aposta
-        # for igual ao tamanho do sorteio (Mega, Quina, Lotofácil).
-        # Na Lotomania (aposta 50 vs sorteio 20), essa verificação não se aplica.
         if len(numeros) == config.k:
             jogo_tuple = tuple(sorted(numeros))
             if jogo_tuple in historico_jogos:
@@ -485,7 +437,11 @@ def validar_jogo(
     _analise_popularidade(report, numeros, config)
     _analise_distribuicao_espacial(report, numeros, config)
     _analise_geometrica(report, numeros, config, df_historico=df_historico)
+
     _analise_primos(report, numeros, config)
+
+    # Análises avançadas (Hamming, Quadrantes, Regressão)
+    _analises_avancadas(report, numeros, config, df_historico)
 
     # 3. Calcula score técnico
     score_tecnico = max(0, min(100, report["score"]))

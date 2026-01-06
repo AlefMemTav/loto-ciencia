@@ -9,7 +9,12 @@ from app.ui.game_constants import get_constants_for_game
 
 
 def render_bolao(df, config: GameConfig):
-    st.subheader("👥 Auditoria de Bolão")
+    constants = get_constants_for_game(config)
+    color = constants.get("heat_color", "#ef4444")
+    st.markdown(
+        f"<h3> 👥 Auditoria de Bolão da <span style='color: {color};'>{config.name}</span></h3>",
+        unsafe_allow_html=True,
+    )
     st.write(
         f"Cole todos os jogos do seu bolão da {config.name} aqui. Vamos analisar a qualidade do grupo e se há erros (jogos repetidos ou mal distribuídos)."
     )

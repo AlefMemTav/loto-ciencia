@@ -4,10 +4,16 @@ from app.src.games import GameConfig
 from app.src.generator import gerar_jogo_perfeito, gerar_multiplos_jogos
 from app.src.validator import validar_jogo
 from app.src.statistics import analise_intervalo_confianca, get_historico_jogos
+from app.ui.game_constants import get_constants_for_game
 
 
 def render_generator(df, freq, poisson_finais, config: GameConfig):
-    st.markdown("### 🤖 Gerador Híbrido")
+    constants = get_constants_for_game(config)
+    color = constants.get("heat_color", "#ef4444")
+    st.markdown(
+        f"<h3> 🤖 Gerador Híbrido da <span style='color: {color};'>{config.name}</span></h3>",
+        unsafe_allow_html=True,
+    )
     st.write(f"Algoritmo estatístico para gerar jogos otimizados da {config.name}.")
 
     # Opções de configuração
