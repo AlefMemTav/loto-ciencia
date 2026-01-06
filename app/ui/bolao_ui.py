@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from app.src.logger import logger
 from app.src.games import GameConfig
 from app.src.statistics import analise_intervalo_confianca, get_historico_jogos
 from app.src.validator import validar_jogo
@@ -72,6 +73,8 @@ def _processar_input_jogos(texto, config: GameConfig):
     todos_nums = []
 
     linhas = texto.strip().split("\n")
+    logger.info(f"Processando input de bolão: {len(linhas)} linhas para {config.name}")
+
     for linha in linhas:
         if not linha.strip():
             continue
@@ -89,13 +92,22 @@ def _processar_input_jogos(texto, config: GameConfig):
         except:
             invalidos.append(linha)
 
+    if invalidos:
+        logger.warning(
+            f"Auditoria de Bolão: {len(invalidos)} linhas inválidas rejeitadas."
+        )
+        logger.debug(f"Amostra inválida: {invalidos[0]}")
+
+    if validos:
+        logger.info(f"Auditoria de Bolão: {len(validos)} jogos válidos processados.")
+
     return validos, invalidos, todos_nums
 
 
 def _calcular_estatisticas_grupo(jogos, todos_numeros, config: GameConfig):
     """Calcula métricas financeiras e de cobertura."""
     qtd = len(jogos)
-    custo = qtd * 6.00
+    custo = qtd * config.game_price
 
     # Verifica duplicatas comparando tamanho da lista vs set de tuplas
     jogos_tuple = [tuple(j) for j in jogos]

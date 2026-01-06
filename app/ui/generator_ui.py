@@ -1,4 +1,5 @@
 import streamlit as st
+import time
 from app.src.games import GameConfig
 from app.src.generator import gerar_jogo_perfeito, gerar_multiplos_jogos
 from app.src.validator import validar_jogo
@@ -38,9 +39,10 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
             [item["digito"] for item in poisson_finais] if poisson_finais else None
         )
 
-        # Barra de progresso
+        # Barra de progresso e timer
         bar_text = st.empty()
         bar = st.progress(0)
+        start_time = time.time()
 
         jogos = []
 
@@ -65,12 +67,21 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
 
         bar.empty()
         bar_text.empty()
+        tempo_total = time.time() - start_time
 
-        st.success(f"✅ {len(jogos)} jogos de alta performance encontrados!")
+        st.success(f"✅ {len(jogos)} jogos encontrados em {tempo_total:.2f}s!")
+
+        # --- Feedback Contextual sobre a Dificuldade ---
+        # Se for Lotofácil (k >= 15), explica que scores menores são normais
+        # if config.k >= 15:
+        #    st.info(
+        #        "ℹ️ **Nota sobre Lotofácil:** Com 15 números, é estatisticamente muito #difícil "
+        #        "obter scores acima de 80 sem viciar o jogo. Um score entre **60 e 75** é #considerado matematicamente excelente."
+        #    )
 
         if estrategia != "balanceada":
             emoji_estrategia = {"conservadora": "⏰", "agressiva": "🔥", "pura": "🎲"}
-            st.info(
+            st.caption(
                 f"{emoji_estrategia.get(estrategia, '')} Estratégia: **{estrategia.title()}**"
             )
 
@@ -94,9 +105,12 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
                     )
 
                 with c_score:
-                    if val["score"] >= 80:
+                    # Usa os targets do config para colorir
+                    if (
+                        val["score"] >= config.target_score_excellent
+                    ):  # Ex: 85 (Mega) ou 75 (Loto)
                         st.caption(f"💎 Score: {val['score']}")
-                    elif val["score"] >= 70:
+                    elif val["score"] >= config.target_score_accept:
                         st.caption(f"✅ Score: {val['score']}")
                     else:
                         st.caption(f"⚠️ Score: {val['score']}")

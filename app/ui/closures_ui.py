@@ -2,6 +2,7 @@ import streamlit as st
 from app.src.generator import (
     gerar_fechamento,
 )
+from app.src.logger import logger
 from app.src.games import GameConfig
 
 
@@ -41,7 +42,9 @@ def render_closures(config: GameConfig):
             max_base = config.k + 6
 
             if min_base <= len(base) <= max_base:
-
+                logger.info(
+                    f"[{config.name}] Gerando fechamento para base de {len(base)} números: {base}"
+                )
                 resultado = gerar_fechamento(base, config)
 
                 if isinstance(resultado, dict) and "erro" in resultado:
@@ -49,7 +52,11 @@ def render_closures(config: GameConfig):
                     return
 
                 jogos = resultado
-                custo = len(jogos) * 5.00
+                custo = len(jogos) * config.game_price
+
+                logger.info(
+                    f"[{config.name}] Fechamento gerado com sucesso: {len(jogos)} jogos."
+                )
 
                 st.success(f"Operação realizada! Geramos **{len(jogos)} jogos**.")
 
@@ -80,4 +87,5 @@ def render_closures(config: GameConfig):
             else:
                 st.warning(f"⚠️ Escolha entre **{min_base} e {max_base} números**.")
         except Exception as e:
+            logger.error(f"Erro no fechamento: {e}")
             st.error(f"Erro: {e}")

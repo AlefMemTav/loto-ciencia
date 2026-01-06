@@ -2,6 +2,7 @@ import streamlit as st
 from app.src.games import GAMES
 from app.src.data_loader import carregar_dados_loteria_excel
 from app.src.statistics import get_numeros_quentes_frios, analise_poisson
+from app.src.logger import logger
 
 GLOBAL_KEY = "selected_game"  # fonte da verdade (persistente entre páginas)
 WIDGET_KEY = "selected_game_widget"  # estado do widget (para UI)
@@ -21,7 +22,10 @@ def init_game_state():
 
 def _sync_widget_to_global():
     # callback: roda quando o usuário muda o widget
-    st.session_state[GLOBAL_KEY] = st.session_state[WIDGET_KEY]
+    novo_jogo = st.session_state[WIDGET_KEY]
+    if novo_jogo != st.session_state.get(GLOBAL_KEY):
+        logger.info(f"Troca de contexto: Usuário mudou para {novo_jogo}")
+        st.session_state[GLOBAL_KEY] = novo_jogo
 
 
 @st.cache_data()

@@ -1,8 +1,11 @@
 import random
+import time
 import numpy as np
+from math import comb
 from itertools import combinations
 from app.src.validator import validar_jogo
 from app.src.games import GameConfig
+from app.src.logger import logger
 from app.src.statistics import (
     analise_intervalo_confianca,
     get_historico_jogos,
@@ -25,34 +28,37 @@ def gerar_jogo_perfeito(
     Returns:
         Lista com k números ordenados (6 para Mega, 5 para Quina, 15 para Lotofácil)
     """
+
+    start_time = time.time()
+
     # 1. Busca dados
     tabela = get_tabela_inteligencia(df, config)
     historico = get_historico_jogos(df, config)
     ic_info = analise_intervalo_confianca(df, config)
 
     if tabela.empty:
+        logger.warning(f"Tentativa de gerar jogo para {config.name} com tabela vazia.")
         return sorted(random.sample(range(1, config.n_numbers + 1), config.k))
 
     numeros_disponiveis = tabela.index.tolist()  # [1, 2, ..., N]
 
-    # 2. Seleciona pesos conforme estratégia
+    # 2. Seleciona pesos
     if estrategia == "conservadora":
         pesos_raw = tabela["Z_Freq"] * 0.70 + tabela["Z_Gap"] * 0.30
     elif estrategia == "agressiva":
         pesos_raw = tabela["Z_Freq"] * 0.20 + tabela["Z_Gap"] * 0.80
     elif estrategia == "pura":
         pesos_raw = [1.0] * config.n_numbers
-    else:  # balanceada (padrão)
+    else:
         pesos_raw = tabela["Peso_Geracao"]
 
-    # Normaliza para positivo
     if estrategia != "pura":
         pesos = pesos_raw - pesos_raw.min() + 0.01
         pesos = pesos.tolist()
     else:
         pesos = pesos_raw
 
-    # 3. Loop de geração com early stopping inteligente
+    # 3. Loop de geração
     tentativas = 0
     melhor_jogo = None
     melhor_score = -1
@@ -60,7 +66,6 @@ def gerar_jogo_perfeito(
     while tentativas < 10000:
         tentativas += 1
 
-        # Gera candidato com amostragem ponderada
         pre_jogo = set()
         candidatos = random.choices(numeros_disponiveis, weights=pesos, k=config.k)
         pre_jogo.update(candidatos)
@@ -83,31 +88,37 @@ def gerar_jogo_perfeito(
         score_base = val["score"]
         score_geom = val.get("metricas", {}).get("score_geom", None)
 
-        # default: não mexe se não tiver geometria
         score_final = score_base
-
         if score_geom is not None:
             if estrategia == "pura":
-                # mantém "pura" como baseline, no máximo um leve desempate
                 score_final = score_base + (score_geom - 70) * 0.02
             else:
-                # aplica geometria em todas as outras: balanceada/conservadora/agressiva
                 score_final = score_base + (score_geom - 70) * 0.12
 
-        # Guarda o melhor
         if score_final > melhor_score:
             melhor_score = score_final
             melhor_jogo = jogo.copy()
 
-        # Early stopping: aceita score >= 85 (excelente)
-        if val["score"] >= 85 and (score_geom is None or score_geom >= 60):
+        # Early stopping inteligente
+        if val["score"] >= config.target_score_excellent and (
+            score_geom is None or score_geom >= config.min_geom_score
+        ):
+            # Log de sucesso (Performance)
+            duration = time.time() - start_time
+            logger.info(
+                f"[{config.name}] Jogo encontrado em {tentativas} tentativas ({duration:.3f}s). Score: {val['score']}"
+            )
             return jogo
 
-        # Fallback adaptativo: se já tentou 5000x, aceita >= 70
-        if tentativas == 5000 and melhor_score >= 70:
+        # Fallback adaptativo
+        if tentativas == 5000 and melhor_score >= config.target_score_accept:
+            logger.info(
+                f"[{config.name}] Fallback acionado em 5000 tentativas. Melhor Score: {melhor_score}"
+            )
             return melhor_jogo
-
-    # Retorna o melhor encontrado
+    logger.warning(
+        f"[{config.name}] Limite de 10k tentativas atingido. Retornando melhor esforço (Score {melhor_score})."
+    )
     return (
         melhor_jogo
         if melhor_jogo
@@ -137,6 +148,9 @@ def gerar_multiplos_jogos(
     Returns:
         Lista de jogos
     """
+    logger.info(
+        f"Iniciando geração em lote: {quantidade} jogos de {config.name} ({estrategia})"
+    )
     jogos_gerados = []
     jogos_set = set()
 
@@ -171,7 +185,7 @@ def gerar_multiplos_jogos(
 
         jogos_gerados.append(jogo)
         jogos_set.add(jogo_tuple)
-
+    logger.info(f"Lote finalizado. {len(jogos_gerados)} jogos gerados.")
     return jogos_gerados
 
 
@@ -279,8 +293,6 @@ def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):
             np.math.factorial(config.k) * np.math.factorial(n - config.k)
         )
     except:
-        from math import comb
-
         total_comb = comb(n, config.k)
 
     if total_comb > max_combinacoes:
@@ -288,7 +300,9 @@ def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):
             "erro": f"Fechamento de {n} números gera {total_comb:,} jogos. "
             f"Limite: {max_combinacoes:,}. Reduza a quantidade de números."
         }
-
+    logger.info(
+        f"Gerando fechamento para {config.name}: {n} números base -> {total_comb} jogos."
+    )
     comb_iter = combinations(numeros_base, config.k)
     return [sorted(list(c)) for c in comb_iter]
 

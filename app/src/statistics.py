@@ -120,7 +120,7 @@ def avaliar_jogo_por_grupos(
 ) -> dict:
     """
     Avalia um jogo contra o guia (média ideal).
-    Retorna detalhes e um score geométrico (0..100) separado do score técnico.
+    Pesos adaptativos baseados no jogo (Mega/Quina/Lotofácil).
     """
     jogo = set(numeros)
     k = config.k
@@ -128,14 +128,8 @@ def avaliar_jogo_por_grupos(
     detalhes = {}
     penalidade = 0.0
 
-    # pesos: dão mais importância aos padrões geométricos do que aos numéricos
-    pesos = {
-        "moldura": 1.2,
-        "miolo": 1.2,
-        "cruz": 1.0,
-        "xis": 1.0,
-        "cantos": 0.6,
-    }
+    # Pesos adaptativos
+    pesos = config.geo_weights
 
     for nome, numeros_grupo in conjuntos.items():
         if nome not in guia:
@@ -151,7 +145,7 @@ def avaliar_jogo_por_grupos(
             "risco_cheio": round(float(risco_cheio), 4),
         }
 
-        # penaliza desvio do ideal (em "quantidade de dezenas")
+        # penaliza desvio do ideal
         w = pesos.get(nome, 0.5)
         penalidade += w * abs(presentes - ideal)
 
@@ -159,8 +153,7 @@ def avaliar_jogo_por_grupos(
         if k > 0 and presentes >= int(k * 0.8):
             penalidade += 2.0 * w
 
-    # converte penalidade para score: quanto menor a penalidade, melhor
-    # escala simples que funciona bem para k=5/6/15
+    # Score geométrico
     score_geom = max(0, min(100, int(100 - penalidade * 12)))
 
     return {"score_geom": score_geom, "detalhes": detalhes}

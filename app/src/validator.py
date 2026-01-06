@@ -151,9 +151,9 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
                 f"❌ Soma ({soma}) fora do IC95% [{ic_95[0]}, {ic_95[1]}]"
             )
     else:
-        # Fallback teórico: média = k * (N+1)/2
+        # Fallback teórico: média = k * (N+1)/2, desvio = 15% da média
         media_teorica = config.k * (config.n_numbers + 1) / 2
-        desvio_teorico = media_teorica * 0.15  # 15% de tolerância
+        desvio_teorico = media_teorica * 0.15
 
         if abs(soma - media_teorica) <= desvio_teorico:
             report["msgs"].append(
@@ -185,9 +185,12 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
         report["msgs"].append(f"✅ Distribuição Par/Ímpar equilibrada ({pares} pares).")
 
     # Regra 3: Linhas (só para jogos de 6+ números)
+    # Na Lotofácil (k=15, rows=5), é muito difícil ter linha vazia, mas se tiver é erro grave
     if k >= 5:
         linhas = _verificar_linhas(numeros, config)
         linhas_vazias = linhas.count(0)
+
+        # Adaptativo: Mega(6) aceita 3 vazias? Não. Max aceitável depende do layout
         max_vazias_aceitavel = max(1, config.layout.rows - 3)
 
         if linhas_vazias > max_vazias_aceitavel:
@@ -204,7 +207,7 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
     sup = metades["superior"]
     inf = metades["inferior"]
 
-    # Proporção extrema (> 80% em uma metade)
+    # Proporção esperada: ~50%
     if sup == 0 or inf == 0:
         report["score"] -= 20
         report["msgs"].append(
@@ -217,30 +220,23 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
         )
 
     # Regra 5: Finais
-    if config.k <= 6:  # Aplica apenas para Mega (6) e Quina (5)
-        finais = [n % 10 for n in numeros]
-        contagem = Counter(finais)
-        max_repeticao = max(contagem.values()) if contagem else 0
+    finais = [n % 10 for n in numeros]
+    contagem = Counter(finais)
+    max_repeticao = max(contagem.values()) if contagem else 0
 
-        # DEFINIÇÃO DE LIMITES
-        # Para Quina e Mega, ter 2 repetidos é normal (aprovado).
-        # Ter 3 repetidos é incomum (Alerta).
-        # Ter 4 ou mais é estatisticamente improvável (Erro).
-
-        limite_alerta = 3
-        limite_erro = 4
-
-        if max_repeticao >= limite_erro:
-            report["score"] -= 15
-            report["msgs"].append(
-                f"❌ Vício de Final: {max_repeticao} números terminam igual."
-            )
-        elif max_repeticao == limite_alerta:
-            report["score"] -= 5
-            report["msgs"].append(f"⚠️ Concentração: 3 números com final igual.")
-        else:
-            if max_repeticao <= 2:
-                report["msgs"].append("✅ Finais bem distribuídos.")
+    if max_repeticao >= config.final_digit_error:
+        report["score"] -= 15
+        report["msgs"].append(
+            f"❌ Vício de Final: {max_repeticao} números terminam igual."
+        )
+    elif max_repeticao >= config.final_digit_alert:
+        report["score"] -= 5
+        report["msgs"].append(
+            f"⚠️ Concentração: {max_repeticao} números com final igual."
+        )
+    else:
+        if max_repeticao < config.final_digit_alert:
+            report["msgs"].append("✅ Finais bem distribuídos.")
 
 
 def _analise_entropia(report, numeros, config: GameConfig):

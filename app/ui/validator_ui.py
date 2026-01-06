@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from app.src.logger import logger
 from app.src.games import GameConfig
 from app.src.validator import validar_jogo
 from app.src.statistics import (
@@ -44,6 +45,8 @@ def render_validator(df, config: GameConfig):
                 )
                 return
 
+            logger.info(f"[{config.name}] Validação manual solicitada para: {nums}")
+
             # Busca dados
             historico = get_historico_jogos(df, config)
             ic_info = analise_intervalo_confianca(df, config)
@@ -57,6 +60,10 @@ def render_validator(df, config: GameConfig):
                 df_historico=df,
             )
 
+            logger.info(
+                f"[{config.name}] Resultado validação: Score {relatorio['score']} | Status: {relatorio['status']}"
+            )
+
             # Cards de resultado
             st.markdown("<br>", unsafe_allow_html=True)
             c1, c2 = st.columns(2)
@@ -68,6 +75,9 @@ def render_validator(df, config: GameConfig):
                 display_score = "0/100"
                 delta_msg = f"Score Técnico: {score_original}/100"
                 classe_css_delta = "status-off"
+                logger.warning(
+                    f"[{config.name}] Usuário validou um jogo que JÁ SAIU: {nums}"
+                )
             else:
                 display_score = f"{score}/100"
                 if score >= 80:
@@ -164,6 +174,7 @@ def render_validator(df, config: GameConfig):
                     )
 
         except Exception as e:
+            logger.error(f"Erro na validação manual: {e}")
             st.error(
                 f"Não entendi esses números. Tente digitar assim: {nums_exemplo}. ({e})"
             )

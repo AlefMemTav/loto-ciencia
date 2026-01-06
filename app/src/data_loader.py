@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from app.src.logger import logger
 from app.src.games import GameConfig
 
 
@@ -12,6 +13,10 @@ def carregar_dados_loteria_excel(
     Concurso | Data | bola 1 | bola 2 | ... | bola k
     Retorna df com index=Concurso e colunas D1..Dk (inteiros).
     """
+
+    logger.info(
+        f"Iniciando carregamento do arquivo: {caminho_arquivo} para {config.name}"
+    )
     try:
         df = pd.read_excel(caminho_arquivo)
 
@@ -25,6 +30,9 @@ def carregar_dados_loteria_excel(
                 concurso_col = c
                 break
         if concurso_col is None:
+            logger.error(
+                f"Coluna 'Concurso' não encontrada em {caminho_arquivo}. Cols: {list(cols_norm.values())}"
+            )
             st.error("Coluna 'Concurso' não encontrada.")
             return pd.DataFrame()
 
@@ -38,6 +46,7 @@ def carregar_dados_loteria_excel(
                     achou = c
                     break
             if achou is None:
+                logger.error(f"Colunas ausentes em {caminho_arquivo}: {alvo}")
                 st.error(f"Coluna '{alvo}' não encontrada (esperado k={config.k}).")
                 return pd.DataFrame()
             bola_cols.append(achou)
@@ -63,8 +72,12 @@ def carregar_dados_loteria_excel(
         return out.sort_index()
 
     except FileNotFoundError:
+        logger.error(f"Arquivo não encontrado: {caminho_arquivo}")
         st.error("Arquivo Excel não encontrado.")
         return pd.DataFrame()
     except Exception as e:
+        logger.critical(
+            f"Erro crítico ao carregar {caminho_arquivo}: {str(e)}", exc_info=True
+        )
         st.error(f"Erro ao carregar dados: {e}")
         return pd.DataFrame()
