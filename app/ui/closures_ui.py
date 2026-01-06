@@ -1,21 +1,28 @@
 import streamlit as st
-from app.src.generator import (
-    gerar_fechamento,
-)
+from app.src.generator import gerar_fechamento
 from app.src.logger import logger
 from app.src.games import GameConfig
 
 
 def render_closures(config: GameConfig):
     st.markdown("### 📦 Fechamentos Matemáticos")
+
+    qtd_aposta = config.bet_size
+
+    min_base = qtd_aposta + 1
+    max_base = qtd_aposta + 6
+
     st.info(
-        f"Cercar números garante prêmios menores na {config.name}. Escolha de {config.k+1} a {config.k+6} números "
-        f"e geraremos todas as combinações matemáticas possíveis."
+        f"Cercar números garante prêmios menores na {config.name}. "
+        f"Escolha de {min_base} a {max_base} números e geraremos "
+        f"todas as combinações matemáticas de {qtd_aposta} dezenas possíveis."
     )
+
+    placeholder_ex = " ".join([f"{n:02d}" for n in range(1, qtd_aposta + 3)])
 
     entrada_base = st.text_input(
         "Seus números base:",
-        placeholder=f"Ex: " + " ".join([f"{n:02d}" for n in range(1, config.k + 3)]),
+        placeholder=f"Ex: {placeholder_ex} ...",
     )
 
     if st.button("⚙️ Calcular Fechamento", width="stretch"):
@@ -38,13 +45,11 @@ def render_closures(config: GameConfig):
                 )
                 return
 
-            min_base = config.k + 1
-            max_base = config.k + 6
-
             if min_base <= len(base) <= max_base:
                 logger.info(
                     f"[{config.name}] Gerando fechamento para base de {len(base)} números: {base}"
                 )
+
                 resultado = gerar_fechamento(base, config)
 
                 if isinstance(resultado, dict) and "erro" in resultado:
@@ -85,7 +90,9 @@ def render_closures(config: GameConfig):
                     width="stretch",
                 )
             else:
-                st.warning(f"⚠️ Escolha entre **{min_base} e {max_base} números**.")
+                st.warning(
+                    f"⚠️ Para a {config.name}, escolha entre **{min_base} e {max_base} números**."
+                )
         except Exception as e:
             logger.error(f"Erro no fechamento: {e}")
             st.error(f"Erro: {e}")

@@ -11,13 +11,26 @@ from app.ui.game_constants import get_constants_for_game
 def render_bolao(df, config: GameConfig):
     st.subheader("👥 Auditoria de Bolão")
     st.write(
-        f"Cole todos os jogos do seu bolão  da {config.name} aqui. Vamos analisar a qualidade do grupo e se há erros (jogos repetidos ou mal distribuídos)."
+        f"Cole todos os jogos do seu bolão da {config.name} aqui. Vamos analisar a qualidade do grupo e se há erros (jogos repetidos ou mal distribuídos)."
     )
-    nums_exemplo1 = " ".join([f"{n:02d}" for n in range(4, 4 + config.k)])
-    nums_exemplo2 = " ".join([f"{n:02d}" for n in range(10, 10 + config.k)])
+
+    qtd_aposta = config.bet_size
+
+    # Ajusta o range para não estourar o limite de números do jogo (ex: range(4, 54) na Lotomania)
+    start_ex1 = 1
+    end_ex1 = start_ex1 + qtd_aposta
+
+    nums_exemplo1 = " ".join([f"{n:02d}" for n in range(start_ex1, end_ex1)])
+
+    # Segundo exemplo deslocado
+    start_ex2 = 2
+    end_ex2 = start_ex2 + qtd_aposta
+    nums_exemplo2 = " ".join([f"{n:02d}" for n in range(start_ex2, end_ex2)])
+
     texto_bolao = st.text_area(
         "Cole os jogos (um por linha):",
         placeholder=f"{nums_exemplo1}\n{nums_exemplo2}\n...",
+        height=200,
     )
 
     historico_set = get_historico_jogos(df, config)
@@ -30,7 +43,11 @@ def render_bolao(df, config: GameConfig):
         ic_info = analise_intervalo_confianca(df, config)
 
         if not jogos_validos:
-            st.warning("Nenhum jogo válido identificado. Verifique a formatação.")
+            st.warning(
+                "Nenhum jogo válido identificado. Verifique a formatação e a quantidade de números."
+            )
+            if jogos_invalidos:
+                st.caption(f"Exemplo de linha rejeitada: {jogos_invalidos[0]}")
             st.stop()
 
         # 2. Cálculo de Estatísticas
@@ -56,7 +73,7 @@ def render_bolao(df, config: GameConfig):
         _renderizar_lista_resumo(jogos_validos, historico_set, ic_info, config)
         if jogos_invalidos:
             st.error(
-                f"Ignoramos {len(jogos_invalidos)} linhas que não pareciam jogos válidos."
+                f"Ignoramos {len(jogos_invalidos)} linhas que não pareciam jogos válidos (quantidade incorreta ou caracteres inválidos)."
             )
 
         # 6. Relatório Detalhado
@@ -72,6 +89,8 @@ def _processar_input_jogos(texto, config: GameConfig):
     invalidos = []
     todos_nums = []
 
+    qtd_esperada = config.bet_size
+
     linhas = texto.strip().split("\n")
     logger.info(f"Processando input de bolão: {len(linhas)} linhas para {config.name}")
 
@@ -84,7 +103,11 @@ def _processar_input_jogos(texto, config: GameConfig):
             nums = sorted(
                 list(set([int(n) for n in limpa.split() if n.strip().isdigit()]))
             )
-            if len(nums) == config.k and all(1 <= n <= config.n_numbers for n in nums):
+
+            # Valida usando qtd_esperada (50 para Mania, k para outros)
+            if len(nums) == qtd_esperada and all(
+                1 <= n <= config.n_numbers for n in nums
+            ):
                 validos.append(nums)
                 todos_nums.extend(nums)
             else:
@@ -107,7 +130,9 @@ def _processar_input_jogos(texto, config: GameConfig):
 def _calcular_estatisticas_grupo(jogos, todos_numeros, config: GameConfig):
     """Calcula métricas financeiras e de cobertura."""
     qtd = len(jogos)
-    custo = qtd * config.game_price
+    # Usa preço do jogo definido na config
+    preco = config.game_price
+    custo = qtd * preco
 
     # Verifica duplicatas comparando tamanho da lista vs set de tuplas
     jogos_tuple = [tuple(j) for j in jogos]

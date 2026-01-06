@@ -136,7 +136,11 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
     # Regra 1: Soma com IC
     soma = sum(numeros)
 
-    if ic_info:
+    # Só usa histórico se o tamanho do jogo for igual ao do sorteio
+    # (Evita usar IC da Lotomania(20) para validar aposta(50))
+    usar_historico = ic_info and (len(numeros) == config.k)
+
+    if usar_historico:
         ic_80 = ic_info["ic_80"]
         ic_95 = ic_info["ic_95"]
 
@@ -151,32 +155,32 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
                 f"❌ Soma ({soma}) fora do IC95% [{ic_95[0]}, {ic_95[1]}]"
             )
     else:
-        # Fallback teórico: média = k * (N+1)/2, desvio = 15% da média
-        media_teorica = config.k * (config.n_numbers + 1) / 2
-        desvio_teorico = media_teorica * 0.15
+        qtd_numeros = len(numeros)
+        # Fallback teórico: média = qtd * (N+1)/2
+        media_teorica = qtd_numeros * (config.n_numbers + 1) / 2
+        desvio_teorico = media_teorica * 0.20  # Tolerância de 20%
 
         if abs(soma - media_teorica) <= desvio_teorico:
             report["msgs"].append(
-                f"✅ Soma ({soma}) próxima da média teórica ({media_teorica:.0f})."
+                f"✅ Soma ({soma}) equilibrada (Teórica: ~{media_teorica:.0f})."
             )
         else:
             report["score"] -= 15
             report["msgs"].append(
-                f"⚠️ Soma ({soma}) desviada da média ({media_teorica:.0f})."
+                f"⚠️ Soma ({soma}) desviada da média teórica ({media_teorica:.0f})."
             )
 
     # Regra 2: Pares e Ímpares
+    qtd_numeros = len(numeros)
     pares = sum(1 for n in numeros if n % 2 == 0)
-    k = config.k
 
-    # Proporção esperada: ~50%
-    ideal_min = int(k * 0.35)
-    ideal_max = int(k * 0.65)
+    ideal_min = int(qtd_numeros * 0.35)
+    ideal_max = int(qtd_numeros * 0.65)
 
-    if pares in [0, k]:
+    if pares in [0, qtd_numeros]:
         report["score"] -= 25
         report["msgs"].append(
-            f"❌ Desequilíbrio extremo Par/Ímpar ({pares}/{k-pares})."
+            f"❌ Desequilíbrio extremo Par/Ímpar ({pares}/{qtd_numeros-pares})."
         )
     elif pares < ideal_min or pares > ideal_max:
         report["score"] -= 10
@@ -184,36 +188,35 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
     else:
         report["msgs"].append(f"✅ Distribuição Par/Ímpar equilibrada ({pares} pares).")
 
-    # Regra 3: Linhas (só para jogos de 6+ números)
-    # Na Lotofácil (k=15, rows=5), é muito difícil ter linha vazia, mas se tiver é erro grave
-    if k >= 5:
+    # Regra 3: Linhas
+    # Verifica linhas vazias. Se o jogo for muito denso (Lotomania), difícil ter linhas vazias.
+    if config.layout.rows > 0:
         linhas = _verificar_linhas(numeros, config)
         linhas_vazias = linhas.count(0)
 
-        # Adaptativo: Mega(6) aceita 3 vazias? Não. Max aceitável depende do layout
-        max_vazias_aceitavel = max(1, config.layout.rows - 3)
+        # Aceita mais linhas vazias em jogos pequenos (Mega) e menos em jogos grandes (Lotomania)
+        # Lógica adaptativa: Max vazio = (Rows - Qtd/Cols) aprox?
+        # Simplificação: Mega(6nums, 6rows) -> aceita 4 vazias. Mania(50nums, 10rows) -> aceita 1 vazia.
 
-        if linhas_vazias > max_vazias_aceitavel:
-            report["score"] -= 15
+        limit_vazias = max(1, config.layout.rows - int(qtd_numeros / 2))
+
+        if linhas_vazias > limit_vazias:
             report["msgs"].append(
-                f"❌ {linhas_vazias} linhas vazias (muito concentrado)."
+                f"⚠️ {linhas_vazias} linhas vazias (Concentração Vertical)."
             )
-        elif linhas_vazias > 1:
             report["score"] -= 5
-            report["msgs"].append(f"⚠️ {linhas_vazias} linhas vazias.")
 
-    # Regra 4: Metades
+    # Regra 4: Metades (Superior/Inferior)
     metades = _verificar_metades(numeros, config)
     sup = metades["superior"]
     inf = metades["inferior"]
 
-    # Proporção esperada: ~50%
     if sup == 0 or inf == 0:
         report["score"] -= 20
         report["msgs"].append(
             f"❌ Desequilíbrio total ({sup} superior, {inf} inferior)."
         )
-    elif abs(sup - inf) >= k * 0.6:
+    elif abs(sup - inf) >= qtd_numeros * 0.6:
         report["score"] -= 10
         report["msgs"].append(
             f"⚠️ Desequilíbrio vertical ({sup} superior, {inf} inferior)."
@@ -250,14 +253,14 @@ def _analise_entropia(report, numeros, config: GameConfig):
             None
     """
     if len(numeros) < 3:
-        return  # Não faz sentido para jogos muito pequenos
+        return
 
     entropia = _calcular_entropia_shannon(numeros)
 
-    # Ajusta limiares baseado no tamanho do jogo
-    k = config.k
+    # Limiares ajustados
+    k = len(numeros)
     limiar_baixo = 0.5 if k <= 6 else 1.0
-    limiar_alto = 2.0 if k <= 6 else 3.0
+    limiar_alto = 2.0 if k <= 6 else 3.5  # Aumentei para suportar Lotomania/Lotofácil
 
     if entropia < limiar_baixo:
         report["score"] -= 25
@@ -290,19 +293,29 @@ def _analise_popularidade(report, numeros, config: GameConfig):
     qtd_lost = len(set(numeros).intersection(lost_nums))
 
     pontos_risco = 0
-    k = config.k
+    qtd = len(numeros)  # Tamanho da aposta (6, 15, 50, etc)
 
-    # Sequências
-    if seqs > k * 0.3:  # Mais de 30% são sequenciais
+    # Sequências:
+    limite_seq = max(1, int(qtd * 0.6))
+    if seqs > limite_seq:
         pontos_risco += 2
+        report["msgs"].append(f"⚠️ Muitas sequências ({seqs}).")
 
-    # Datas (só relevante para Mega-Sena e Quina)
-    if config.n_numbers >= 50 and datas >= k * 0.6:
+    # Datas (1-31):
+    limite_datas = int(qtd * 0.70)
+
+    # Trava de segurança: Se o jogo for pequeno (Mega), garante tolerância mínima de 3
+    if qtd <= 6:
+        limite_datas = max(limite_datas, 4)
+
+    if config.n_numbers >= 50 and datas >= limite_datas:
         pontos_risco += 2
+        report["msgs"].append(f"⚠️ Foco excessivo em datas ({datas} números <= 31).")
 
     # Lost numbers
-    if qtd_lost >= min(4, k // 2):
+    if qtd_lost >= 4:
         pontos_risco += 3
+        report["msgs"].append("⚠️ Padrão 'Lost' detectado.")
 
     current_risk = report.get("risco_divisao", "Baixo")
 
@@ -315,7 +328,6 @@ def _analise_popularidade(report, numeros, config: GameConfig):
             report["score"] -= 20
     elif pontos_risco >= 1:
         report["risco_divisao"] = "Médio"
-        report["msgs"].append("⚠️ Contém padrões populares.")
         report["score"] -= 10
     else:
         if current_risk != "ALTO":
@@ -335,10 +347,12 @@ def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
     """
     gini = _calcular_coeficiente_gini(numeros, config)
 
+    # Gini para Lotomania (50 pontos em 100) tende a ser baixo (bem distribuído).
+    # Ajuste leve nos limites.
     if gini < 0.15:
         report["score"] += 5
         report["msgs"].append(f"✅ Distribuição espacial ótima (Gini: {gini:.3f}).")
-    elif gini > 0.45:
+    elif gini > 0.50:
         report["score"] -= 10
         report["msgs"].append(f"⚠️ Concentração espacial alta (Gini: {gini:.3f}).")
     else:
@@ -347,8 +361,8 @@ def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
 
 def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
     """
-    Penaliza concentração em padrões geométricos (moldura/miolo/cruz/xis/cantos)
-    e premia proximidade da média ideal histórica (quando df_historico existir).
+    Penaliza concentração em padrões geométricos.
+    Agora usa limiares DINÂMICOS baseados na densidade do jogo.
     """
     constants = get_constants_for_game(config)
     grupos = {
@@ -358,18 +372,18 @@ def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
         "xis": constants["xis"],
         "cantos": constants["cantos"],
     }
+    qtd = len(numeros)
 
     if df_historico is None or df_historico.empty:
-        # fallback simples: só detecta extremos (não tenta “média ideal”)
+        # fallback simples
         jogo = set(numeros)
-        k = config.k
         for nome, nums_grupo in grupos.items():
             presentes = len(jogo & set(nums_grupo))
             report["metricas"][f"geom_{nome}"] = presentes
-            if k > 0 and presentes >= int(k * 0.8):
+            if qtd > 0 and presentes >= int(qtd * 0.8):
                 report["score"] -= 10
                 report["msgs"].append(
-                    f"⚠️ Concentração geométrica alta em {nome} ({presentes}/{k})."
+                    f"⚠️ Concentração geométrica alta em {nome} ({presentes}/{qtd})."
                 )
                 report["risco_divisao"] = "Médio"
         return
@@ -377,24 +391,27 @@ def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
     guia = calcular_guia_equilibrio(df_historico, grupos, config)
     res = avaliar_jogo_por_grupos(numeros, guia, grupos, config)
 
-    report["metricas"]["score_geom"] = res["score_geom"]
+    score_geom = res["score_geom"]
+    report["metricas"]["score_geom"] = score_geom
     report["metricas"]["geom_detalhes"] = res["detalhes"]
 
-    # Ajuste no score técnico: leve, para não dominar o validador
-    if res["score_geom"] >= 85:
-        report["score"] += 4
-        report["msgs"].append("✅ Geometria equilibrada (bom anti-padrão).")
-    elif res["score_geom"] >= 70:
-        report["msgs"].append("✅ Geometria aceitável.")
-    elif res["score_geom"] >= 50:
-        report["score"] -= 5
-        report["msgs"].append(
-            "⚠️ Geometria um pouco concentrada (risco de padrão visual)."
-        )
+    baseline = config.min_geom_score
+    target_excelente = min(95, baseline + 20)
+    target_critico = max(10, baseline - 15)
+
+    if score_geom >= target_excelente:
+        report["score"] += 5
+        report["msgs"].append(f"✅ Geometria equilibrada.")
+    elif score_geom >= baseline:
+        # Zona aceitável: não ganha bônus, mas não perde ponto
+        report["msgs"].append(f"✅ Geometria aceitável.")
+    elif score_geom >= target_critico:
+        report["score"] -= 2
+        report["msgs"].append(f"⚠️ Geometria um pouco concentrada.")
     else:
-        report["score"] -= 12
-        report["msgs"].append("❌ Geometria muito concentrada (padrão visual forte).")
-        # sobe risco de divisão porque padrão “bonito” é popular
+        report["score"] -= 3
+        report["msgs"].append(f"❌ Geometria muito concentrada.")
+        # Só marca alto risco se for realmente muito baixo
         report["risco_divisao"] = "ALTO"
 
 
@@ -409,19 +426,18 @@ def _analise_primos(report, numeros, config: GameConfig):
             None
     """
     if config.n_numbers > 60:
-        return  # Não aplicável para Quina (80)
+        return  # Não aplicável para Quina/Lotomania (muitos números)
 
     primos = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59}
     qtd_primos = len([n for n in numeros if n in primos])
 
-    k = config.k
+    qtd = len(numeros)
     # Proporção esperada: ~30% dos números até 60 são primos
-    esperado = int(k * 0.3)
+    esperado = int(qtd * 0.3)
 
-    if abs(qtd_primos - esperado) <= 1:
+    # Tolerância de +/- 2
+    if abs(qtd_primos - esperado) <= 2:
         report["msgs"].append(f"✅ {qtd_primos} números primos (distribuição natural).")
-    elif abs(qtd_primos - esperado) == 2:
-        report["msgs"].append(f"⚠️ {qtd_primos} números primos (aceitável).")
     else:
         report["score"] -= 5
         report["msgs"].append(f"⚠️ {qtd_primos} números primos (atípico).")
@@ -455,9 +471,13 @@ def validar_jogo(
 
     # 1. Verificação de histórico
     if historico_jogos:
-        jogo_tuple = tuple(sorted(numeros))
-        if jogo_tuple in historico_jogos:
-            report["ja_saiu"] = True
+        # IMPORTANTE: Só verificamos duplicata exata se o tamanho da aposta
+        # for igual ao tamanho do sorteio (Mega, Quina, Lotofácil).
+        # Na Lotomania (aposta 50 vs sorteio 20), essa verificação não se aplica.
+        if len(numeros) == config.k:
+            jogo_tuple = tuple(sorted(numeros))
+            if jogo_tuple in historico_jogos:
+                report["ja_saiu"] = True
 
     # 2. Análises técnicas
     _analise_tecnica(report, numeros, config, ic_info)

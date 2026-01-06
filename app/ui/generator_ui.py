@@ -24,7 +24,7 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
         )
 
     diversidade = st.checkbox(
-        f"Garantir diversidade (max {int(config.k*0.7)} números em comum)",
+        f"Garantir diversidade (max {int(config.bet_size*0.7)} números em comum)",
         value=True,
     )
 
@@ -71,14 +71,6 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
 
         st.success(f"✅ {len(jogos)} jogos encontrados em {tempo_total:.2f}s!")
 
-        # --- Feedback Contextual sobre a Dificuldade ---
-        # Se for Lotofácil (k >= 15), explica que scores menores são normais
-        # if config.k >= 15:
-        #    st.info(
-        #        "ℹ️ **Nota sobre Lotofácil:** Com 15 números, é estatisticamente muito #difícil "
-        #        "obter scores acima de 80 sem viciar o jogo. Um score entre **60 e 75** é #considerado matematicamente excelente."
-        #    )
-
         if estrategia != "balanceada":
             emoji_estrategia = {"conservadora": "⏰", "agressiva": "🔥", "pura": "🎲"}
             st.caption(
@@ -91,7 +83,13 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
 
         # Exibição dos jogos
         for i, jogo in enumerate(jogos):
-            val = validar_jogo(jogo, config, historico_jogos=historico, ic_info=ic_info)
+            val = validar_jogo(
+                jogo,
+                config,
+                historico_jogos=historico,
+                ic_info=ic_info,
+                df_historico=df,
+            )
 
             nums_fmt = "  ".join([f"{n:02d}" for n in jogo])
 
@@ -139,7 +137,11 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
         with st.expander("📊 Ver Análise Detalhada dos Jogos"):
             for i, jogo in enumerate(jogos):
                 val = validar_jogo(
-                    jogo, config, historico_jogos=historico, ic_info=ic_info
+                    jogo,
+                    config,
+                    historico_jogos=historico,
+                    ic_info=ic_info,
+                    df_historico=df,
                 )
 
                 st.markdown(f"**Jogo {i+1}:** {jogo}")

@@ -66,6 +66,9 @@ def carregar_dados_loteria_excel(
         out = out.dropna()
 
         out = out.astype(int)
+        if config.slug == "loto_mania_sorteio":
+            out = out.replace(0, 100)
+
         mask = (out >= 1) & (out <= config.n_numbers)
         out = out[mask.all(axis=1)]
 

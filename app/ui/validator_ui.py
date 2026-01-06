@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 from app.src.logger import logger
 from app.src.games import GameConfig
 from app.src.validator import validar_jogo
@@ -16,11 +15,12 @@ def render_validator(df, config: GameConfig):
     st.markdown("### 🧪 Laboratório de Validação")
     st.write(f"Digite seus números da {config.name} para validação estatística.")
 
-    # Placeholder dinâmico
-    nums_exemplo = " ".join([f"{n:02d}" for n in range(4, 4 + config.k)])
+    qtd_aposta = config.bet_size
+
+    nums_exemplo = " ".join([f"{n:02d}" for n in range(4, 4 + qtd_aposta)])
 
     entrada = st.text_input(
-        f"Seus {config.k} números:",
+        f"Seus {qtd_aposta} números:",
         placeholder=f"Ex: {nums_exemplo}",
         help="Separe por espaço, vírgula ou traço.",
     )
@@ -32,10 +32,10 @@ def render_validator(df, config: GameConfig):
                 list(set([int(n) for n in texto.split() if n.strip().isdigit()]))
             )
 
-            # Validação dinâmica
-            if len(nums) != config.k:
+            # Lotomania: Valida se tem 50 números, não 20.
+            if len(nums) != qtd_aposta:
                 st.warning(
-                    f"⚠️ Precisamos de **exatamente {config.k} números** únicos (entre 1 e {config.n_numbers})."
+                    f"⚠️ Precisamos de **exatamente {qtd_aposta} números** únicos (entre 1 e {config.n_numbers})."
                 )
                 return
 
@@ -182,31 +182,35 @@ def render_validator(df, config: GameConfig):
 
 def _render_backtesting(df, config, nums):
     with st.expander("Histórico (Backtesting)", expanded=False):
-        alvos = [config.k, config.k - 1, config.k - 2]
+        if config.slug == "loto_mania_sorteio":
+            # Lotomania: Busca 20, 19, 18... e ZERO (que também paga)
+            alvos = [20, 19, 18, 0]
+        else:
+            # Padrão: Busca Jogo Cheio, -1 e -2
+            alvos = [config.k, config.k - 1, config.k - 2]
+
         res = verificar_historico(nums, df, config, alvos=alvos)
 
-        k1, k2, k3 = st.columns(3)
+        cols = st.columns(len(alvos))
 
-        with k1:
-            hits = config.k
-            achou = res.get(hits, [])
-            st.metric(f"Já Saiu {hits} acertos (jogo cheio)?", len(achou))
-            if achou:
-                st.caption(", ".join(achou[:10]) + ("..." if len(achou) > 10 else ""))
+        for i, alvo in enumerate(alvos):
+            with cols[i]:
+                hits = alvo
+                achou = res.get(hits, [])
 
-        with k2:
-            hits = config.k - 1
-            achou = res.get(hits, [])
-            st.metric(f"Já Saiu {hits} acertos?", len(achou))
-            if achou:
-                st.caption(", ".join(achou[:10]) + ("..." if len(achou) > 10 else ""))
+                # Label especial para Lotomania (0 acertos)
+                if config.slug == "loto_mania_sorteio" and hits == 0:
+                    label = "Zero Acertos (🏆)"
+                elif hits == config.k:
+                    label = f"{hits} Acertos (Máx)"
+                else:
+                    label = f"{hits} Acertos"
 
-        with k3:
-            hits = config.k - 2
-            achou = res.get(hits, [])
-            st.metric(f"Já Saiu {hits} acertos?", len(achou))
-            if achou:
-                st.caption(", ".join(achou[:10]) + ("..." if len(achou) > 10 else ""))
+                st.metric(label, len(achou))
+
+                if achou:
+                    # Mostra os primeiros concursos onde ocorreu
+                    st.caption(", ".join(achou[:5]) + ("..." if len(achou) > 5 else ""))
 
 
 def _render_geometric_metrics(metricas):

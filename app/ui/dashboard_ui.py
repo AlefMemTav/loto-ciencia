@@ -469,12 +469,12 @@ def _render_probability_report(df, conjuntos, config: GameConfig):
             column_config={
                 "Grupo": st.column_config.TextColumn("Grupo de Números"),
                 "Média Ideal": st.column_config.TextColumn(
-                    "Quantos Escolher?",
-                    help=f"Em um jogo de {config.k} números, quantos devem ser deste grupo? Ex: Se 'Pares' tem média 3.0, escolha 3 pares.",
+                    "Média no Sorteio",
+                    help=f"Em média, quantos números deste grupo aparecem nos {config.k} sorteados? Use isso como referência proporcional.",
                 ),
                 "Chance de Jogo Completo": st.column_config.TextColumn(
-                    "Risco de Jogo Cheio",
-                    help=f"Qual a chance dos {config.k} números sorteados serem TODOS deste grupo? Quanto menor, mais arriscado jogar só números deste grupo.",
+                    "Risco de Sorteio Cheio",
+                    help=f"Qual a chance dos {config.k} números sorteados serem TODOS deste grupo? Quanto menor, mais arriscado focar sua aposta só nisso.",
                 ),
             },
             hide_index=True,

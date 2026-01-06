@@ -31,9 +31,6 @@ def analise_poisson(df, config: GameConfig, alpha=0.05):
 
     # Conta quantos números no universo (1..N) terminam com cada dígito
     # Ex Mega (60): final 1 aparece 6x (1,11,21,31,41,51) -> Prob 6/60 = 10%
-    # Ex Loto (25): final 1 aparece 3x (1,11,21) -> Prob 3/25 = 12%
-    # Ex Loto (25): final 6 aparece 2x (6,16) -> Prob 2/25 = 8%
-
     universo = list(range(1, config.n_numbers + 1))
     finais_universo = [n % 10 for n in universo]
     contagem_teorica = pd.Series(finais_universo).value_counts().sort_index()
@@ -47,7 +44,7 @@ def analise_poisson(df, config: GameConfig, alpha=0.05):
 
         observado = (finais == digito).sum()
 
-        # Evita erro se lambda for 0 (jogo muito pequeno, improvável mas seguro)
+        # Evita erro se lambda for 0
         if lambda_esperado == 0:
             continue
 
@@ -120,15 +117,18 @@ def avaliar_jogo_por_grupos(
 ) -> dict:
     """
     Avalia um jogo contra o guia (média ideal).
-    Pesos adaptativos baseados no jogo (Mega/Quina/Lotofácil).
+    Pesos adaptativos baseados no jogo.
     """
     jogo = set(numeros)
-    k = config.k
+
+    # CORREÇÃO: Usar o tamanho do jogo atual, não o k do sorteio.
+    # Isso resolve o problema da Lotomania (aposta 50 vs sorteio 20)
+    qtd_jogada = len(numeros)
 
     detalhes = {}
     penalidade = 0.0
 
-    # Pesos adaptativos
+    # Pesos adaptativos vêm da config
     pesos = config.geo_weights
 
     for nome, numeros_grupo in conjuntos.items():
@@ -136,7 +136,19 @@ def avaliar_jogo_por_grupos(
             continue
 
         presentes = len(jogo & set(numeros_grupo))
-        ideal = guia[nome]["media_ideal"]
+
+        # Na Lotomania, não podemos comparar 'presentes' (base 50) com 'ideal' (base 20).
+        # Precisamos projetar o ideal para a escala da aposta.
+        # Ex: Se no sorteio (20) a média da moldura é 4.
+        # Na aposta (50), a média esperada é 4 * (50/20) = 10.
+        ideal_raw = guia[nome]["media_ideal"]
+
+        if config.k != qtd_jogada and config.k > 0:
+            fator_projecao = qtd_jogada / config.k
+            ideal = ideal_raw * fator_projecao
+        else:
+            ideal = ideal_raw
+
         risco_cheio = guia[nome]["risco_cheio"]
 
         detalhes[nome] = {
@@ -150,7 +162,7 @@ def avaliar_jogo_por_grupos(
         penalidade += w * abs(presentes - ideal)
 
         # penaliza extremos: muito concentrado em um grupo
-        if k > 0 and presentes >= int(k * 0.8):
+        if qtd_jogada > 0 and presentes >= int(qtd_jogada * 0.8):
             penalidade += 2.0 * w
 
     # Score geométrico
@@ -162,7 +174,6 @@ def avaliar_jogo_por_grupos(
 def verificar_historico(numeros, df, config: GameConfig, alvos=None):
     meus = set(numeros)
     if alvos is None:
-        # default: top 3 faixas abaixo do cheio
         alvos = [config.k, config.k - 1, config.k - 2]
 
     res = {a: [] for a in alvos}
@@ -218,32 +229,23 @@ def calcular_atrasos(df, config: GameConfig):
     ultimo_concurso = df.index.max()
     total_concursos = len(df)
 
-    # Vetorização otimizada
     stacked = df[config.draw_cols].stack().reset_index()
     stacked.columns = ["Concurso", "Col", "Numero"]
     ultima_aparicao = stacked.groupby("Numero")["Concurso"].max()
 
     atrasos = {}
-    atrasos_relativos = {}
-
     for n in range(1, config.n_numbers + 1):
         if n in ultima_aparicao:
             gap_absoluto = ultimo_concurso - ultima_aparicao[n]
             atrasos[n] = gap_absoluto
-            atrasos_relativos[n] = gap_absoluto / total_concursos
         else:
             atrasos[n] = ultimo_concurso
-            atrasos_relativos[n] = 1.0  # 100% do histórico
 
     return pd.Series(atrasos).sort_values(ascending=False)
 
 
 @st.cache_data
 def get_tabela_inteligencia(df, config: GameConfig):
-    """
-    Sistema de pesos MATEMATICAMENTE CORRETO.
-    Usa Z-Scores normalizados e combinação calibrada.
-    """
     if df.empty:
         return pd.DataFrame()
 
@@ -255,7 +257,7 @@ def get_tabela_inteligencia(df, config: GameConfig):
     df_stats["Atraso"] = atrasos
     df_stats = df_stats.fillna(0)
 
-    # 1. Z-Scores padronizados
+    # 1. Z-Scores
     mu_freq = df_stats["Frequencia"].mean()
     sigma_freq = df_stats["Frequencia"].std()
     df_stats["Z_Freq"] = (df_stats["Frequencia"] - mu_freq) / (sigma_freq + 1e-9)
@@ -264,18 +266,15 @@ def get_tabela_inteligencia(df, config: GameConfig):
     sigma_gap = df_stats["Atraso"].std()
     df_stats["Z_Gap"] = (df_stats["Atraso"] - mu_gap) / (sigma_gap + 1e-9)
 
-    # 2. Peso Composto (Filosofia: Hot Hand + Regressão à Média)
-    # 40% Frequência (números quentes) + 60% Atraso (regressão)
+    # 2. Peso Composto
     df_stats["Peso_Composto"] = df_stats["Z_Freq"] * 0.40 + df_stats["Z_Gap"] * 0.60
 
-    # 3. Normalização Min-Max para [0.01, 1.0]
-    # Evita pesos negativos no random.choices
+    # 3. Normalização
     peso_min = df_stats["Peso_Composto"].min()
     peso_max = df_stats["Peso_Composto"].max()
-
     df_stats["Peso_Geracao"] = (
         (df_stats["Peso_Composto"] - peso_min) / (peso_max - peso_min + 1e-9)
-    ) + 0.01  # Garante peso mínimo
+    ) + 0.01
 
     # 4. Métricas adicionais
     df_stats["Percentil_Freq"] = df_stats["Frequencia"].rank(pct=True)
@@ -286,9 +285,6 @@ def get_tabela_inteligencia(df, config: GameConfig):
 
 @st.cache_data
 def calcular_chi_quadrado(df, config: GameConfig):
-    """
-    Chi² + Kolmogorov-Smirnov para robustez.
-    """
     if df.empty:
         return None
 
@@ -300,14 +296,11 @@ def calcular_chi_quadrado(df, config: GameConfig):
     total_bolas = len(todos_numeros)
     f_esp = [total_bolas / config.n_numbers] * config.n_numbers
 
-    # Teste Chi-Quadrado
     chi2_stat, p_chi = chisquare(f_obs, f_exp=f_esp)
 
-    # Teste KS (Kolmogorov-Smirnov) para uniformidade
     uniform_sample = np.linspace(1, config.n_numbers, len(todos_numeros))
     ks_stat, p_ks = kstest(sorted(todos_numeros), lambda x: x / config.n_numbers)
 
-    # Interpretação combinada
     if p_chi > 0.05 and p_ks > 0.05:
         status = "✅ Honesto (Aleatório)"
         confianca = "Alta"
@@ -331,24 +324,18 @@ def calcular_chi_quadrado(df, config: GameConfig):
 
 @st.cache_data
 def analise_intervalo_confianca(df, config: GameConfig):
-    """
-    Análise de intervalos de confiança para soma.
-    Baseado na distribuição real dos dados.
-    """
     if df.empty:
         return None
 
     somas = df[config.draw_cols].sum(axis=1)
 
-    # Estatísticas descritivas
     media = somas.mean()
     mediana = somas.median()
     desvio = somas.std()
 
-    # Intervalos de confiança empíricos
-    ic_50 = (somas.quantile(0.25), somas.quantile(0.75))  # 50% central
-    ic_80 = (somas.quantile(0.10), somas.quantile(0.90))  # 80% central
-    ic_95 = (somas.quantile(0.025), somas.quantile(0.975))  # 95% central
+    ic_50 = (somas.quantile(0.25), somas.quantile(0.75))
+    ic_80 = (somas.quantile(0.10), somas.quantile(0.90))
+    ic_95 = (somas.quantile(0.025), somas.quantile(0.975))
 
     return {
         "media": round(media, 1),
@@ -364,19 +351,12 @@ def analise_intervalo_confianca(df, config: GameConfig):
 
 @st.cache_data
 def calcular_coeficiente_variacao(df, config: GameConfig):
-    """
-    Mede a estabilidade da aleatoriedade.
-    CV baixo = números saem com frequência similar (bom sinal).
-    """
     if df.empty:
         return None
 
     freq = get_numeros_quentes_frios(df, config)
-
-    # Coeficiente de Variação = (Desvio / Média) × 100
     cv = (freq.std() / freq.mean()) * 100
 
-    # Interpretação
     if cv < 10:
         interpretacao = "Excelente uniformidade"
     elif cv < 20:

@@ -1,3 +1,4 @@
+import math
 import random
 import time
 import numpy as np
@@ -35,10 +36,11 @@ def gerar_jogo_perfeito(
     tabela = get_tabela_inteligencia(df, config)
     historico = get_historico_jogos(df, config)
     ic_info = analise_intervalo_confianca(df, config)
+    tamanho_aposta = config.bet_size
 
     if tabela.empty:
         logger.warning(f"Tentativa de gerar jogo para {config.name} com tabela vazia.")
-        return sorted(random.sample(range(1, config.n_numbers + 1), config.k))
+        return sorted(random.sample(range(1, config.n_numbers + 1), tamanho_aposta))
 
     numeros_disponiveis = tabela.index.tolist()  # [1, 2, ..., N]
 
@@ -67,10 +69,12 @@ def gerar_jogo_perfeito(
         tentativas += 1
 
         pre_jogo = set()
-        candidatos = random.choices(numeros_disponiveis, weights=pesos, k=config.k)
+        candidatos = random.choices(
+            numeros_disponiveis, weights=pesos, k=tamanho_aposta
+        )
         pre_jogo.update(candidatos)
 
-        while len(pre_jogo) < config.k:
+        while len(pre_jogo) < tamanho_aposta:
             novo = random.choices(numeros_disponiveis, weights=pesos, k=1)[0]
             pre_jogo.add(novo)
 
@@ -122,7 +126,7 @@ def gerar_jogo_perfeito(
     return (
         melhor_jogo
         if melhor_jogo
-        else sorted(random.sample(range(1, config.n_numbers + 1), config.k))
+        else sorted(random.sample(range(1, config.n_numbers + 1), tamanho_aposta))
     )
 
 
@@ -157,9 +161,13 @@ def gerar_multiplos_jogos(
     tentativas = 0
     max_tentativas = quantidade * 100
 
-    # Define limiar de sobreposição baseado no tamanho do jogo
-    # Mega (6): max 4 em comum | Quina (5): max 3 | Lotofácil (15): max 10
-    max_comum = max(2, int(config.k * 0.7))
+    # Se o universo for pequeno (Lotofácil) ou o jogo muito denso, aumentamos a tolerância
+    if config.n_numbers <= 25:  # Lotofácil
+        fator_diversidade = 0.85  # Permite até 12 números iguais (15 * 0.85 = 12.7)
+    else:
+        fator_diversidade = 0.70  # Padrão para Mega/Quina
+
+    max_comum = max(2, int(config.bet_size * fator_diversidade))
 
     while len(jogos_gerados) < quantidade and tentativas < max_tentativas:
         tentativas += 1
@@ -220,8 +228,10 @@ def gerar_com_restricoes(
     numeros_fixos = numeros_fixos or []
     numeros_evitados = numeros_evitados or []
 
-    if len(numeros_fixos) > config.k:
-        return {"erro": f"Não pode ter mais de {config.k} números fixos"}
+    tamanho_aposta = config.bet_size
+
+    if len(numeros_fixos) > tamanho_aposta:
+        return {"erro": f"Não pode ter mais de {tamanho_aposta} números fixos"}
 
     if set(numeros_fixos).intersection(set(numeros_evitados)):
         return {"erro": "Números fixos e evitados não podem se sobrepor"}
@@ -233,7 +243,7 @@ def gerar_com_restricoes(
         if n not in numeros_evitados and n not in numeros_fixos
     ]
 
-    if len(pool) + len(numeros_fixos) < config.k:
+    if len(pool) + len(numeros_fixos) < tamanho_aposta:
         return {"erro": "Pool insuficiente para gerar jogo"}
 
     # Pesos do pool
@@ -244,7 +254,7 @@ def gerar_com_restricoes(
     while tentativas < 5000:
         tentativas += 1
 
-        qtd_necessaria = config.k - len(numeros_fixos)
+        qtd_necessaria = tamanho_aposta - len(numeros_fixos)
         complemento = []
 
         while len(complemento) < qtd_necessaria:
@@ -266,7 +276,7 @@ def gerar_com_restricoes(
             return jogo
 
     # Fallback
-    complemento = random.sample(pool, config.k - len(numeros_fixos))
+    complemento = random.sample(pool, tamanho_aposta - len(numeros_fixos))
     return sorted(numeros_fixos + complemento)
 
 
@@ -282,18 +292,20 @@ def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):
     Returns:
         Lista de jogos ou dict com erro
     """
-    if len(numeros_base) < config.k:
+    tamanho_jogo = config.bet_size
+
+    if len(numeros_base) < tamanho_jogo:
         return []
 
     n = len(numeros_base)
 
     # Calcula número de combinações
     try:
-        total_comb = np.math.factorial(n) // (
-            np.math.factorial(config.k) * np.math.factorial(n - config.k)
+        total_comb = math.factorial(n) // (
+            (math.factorial(tamanho_jogo) * math.factorial(n - tamanho_jogo))
         )
     except:
-        total_comb = comb(n, config.k)
+        total_comb = comb(n, tamanho_jogo)
 
     if total_comb > max_combinacoes:
         return {
@@ -303,7 +315,7 @@ def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):
     logger.info(
         f"Gerando fechamento para {config.name}: {n} números base -> {total_comb} jogos."
     )
-    comb_iter = combinations(numeros_base, config.k)
+    comb_iter = combinations(numeros_base, tamanho_jogo)
     return [sorted(list(c)) for c in comb_iter]
 
 

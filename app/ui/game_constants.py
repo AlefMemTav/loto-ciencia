@@ -109,12 +109,16 @@ def get_constants_for_game(config: GameConfig) -> Dict[str, List[int]]:
     layout = config.layout
     n = config.n_numbers
     # --- Tema de cores por jogo ---
-    if config.n_numbers == 60 and config.k == 6:
+    if config.slug == "mega_sena_sorteio":
         heat_color = "#16a34a"  # verde (Mega)
-    elif config.n_numbers == 80 and config.k == 5:
+    elif config.slug == "quina_sorteio":
         heat_color = "#7c3aed"  # roxo (Quina)
-    else:
+    elif config.slug == "loto_facil_sorteio":
         heat_color = "#db2777"  # rosa (Lotofácil)
+    elif config.slug == "loto_mania_sorteio":
+        heat_color = "#f59e0b"  # amarelo (Lotomania)
+    else:
+        heat_color = "#2563eb"  # azul (padrão)
 
     # Observação: Lost Numbers é um “easter egg” do Lost; faz sentido só até 60,
     # então aqui limita ao universo do jogo.

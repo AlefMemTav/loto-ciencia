@@ -54,8 +54,9 @@ def render_game_selector():
     slug = st.session_state[GLOBAL_KEY]
     config = GAMES[slug]
     st.caption(
-        f"{config.name}: {config.n_numbers} números • aposta de {config.k} • {config.odds_text}"
+        f"{config.name}: {config.n_numbers} números • aposta de {config.bet_size} • {config.odds_text}"
     )
+    st.caption(config.how_to_play)
 
 
 def load_context():
@@ -63,7 +64,7 @@ def load_context():
     df, freq, poisson_finais, config = _compute_context(slug)
 
     if df is None or df.empty:
-        st.warning("Aguardando dados... Verifique o arquivo Excel.")
+        st.warning("Aguardando dados...")
         st.stop()
 
     return df, freq, poisson_finais, config
