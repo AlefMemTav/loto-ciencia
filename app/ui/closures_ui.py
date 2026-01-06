@@ -17,7 +17,7 @@ def render_closures(config: GameConfig):
         placeholder=f"Ex: " + " ".join([f"{n:02d}" for n in range(1, config.k + 3)]),
     )
 
-    if st.button("⚙️ Calcular Fechamento", use_container_width=True):
+    if st.button("⚙️ Calcular Fechamento", width="stretch"):
         try:
             base = sorted(
                 list(
@@ -75,7 +75,7 @@ def render_closures(config: GameConfig):
                     "📥 Baixar Arquivo",
                     txt,
                     f"fechamento_{config.slug}.txt",
-                    use_container_width=True,
+                    width="stretch",
                 )
             else:
                 st.warning(f"⚠️ Escolha entre **{min_base} e {max_base} números**.")

@@ -1,16 +1,13 @@
 import streamlit as st
 
-from app.ui.router import router
+from app.ui.landing_ui import render_landing_page
+from app.ui.page_config import apply_page_config
 
-st.set_page_config(
-    page_title="LotoScience - A Ciência da Loteria",
-    page_icon="🧬",
-    layout="wide",
-)
+apply_page_config()
 
 
 def main():
-    router()
+    render_landing_page()
 
 
 if __name__ == "__main__":

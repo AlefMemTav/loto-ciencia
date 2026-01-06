@@ -417,7 +417,7 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
                 fontsize=7,
             )
 
-    st.pyplot(fig, use_container_width=True)
+    st.pyplot(fig, width="stretch")
 
 
 def _render_probability_report(df, conjuntos, config: GameConfig):

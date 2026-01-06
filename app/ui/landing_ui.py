@@ -1,16 +1,14 @@
 import streamlit as st
 
+from app.ui.footer import render_footer
 from app.ui.styles import apply_custom_css
 
 
-# --- PÁGINA: LANDING PAGE ---
 def render_landing_page():
     apply_custom_css()
 
-    # -- NAV BAR SIMPLIFICADA --
     c1, c2 = st.columns([1, 5])
     with c1:
-        # Tenta carregar o ícone flat pequeno (rosto) se existir
         try:
             st.image("assets/mascote_sena.png", width=50)
         except:
@@ -45,12 +43,12 @@ def render_landing_page():
             unsafe_allow_html=True,
         )
 
-        st.markdown(
-            "<div style='margin-top:10px; color:#64748b; font-size:0.95rem;'>"
-            "Não aumenta sua probabilidade de ganhar; reduz padrões repetidos e o risco de dividir o prêmio."
-            "</div>",
-            unsafe_allow_html=True,
-        )
+        # st.markdown(
+        #    "<div style='margin-top:10px; color:#64748b; font-size:0.95rem;'>"
+        #    "Não aumenta sua probabilidade de ganhar; reduz padrões repetidos e o risco de dividir o prêmio."
+        #    "</div>",
+        #    unsafe_allow_html=True,
+        # )
 
         st.markdown(
             """
@@ -69,13 +67,12 @@ def render_landing_page():
         # Botões de Ação
         b1, b2 = st.columns([1, 1.2])
         with b1:
-            if st.button("Começar agora", type="primary", width="stretch"):
-                st.session_state.page = "app"
-                st.rerun()
+            if st.button("Iniciar Análise", type="primary", width="stretch"):
+                st.switch_page("pages/1_Painel.py")
+
         with b2:
             if st.button("📖 Entender a Ciência", width="stretch"):
-                st.session_state.page = "how"
-                st.rerun()
+                st.switch_page("pages/0_Como_funciona.py")
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -141,18 +138,15 @@ def render_landing_page():
             """,
             unsafe_allow_html=True,
         )
+    render_footer()
 
-    _render_footer()
 
-
-# --- PÁGINA: COMO FUNCIONA ---
 def render_como_funciona():
     apply_custom_css()
 
     # Header Simples
     if st.button("← Voltar para Início"):
-        st.session_state.page = "landing"
-        st.rerun()
+        st.switch_page("pages/0_Inicio.py")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -227,19 +221,4 @@ def render_como_funciona():
         )
 
     st.markdown("<br><br>", unsafe_allow_html=True)
-
-    _render_footer()
-
-
-def _render_footer():
-    st.markdown(
-        """
-        <div class="footer-container">
-            <div class="footer-text">
-                © 2026 LotoScience • Feito com Rigor Estatístico.<br>
-                <em>Loterias são jogos de azar. Jogue com responsabilidade. Probabilidades baseadas na matemática oficial (1 em 50.063.860, 1 em 24.040.016, 1 em 3.268.760, respectivamente para Mega-Sena, Lotofácil, Quina).</em>
-            </div>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    render_footer()

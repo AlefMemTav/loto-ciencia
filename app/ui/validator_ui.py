@@ -24,7 +24,7 @@ def render_validator(df, config: GameConfig):
         help="Separe por espaço, vírgula ou traço.",
     )
 
-    if st.button("🔍 Analisar Qualidade", type="primary", use_container_width=True):
+    if st.button("🔍 Analisar Qualidade", type="primary", width="stretch"):
         try:
             texto = entrada.replace(",", " ").replace("-", " ")
             nums = sorted(
@@ -234,7 +234,7 @@ def _render_geometric_metrics(metricas):
             st.dataframe(
                 df_geom,
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
                 column_config={
                     "Grupo": st.column_config.TextColumn("Grupo"),
                     "No jogo": st.column_config.NumberColumn("No jogo", format="%d"),

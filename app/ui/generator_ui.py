@@ -27,7 +27,7 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
         value=True,
     )
 
-    btn_gerar = st.button("✨ Gerar Agora", type="primary", use_container_width=True)
+    btn_gerar = st.button("✨ Gerar Agora", type="primary", width="stretch")
 
     if btn_gerar:
         # Busca dados
@@ -118,7 +118,7 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
             "📥 Baixar Jogos (.txt)",
             txt_out,
             f"jogos_{config.slug}_{estrategia}.txt",
-            use_container_width=True,
+            width="stretch",
         )
 
         # Expander com detalhes
