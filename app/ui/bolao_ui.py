@@ -1,18 +1,21 @@
+# app/ui/bolao_ui.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from app.src.logger import logger
 from app.src.games import GameConfig
-from app.src.statistics import analise_intervalo_confianca, get_historico_jogos
-from app.src.validator import validar_jogo
-from app.ui.game_constants import get_constants_for_game
+from app.src.game_constants import get_constants_for_game
 
 
-def render_bolao(df, config: GameConfig):
+def render_bolao(ctx, svc):
+    config = ctx.config
+    slug = config.slug
+    df = ctx.df
     constants = get_constants_for_game(config)
     color = constants.get("heat_color", "#ef4444")
+
     st.markdown(
-        f"<h3> 👥 Auditoria de Bolão da <span style='color: {color};'>{config.name}</span></h3>",
+        f"<h3>👥 Auditoria de Bolão da <span style='color: {color};'>{config.name}</span></h3>",
         unsafe_allow_html=True,
     )
     st.write(
@@ -21,10 +24,9 @@ def render_bolao(df, config: GameConfig):
 
     qtd_aposta = config.bet_size
 
-    # Ajusta o range para não estourar o limite de números do jogo (ex: range(4, 54) na Lotomania)
+    # Ajusta o range para não estourar o limite de números do jogo
     start_ex1 = 1
     end_ex1 = start_ex1 + qtd_aposta
-
     nums_exemplo1 = " ".join([f"{n:02d}" for n in range(start_ex1, end_ex1)])
 
     # Segundo exemplo deslocado
@@ -38,14 +40,11 @@ def render_bolao(df, config: GameConfig):
         height=200,
     )
 
-    historico_set = get_historico_jogos(df, config)
-
-    if st.button("🔍 Auditar Bolão"):
+    if st.button("🔍 Auditar Bolão", type="primary", width="stretch"):
         # 1. Processamento dos Dados
         jogos_validos, jogos_invalidos, todos_numeros = _processar_input_jogos(
             texto_bolao, config
         )
-        ic_info = analise_intervalo_confianca(df, config)
 
         if not jogos_validos:
             st.warning(
@@ -70,19 +69,19 @@ def render_bolao(df, config: GameConfig):
             _renderizar_heatmap_bolao(todos_numeros, config)
 
         with col_tecnica:
-            _renderizar_analise_qualidade(
-                jogos_validos, todos_numeros, historico_set, ic_info, config
-            )
+            # Usa dados pré-computados do contexto
+            _renderizar_analise_qualidade(jogos_validos, todos_numeros, ctx, svc)
 
         # 5. Lista Simples e Erros
-        _renderizar_lista_resumo(jogos_validos, historico_set, ic_info, config)
+        _renderizar_lista_resumo(jogos_validos, ctx, svc)
+
         if jogos_invalidos:
             st.error(
-                f"Ignoramos {len(jogos_invalidos)} linhas que não pareciam jogos válidos (quantidade incorreta ou caracteres inválidos)."
+                f"⚠️ Ignoramos {len(jogos_invalidos)} linhas que não pareciam jogos válidos (quantidade incorreta ou caracteres inválidos)."
             )
 
         # 6. Relatório Detalhado
-        _renderizar_detalhes_profundos(jogos_validos, historico_set, ic_info, config)
+        _renderizar_detalhes_profundos(jogos_validos, ctx, svc)
 
 
 # --- FUNÇÕES AUXILIARES (UI HELPERS) ---
@@ -109,7 +108,7 @@ def _processar_input_jogos(texto, config: GameConfig):
                 list(set([int(n) for n in limpa.split() if n.strip().isdigit()]))
             )
 
-            # Valida usando qtd_esperada (50 para Mania, k para outros)
+            # Valida usando qtd_esperada
             if len(nums) == qtd_esperada and all(
                 1 <= n <= config.n_numbers for n in nums
             ):
@@ -124,7 +123,8 @@ def _processar_input_jogos(texto, config: GameConfig):
         logger.warning(
             f"Auditoria de Bolão: {len(invalidos)} linhas inválidas rejeitadas."
         )
-        logger.debug(f"Amostra inválida: {invalidos[0]}")
+        if invalidos:
+            logger.debug(f"Amostra inválida: {invalidos[0]}")
 
     if validos:
         logger.info(f"Auditoria de Bolão: {len(validos)} jogos válidos processados.")
@@ -135,7 +135,6 @@ def _processar_input_jogos(texto, config: GameConfig):
 def _calcular_estatisticas_grupo(jogos, todos_numeros, config: GameConfig):
     """Calcula métricas financeiras e de cobertura."""
     qtd = len(jogos)
-    # Usa preço do jogo definido na config
     preco = config.game_price
     custo = qtd * preco
 
@@ -160,7 +159,7 @@ def _renderizar_cards_kpi(stats):
     """Exibe os 4 cards principais no topo."""
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Total de Jogos", stats["qtd"])
-    k2.metric("Custo Total", f"R$ {stats['custo']:,.2f}")
+    k2.metric("Custo Estimado", f"R$ {stats['custo']:,.2f}")
     k3.metric(
         "Cobertura do Volante",
         f"{stats['unicos']}/{stats['universo']} ({stats['cobertura']:.0f}%)",
@@ -202,8 +201,10 @@ def _renderizar_heatmap_bolao(todos_numeros, config: GameConfig):
         r = 0.34
     elif min(layout.rows, layout.cols) >= 8:
         r = 0.38
+
     theme = get_constants_for_game(config)
     heat_color = theme["heat_color"]
+
     for n in range(1, config.n_numbers + 1):
         qtd = contagem.get(n, 0)
 
@@ -235,14 +236,19 @@ def _renderizar_heatmap_bolao(todos_numeros, config: GameConfig):
     st.pyplot(fig)
 
 
-def _renderizar_analise_qualidade(jogos, todos_numeros, historico, ic_info, config):
+def _renderizar_analise_qualidade(jogos, todos_numeros, ctx, svc):
     """Calcula score médio e mostra números esquecidos."""
     st.markdown("##### 🌡️ Qualidade Técnica")
 
-    scores = [
-        validar_jogo(j, config, historico_jogos=historico, ic_info=ic_info)["score"]
-        for j in jogos
-    ]
+    config = ctx.config
+    slug = config.slug
+
+    # Usa o service para validar cada jogo
+    scores = []
+    for jogo in jogos:
+        val = svc.validate(slug, jogo)
+        scores.append(val["score"])
+
     media_score = sum(scores) / len(scores) if scores else 0
 
     st.metric("Score Médio do Grupo", f"{media_score:.0f}/100")
@@ -263,16 +269,20 @@ def _renderizar_analise_qualidade(jogos, todos_numeros, historico, ic_info, conf
         st.success(f"Parabéns! Vocês cercaram todos os {config.n_numbers} números.")
 
 
-def _renderizar_lista_resumo(jogos, historico, ic_info, config):
+def _renderizar_lista_resumo(jogos, ctx, svc):
     """Exibe o expander com a lista simples."""
+    config = ctx.config
+    slug = config.slug
+
     with st.expander("📋 Ver Lista Detalhada dos Jogos"):
-        for i, jogo in enumerate(jogos):
-            val = validar_jogo(jogo, config, historico_jogos=historico, ic_info=ic_info)
+        for i, jogo in enumerate(jogos, 1):
+            val = svc.validate(slug, jogo)
             icone = "🟢" if val["score"] >= 80 else "🟡" if val["score"] >= 50 else "🔴"
-            st.write(f"**Jogo {i+1}:** {jogo} {icone} (Score: {val['score']})")
+            nums_fmt = " ".join([f"{n:02d}" for n in jogo])
+            st.write(f"**Jogo {i}:** `{nums_fmt}` {icone} (Score: {val['score']})")
 
 
-def _renderizar_detalhes_profundos(jogos, historico, ic_info, config):
+def _renderizar_detalhes_profundos(jogos, ctx, svc):
     """Exibe a seção final com cards detalhados jogo a jogo."""
     st.write("---")
     st.subheader("📋 Detalhes Jogo a Jogo")
@@ -280,8 +290,11 @@ def _renderizar_detalhes_profundos(jogos, historico, ic_info, config):
         "Clique no jogo para ver a análise individual completa (Gauss, Quadrantes, Alertas)."
     )
 
-    for i, jogo in enumerate(jogos):
-        val = validar_jogo(jogo, config, historico_jogos=historico, ic_info=ic_info)
+    config = ctx.config
+    slug = config.slug
+
+    for i, jogo in enumerate(jogos, 1):
+        val = svc.validate(slug, jogo)
 
         if val["score"] >= 80:
             icone, label = "🟢", "Excelente"
@@ -290,8 +303,10 @@ def _renderizar_detalhes_profundos(jogos, historico, ic_info, config):
         else:
             icone, label = "🔴", "Fraco"
 
+        nums_fmt = " ".join([f"{n:02d}" for n in jogo])
+
         with st.expander(
-            f"{icone} Jogo {i+1}: {jogo} — Score: {val['score']} ({label})"
+            f"{icone} Jogo {i}: `{nums_fmt}` — Score: {val['score']} ({label})"
         ):
             for msg in val["msgs"]:
                 if "✅" in msg:

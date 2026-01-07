@@ -1,47 +1,37 @@
+# app/ui/shared.py
 import streamlit as st
+import pandas as pd
+
 from app.src.games import GAMES
-from app.src.data_loader import carregar_dados_loteria_excel
-from app.src.statistics import get_numeros_quentes_frios, analise_poisson
+from app.services.lottery_service import LotteryService
 from app.src.logger import logger
 
-GLOBAL_KEY = "selected_game"  # fonte da verdade (persistente entre páginas)
-WIDGET_KEY = "selected_game_widget"  # estado do widget (para UI)
+GLOBAL_KEY = "selected_game"
+WIDGET_KEY = "selected_game_widget"
+
+
+# Instância única do service (cache implícito via lru_cache no service)
+@st.cache_resource
+def get_service():
+    return LotteryService()
 
 
 def init_game_state():
     jogos = list(GAMES.keys())
-
-    # 1) garante o global
     if GLOBAL_KEY not in st.session_state or st.session_state[GLOBAL_KEY] not in jogos:
         st.session_state[GLOBAL_KEY] = jogos[0]
-
-    # 2) garante o widget (o que aparece marcado)
     if WIDGET_KEY not in st.session_state or st.session_state[WIDGET_KEY] not in jogos:
         st.session_state[WIDGET_KEY] = st.session_state[GLOBAL_KEY]
 
 
 def _sync_widget_to_global():
-    # callback: roda quando o usuário muda o widget
     novo_jogo = st.session_state[WIDGET_KEY]
     if novo_jogo != st.session_state.get(GLOBAL_KEY):
         logger.info(f"Troca de contexto: Usuário mudou para {novo_jogo}")
         st.session_state[GLOBAL_KEY] = novo_jogo
 
 
-@st.cache_data()
-def _compute_context(slug: str):
-    config = GAMES[slug]
-    df = carregar_dados_loteria_excel(config, f"data/{slug}.xlsx")
-    if df.empty:
-        return df, None, None, config
-    freq = get_numeros_quentes_frios(df, config)
-    poisson_finais = analise_poisson(df, config, 0.05)
-    return df, freq, poisson_finais, config
-
-
 def render_game_selector():
-    # init_game_state()
-
     jogos = list(GAMES.keys())
     st.segmented_control(
         "Jogo",
@@ -60,11 +50,21 @@ def render_game_selector():
 
 
 def load_context():
+    """
+    Carrega o contexto via LotteryService.
+    Retorna: (ctx, svc) onde ctx é o GameContext
+    """
     slug = st.session_state[GLOBAL_KEY]
-    df, freq, poisson_finais, config = _compute_context(slug)
+    svc = get_service()
 
-    if df is None or df.empty:
+    try:
+        ctx = svc.get_context(slug)
+    except Exception as e:
+        st.error(f"Erro ao carregar contexto: {e}")
+        st.stop()
+
+    if ctx.df is None or ctx.df.empty:
         st.warning("Aguardando dados...")
         st.stop()
 
-    return df, freq, poisson_finais, config
+    return ctx, svc

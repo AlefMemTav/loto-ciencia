@@ -4,6 +4,11 @@ import time
 import numpy as np
 from math import comb
 from itertools import combinations
+from app.src.advanced_statistics import calcular_distribuicoes_geometricas
+from app.src.game_constants import (
+    get_constants_for_game,
+    get_grupos_geometricos_essenciais,
+)
 from app.src.validator import validar_jogo
 from app.src.games import GameConfig
 from app.src.logger import logger
@@ -15,7 +20,11 @@ from app.src.statistics import (
 
 
 def gerar_jogo_perfeito(
-    df, config: GameConfig, finais_poisson=None, estrategia="balanceada"
+    df,
+    config: GameConfig,
+    finais_poisson=None,
+    estrategia="balanceada",
+    contexto_precomputado=None,
 ):
     """
     Gerador genérico para qualquer jogo (Mega-Sena, Quina, Lotofácil).
@@ -31,6 +40,23 @@ def gerar_jogo_perfeito(
     """
 
     start_time = time.time()
+    if contexto_precomputado:
+        logger.debug(f"✅ [GENERATOR] Usando contexto pré-computado para {config.name}")
+        tabela = contexto_precomputado["tabela"]
+        historico_jogos = contexto_precomputado["historico_jogos"]
+        ic_info = contexto_precomputado["ic_info"]
+        distribuicoes_geometricas = contexto_precomputado["distribuicoes_geometricas"]
+    else:
+        logger.warning(f"⚠️ [GENERATOR] Contexto não fornecido, recalculando (LENTO)")
+        tabela = get_tabela_inteligencia(df, config)
+        historico_jogos = get_historico_jogos(df, config)
+        ic_info = analise_intervalo_confianca(df, config)
+
+        constants = get_constants_for_game(config)
+        grupos_geometricos = get_grupos_geometricos_essenciais(config)
+        distribuicoes_geometricas = calcular_distribuicoes_geometricas(
+            df, grupos_geometricos, config
+        )
 
     # 1. Busca dados
     tabela = get_tabela_inteligencia(df, config)
@@ -87,6 +113,7 @@ def gerar_jogo_perfeito(
             historico_jogos=historico,
             ic_info=ic_info,
             df_historico=df,
+            distribuicoes_geometricas=distribuicoes_geometricas,
         )
 
         score_base = val["score"]
@@ -132,6 +159,7 @@ def gerar_jogo_perfeito(
     logger.warning(
         f"[{config.name}] Limite de 10k tentativas atingido. Retornando melhor esforço (Score {melhor_score})."
     )
+
     return (
         melhor_jogo
         if melhor_jogo
@@ -146,6 +174,7 @@ def gerar_multiplos_jogos(
     estrategia="balanceada",
     garantir_diversidade=True,
     finais_poisson=None,
+    contexto_precomputado=None,
 ):
     """
     Gerador de múltiplos jogos genéricos com controle de diversidade.
@@ -181,7 +210,12 @@ def gerar_multiplos_jogos(
     while len(jogos_gerados) < quantidade and tentativas < max_tentativas:
         tentativas += 1
 
-        jogo = gerar_jogo_perfeito(df, config, estrategia=estrategia)
+        jogo = gerar_jogo_perfeito(
+            df,
+            config,
+            estrategia=estrategia,
+            contexto_precomputado=contexto_precomputado,
+        )
         jogo_tuple = tuple(jogo)
 
         # Verifica duplicata
@@ -213,6 +247,7 @@ def gerar_com_restricoes(
     numeros_fixos=None,
     numeros_evitados=None,
     estrategia="balanceada",
+    contexto_precomputado=None,
 ):
     """
     Gerador genérico com restrições personalizadas.
@@ -223,13 +258,32 @@ def gerar_com_restricoes(
         numeros_fixos: Lista de números que DEVEM estar no jogo
         numeros_evitados: Lista de números que NÃO podem estar no jogo
         estrategia: Modo de geração
+        contexto_precomputado: dict com estatísticas pré-computadas (otimização)
 
     Returns:
-        Lista com 6 números ou dict com erro
+        Lista com números ou dict com erro
     """
-    tabela = get_tabela_inteligencia(df, config)
-    historico = get_historico_jogos(df, config)
-    ic_info = analise_intervalo_confianca(df, config)
+    if contexto_precomputado:
+        tabela = contexto_precomputado["tabela"]
+        historico = contexto_precomputado["historico_jogos"]
+        ic_info = contexto_precomputado["ic_info"]
+        distribuicoes_geometricas = contexto_precomputado["distribuicoes_geometricas"]
+    else:
+        tabela = get_tabela_inteligencia(df, config)
+        historico = get_historico_jogos(df, config)
+        ic_info = analise_intervalo_confianca(df, config)
+
+        constants = get_constants_for_game(config)
+        grupos_geometricos = {
+            "Moldura (Borda)": constants["moldura"],
+            "Miolo (Centro)": constants["miolo"],
+            "Cruz": constants["cruz"],
+            "Xis (Diagonais)": constants["xis"],
+            "Cantos": constants["cantos"],
+        }
+        distribuicoes_geometricas = calcular_distribuicoes_geometricas(
+            df, grupos_geometricos, config
+        )
 
     if tabela.empty:
         return None
@@ -280,6 +334,7 @@ def gerar_com_restricoes(
             historico_jogos=historico,
             ic_info=ic_info,
             df_historico=df,
+            distribuicoes_geometricas=distribuicoes_geometricas,
         )
 
         if val["score"] >= 75:

@@ -1,25 +1,25 @@
+# app/ui/dashboard_ui.py
 import streamlit as st
 import pandas as pd
 import altair as alt
 import matplotlib.pyplot as plt
-from app.src.games import GameConfig
-from app.src.statistics import (
-    calcular_atrasos,
-    calcular_chi_quadrado,
-    calcular_coeficiente_variacao,
-    get_reis_da_sequencia,
-    get_tabela_inteligencia,
-)
-from app.ui.game_constants import get_constants_for_game
-from app.src.advanced_statistics import (
-    calcular_distribuicoes_geometricas,
-    calcular_taxa_regressao,
-)
+from app.src.game_constants import get_constants_for_game
 
 
-def render_dashboard(df, freq, poisson_finais, config: GameConfig):
+def render_dashboard(ctx, svc):
+    config = ctx.config
+    df = ctx.df
+    freq = ctx.freq
+    poisson_finais = ctx.poisson_finais
+    atrasos = ctx.atrasos
+    chi2 = ctx.chi2
+    coef_variacao = ctx.coef_variacao
+    reis_sequencia = ctx.reis_sequencia
+    tabela = ctx.tabela
+    ic_info = ctx.ic_info
     constants = get_constants_for_game(config)
     color = constants.get("heat_color", "#ef4444")
+
     st.markdown(
         f"<h3>🔭 O Raio-X da <span style='color: {color};'>{config.name}</span></h3>",
         unsafe_allow_html=True,
@@ -33,7 +33,7 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
     st.markdown("---")
 
     # 2. Oportunidades (O que o usuário quer ver primeiro)
-    _render_gap_bar_charts(df, config)
+    _render_gap_bar_charts(atrasos, config)
     st.markdown("---")
 
     # 3. Tendências de Longo Prazo (LLN e Quentes/Frios)
@@ -42,7 +42,6 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
 
     # 4. Mapa Visual
     # Preparação de dados para o mapa
-    reis_seq = get_reis_da_sequencia(df, config)
     top_quentes = freq.head(15).index.tolist()
     top_frios = freq.tail(15).index.tolist()
 
@@ -66,7 +65,7 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
         "Números 'Lost'": constants["lost_numbers"],
         "Fibonacci": constants["fibonacci"],
         "Gêmeos (11, 22...)": constants["gemeos"],
-        "Reis da Sequência": reis_seq,
+        "Reis da Sequência": reis_sequencia,
         "Quadrante 1 (Sup. Esq)": config.layout.quadrant_numbers(1),
         "Quadrante 2 (Sup. Dir)": config.layout.quadrant_numbers(2),
         "Quadrante 3 (Inf. Esq)": config.layout.quadrant_numbers(3),
@@ -77,7 +76,7 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
     st.markdown("---")
 
     # 5. Guia de Equilíbrio (Tabela de Probabilidades)
-    _render_probability_report(df, conjuntos, config)
+    _render_probability_report(conjuntos, config, svc, ctx)
     st.markdown("---")
 
     # 6. Auditoria Técnica (Fica por último para não assustar)
@@ -103,11 +102,10 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
 
     with c2:
         st.markdown(f"**⚖️ Teste de Honestidade (Chi-Quadrado) para a {config.name}**")
-        chi_res = calcular_chi_quadrado(df, config)
 
-        if chi_res:
-            p_chi = chi_res.get("p_chi", 0)
-            p_ks = chi_res.get("p_ks", 0)
+        if chi2:
+            p_chi = chi2.get("p_chi", 0)
+            p_ks = chi2.get("p_ks", 0)
 
             # Se p_chi > 0.05, não rejeitamos a hipótese nula (distribuição é uniforme) -> Verde
             is_honesto = p_chi > 0.05
@@ -131,8 +129,7 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
         else:
             st.info("Dados insuficientes para teste Chi-Quadrado.")
 
-        cv_res = calcular_coeficiente_variacao(df, config)
-        if cv_res:
+        if coef_variacao:
             st.markdown(f"**📉 Coeficiente de Variação (CV) para a {config.name}**")
             st.caption(
                 "Mede quão uniforme está a frequência dos números (quanto menor, mais uniforme)."
@@ -140,20 +137,20 @@ def render_dashboard(df, freq, poisson_finais, config: GameConfig):
 
             st.metric(
                 "CV (%)",
-                f"{cv_res['coeficiente_variacao']:.2f}",
-                help=cv_res["interpretacao"],
+                f"{coef_variacao['coeficiente_variacao']:.2f}",
+                help=coef_variacao["interpretacao"],
             )
         else:
             st.info("Dados insuficientes para calcular o CV.")
 
-    # NOVO: Validação de Regressão à Média
-    _render_regression_analysis(df, config)
+    _render_regression_analysis(config, svc)
 
     # 7. Tabela Científica (Escondida para curiosos)
-    _render_z_score_gaps_section(df, config)
+    _render_z_score_gaps_section(tabela)
 
 
-def _render_kpis(freq, df, config: GameConfig):
+def _render_kpis(freq, df, config):
+    """Renderiza os 4 KPIs principais."""
     if not freq.empty:
         num_mais = freq.idxmax()
         qtd_mais = freq.max()
@@ -214,13 +211,12 @@ def _render_kpis(freq, df, config: GameConfig):
         )
 
 
-def _render_gap_bar_charts(df, config: GameConfig):
+def _render_gap_bar_charts(atrasos, config):
+    """Renderiza gráfico de números atrasados usando atrasos do ctx."""
     st.subheader("⏰ Relógio dos Atrasados")
     st.write(
         "Estes números estão 'dormindo' há muito tempo. Segundo a estatística, a chance deles acordarem aumenta a cada sorteio."
     )
-
-    atrasos = calcular_atrasos(df, config)
 
     # Mostra os 20 mais atrasados
     top_atrasados = atrasos.head(20)
@@ -249,7 +245,7 @@ def _render_gap_bar_charts(df, config: GameConfig):
         )
 
 
-def _render_bar_charts(freq, num, config: GameConfig):
+def _render_bar_charts(freq, num, config):
     """
     Renderiza gráficos de barra usando Altair para incluir a Linha de Média (LLN).
     """
@@ -312,7 +308,8 @@ def _render_bar_charts(freq, num, config: GameConfig):
         st.altair_chart(barras_frias + regua, width="stretch")
 
 
-def _render_heatmap_section(freq, conjuntos, config: GameConfig):
+def _render_heatmap_section(freq, conjuntos, config):
+    """Renderiza mapa de calor interativo."""
     st.subheader("🗺️ Mapa de Calor")
     st.write(
         "Visualize onde os números caem no volante. Use os filtros para ver padrões ocultos."
@@ -340,7 +337,8 @@ def _render_heatmap_section(freq, conjuntos, config: GameConfig):
         _plot_heatmap_matplotlib(freq, nums_filtro, config)
 
 
-def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
+def _plot_heatmap_matplotlib(freq, nums_filtro, config):
+    """Plota mapa de calor usando matplotlib."""
     layout = config.layout
 
     base_w = 8.0
@@ -420,7 +418,7 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config: GameConfig):
     st.pyplot(fig, width="stretch")
 
 
-def _render_probability_report(df, conjuntos, config: GameConfig):
+def _render_probability_report(conjuntos, config, svc, ctx):
     """
     Usa análise estatística avançada com distribuições empíricas.
     Mostra média, desvio-padrão e percentis baseados em dados reais.
@@ -430,10 +428,6 @@ def _render_probability_report(df, conjuntos, config: GameConfig):
         "Baseado em **análise estatística real** dos sorteios históricos. "
         "A tabela mostra quantos números de cada grupo aparecem tipicamente nos sorteios."
     )
-
-    if df.empty:
-        st.warning("Sem dados para calcular.")
-        return
 
     # Filtra apenas os grupos geométricos relevantes para a análise
     grupos_geometricos = {
@@ -448,44 +442,44 @@ def _render_probability_report(df, conjuntos, config: GameConfig):
         "Quadrante 4 (Inf. Dir)": conjuntos["Quadrante 4 (Inf. Dir)"],
     }
 
-    # Calcula distribuições empíricas usando nova função estatística
-    distribuicoes = calcular_distribuicoes_geometricas(df, grupos_geometricos, config)
-
-    if not distribuicoes:
-        st.info("Dados insuficientes para análise estatística.")
-        return
-
-    # Prepara dados para a tabela
-    dados_relatorio = []
-
-    for nome, dist in distribuicoes.items():
-        # Ajuste para jogos grandes (Lotomania: aposta 50 vs sorteio 20)
-        if config.k != config.bet_size and config.k > 0:
-            fator = config.bet_size / config.k
-            mean_ajustada = dist.mean * fator
-            std_ajustada = dist.std * fator
-            p5_ajustado = dist.percentiles[5] * fator
-            p95_ajustado = dist.percentiles[95] * fator
-        else:
-            mean_ajustada = dist.mean
-            std_ajustada = dist.std
-            p5_ajustado = dist.percentiles[5]
-            p95_ajustado = dist.percentiles[95]
-
-        dados_relatorio.append(
-            {
-                "Grupo": nome,
-                "Média (μ)": f"{mean_ajustada:.2f}",
-                "Desvio (σ)": f"{std_ajustada:.2f}",
-                "Intervalo Normal": f"{p5_ajustado:.1f} - {p95_ajustado:.1f}",
-                "_raw_media": mean_ajustada,
-            }
-        )
-
-    df_rel = pd.DataFrame(dados_relatorio)
-    df_rel = df_rel.sort_values(by="_raw_media", ascending=False)
-
     with st.expander("Ver Tabela Estatística Completa", expanded=True):
+        # Só executa quando usuário abre o expander
+        distribuicoes = svc.analyze_distributions(config.slug, grupos_geometricos)
+
+        if not distribuicoes:
+            st.info("Dados insuficientes para análise estatística.")
+            return
+
+        # Prepara dados para a tabela
+        dados_relatorio = []
+
+        for nome, dist in distribuicoes.items():
+            # Ajuste para jogos grandes (Lotomania: aposta 50 vs sorteio 20)
+            if config.k != config.bet_size and config.k > 0:
+                fator = config.bet_size / config.k
+                mean_ajustada = dist.mean * fator
+                std_ajustada = dist.std * fator
+                p5_ajustado = dist.percentiles[5] * fator
+                p95_ajustado = dist.percentiles[95] * fator
+            else:
+                mean_ajustada = dist.mean
+                std_ajustada = dist.std
+                p5_ajustado = dist.percentiles[5]
+                p95_ajustado = dist.percentiles[95]
+
+            dados_relatorio.append(
+                {
+                    "Grupo": nome,
+                    "Média (μ)": f"{mean_ajustada:.2f}",
+                    "Desvio (σ)": f"{std_ajustada:.2f}",
+                    "Intervalo Normal": f"{p5_ajustado:.1f} - {p95_ajustado:.1f}",
+                    "_raw_media": mean_ajustada,
+                }
+            )
+
+        df_rel = pd.DataFrame(dados_relatorio)
+        df_rel = df_rel.sort_values(by="_raw_media", ascending=False)
+
         st.caption(
             f"💡 **Como usar:** Procure manter seus jogos dentro do 'Intervalo Normal' (90% dos sorteios históricos). "
             f"Por exemplo, se a Moldura tem média de 2.5, escolha 2-3 números da borda."
@@ -515,20 +509,21 @@ def _render_probability_report(df, conjuntos, config: GameConfig):
         st.info(
             "📈 **Nota Estatística:** Esta análise usa distribuições empíricas reais "
             "ao invés de heurísticas fixas. Os valores mostram o comportamento histórico "
-            f"dos últimos {len(df)} sorteios da {config.name}."
+            f"dos últimos {len(ctx.df)} sorteios da {config.name}."
         )
 
 
-def _render_regression_analysis(df, config: GameConfig):
+def _render_regression_analysis(config, svc):
     """
     Exibe análise de regressão à média validando a estratégia "agressiva".
     """
-    regressao = calcular_taxa_regressao(df, config, janela=100)
-
-    if not regressao:
-        return
 
     with st.expander("📈 Validação: Regressão à Média Funciona?", expanded=False):
+        regressao = svc.analyze_regression(config.slug, janela=100)
+        if not regressao:
+            st.info("Dados insuficientes.")
+            return
+
         st.markdown(
             "**Pergunta:** Números atrasados realmente tendem a sair? "
             "Analisamos os últimos 100 sorteios para validar esta hipótese estatística."
@@ -594,12 +589,12 @@ def _render_regression_analysis(df, config: GameConfig):
             )
 
 
-def _render_z_score_gaps_section(df, config: GameConfig):
+def _render_z_score_gaps_section(tabela):
+    """Renderiza tabela de inteligência (usa tabela do ctx)."""
     with st.expander("🤓 Área Nerd: Dados Brutos (Z-Score & Gaps)"):
         st.write(
             "Estes são os dados matemáticos que alimentam o Gerador de Jogos. O 'Peso' define a probabilidade de escolha."
         )
-        tabela = get_tabela_inteligencia(df, config)
         st.dataframe(
             tabela.style.background_gradient(subset=["Peso_Geracao"], cmap="Greens"),
             width="stretch",

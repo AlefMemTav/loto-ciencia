@@ -2,28 +2,24 @@
 import streamlit as st
 import pandas as pd
 from app.src.logger import logger
-from app.src.games import GameConfig
-from app.src.validator import validar_jogo
-from app.src.statistics import (
-    get_historico_jogos,
-    analise_intervalo_confianca,
-    verificar_historico,
-)
 from app.ui.board_ui import render_volante_marcado
-from app.ui.game_constants import get_constants_for_game
+from app.src.game_constants import get_constants_for_game
 
 
-def render_validator(df, config: GameConfig):
+def render_validator(ctx, svc):
+    config = ctx.config
+    slug = config.slug
+    df = ctx.df
     constants = get_constants_for_game(config)
     color = constants.get("heat_color", "#ef4444")
+
     st.markdown(
-        f"<h3> 🧪 Laboratório de Validação da <span style='color: {color};'>{config.name}</span></h3>",
+        f"<h3>🧪 Laboratório de Validação da <span style='color: {color};'>{config.name}</span></h3>",
         unsafe_allow_html=True,
     )
     st.write(f"Digite seus números da {config.name} para validação estatística.")
 
     qtd_aposta = config.bet_size
-
     nums_exemplo = " ".join([f"{n:02d}" for n in range(4, 4 + qtd_aposta)])
 
     entrada = st.text_input(
@@ -53,18 +49,7 @@ def render_validator(df, config: GameConfig):
 
             logger.info(f"[{config.name}] Validação manual solicitada para: {nums}")
 
-            # Busca dados
-            historico = get_historico_jogos(df, config)
-            ic_info = analise_intervalo_confianca(df, config)
-
-            # Validação
-            relatorio = validar_jogo(
-                nums,
-                config,
-                historico_jogos=historico,
-                ic_info=ic_info,
-                df_historico=df,
-            )
+            relatorio = svc.validate(slug, nums)
 
             logger.info(
                 f"[{config.name}] Resultado validação: Score {relatorio['score']} | Status: {relatorio['status']}"
@@ -126,7 +111,8 @@ def render_validator(df, config: GameConfig):
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            _render_backtesting(df, config, nums)
+            # Backtesting
+            _render_backtesting(config, nums, svc)
 
             # Métricas
             st.markdown("##### 📊 Métricas Técnicas")
@@ -185,20 +171,19 @@ def render_validator(df, config: GameConfig):
                     )
 
         except Exception as e:
-            logger.error(f"Erro na validação manual: {e}")
-            st.error(
-                f"Não entendi esses números. Tente digitar assim: {nums_exemplo}. ({e})"
-            )
+            logger.error(f"Erro na validação manual: {e}", exc_info=True)
+            st.error(f"Não entendi esses números. Tente digitar assim: {nums_exemplo}")
 
 
-def _render_backtesting(df, config, nums):
-    with st.expander("Histórico (Backtesting)", expanded=False):
+def _render_backtesting(config, nums, svc):
+    """Mostra histórico de acertos (backtesting visual)."""
+    with st.expander("📊 Histórico (Backtesting)", expanded=False):
         if config.slug == "loto_mania_sorteio":
             alvos = [20, 19, 18, 0]
         else:
             alvos = [config.k, config.k - 1, config.k - 2]
 
-        res = verificar_historico(nums, df, config, alvos=alvos)
+        res = svc.check_historical_matches(config.slug, nums, targets=alvos)
 
         cols = st.columns(len(alvos))
 
@@ -221,23 +206,31 @@ def _render_backtesting(df, config, nums):
 
 
 def _render_geometric_metrics(metricas):
-    """Renderiza métricas geométricas com nova estrutura estatística"""
+    """Renderiza métricas geométricas com nova estrutura estatística."""
     geom = metricas.get("geom_detalhes", None)
     score_geom = metricas.get("score_geom", None)
 
     if geom:
-        with st.expander("Geometria do Volante (análise estatística)", expanded=False):
+        with st.expander(
+            "🎯 Geometria do Volante (análise estatística)", expanded=False
+        ):
             if score_geom is not None:
                 st.caption(f"Score Geométrico: {score_geom}/100")
 
             linhas = []
-            ordem = ["moldura", "miolo", "cruz", "xis", "cantos"]
+            ordem = [
+                "Moldura (Borda)",
+                "Miolo (Centro)",
+                "Cruz",
+                "Xis (Diagonais)",
+                "Cantos",
+            ]
             nomes = {
-                "moldura": "Moldura",
-                "miolo": "Miolo",
-                "cruz": "Cruz",
-                "xis": "Xis",
-                "cantos": "Cantos",
+                "Moldura (Borda)": "Moldura",
+                "Miolo (Centro)": "Miolo",
+                "Cruz": "Cruz",
+                "Xis (Diagonais)": "Xis",
+                "Cantos": "Cantos",
             }
 
             for key in ordem:
@@ -254,29 +247,32 @@ def _render_geometric_metrics(metricas):
                     }
                 )
 
-            df_geom = pd.DataFrame(linhas)
-            st.dataframe(
-                df_geom,
-                hide_index=True,
-                width="stretch",
-                column_config={
-                    "Grupo": st.column_config.TextColumn("Grupo"),
-                    "No jogo": st.column_config.NumberColumn("No jogo", format="%d"),
-                    "Média histórica": st.column_config.NumberColumn(
-                        "Média histórica", format="%.2f"
-                    ),
-                    "Z-Score": st.column_config.NumberColumn(
-                        "Z-Score",
-                        format="%.2f",
-                        help="Quantos desvios-padrão do normal. |Z| > 2 é raro.",
-                    ),
-                    "Categoria": st.column_config.TextColumn("Categoria"),
-                },
-            )
+            if linhas:
+                df_geom = pd.DataFrame(linhas)
+                st.dataframe(
+                    df_geom,
+                    hide_index=True,
+                    width="stretch",
+                    column_config={
+                        "Grupo": st.column_config.TextColumn("Grupo"),
+                        "No jogo": st.column_config.NumberColumn(
+                            "No jogo", format="%d"
+                        ),
+                        "Média histórica": st.column_config.NumberColumn(
+                            "Média histórica", format="%.2f"
+                        ),
+                        "Z-Score": st.column_config.NumberColumn(
+                            "Z-Score",
+                            format="%.2f",
+                            help="Quantos desvios-padrão do normal. |Z| > 2 é raro.",
+                        ),
+                        "Categoria": st.column_config.TextColumn("Categoria"),
+                    },
+                )
 
 
 def _render_advanced_metrics(metricas):
-    """Renderiza métricas avançadas (Hamming, Quadrantes, Regressão)"""
+    """Renderiza métricas avançadas (Hamming, Quadrantes, Regressão)."""
 
     # 1. Distância de Hamming
     hamming = metricas.get("hamming_min", None)
@@ -318,8 +314,9 @@ def _render_advanced_metrics(metricas):
                         }
                     )
 
-            df_quad = pd.DataFrame(linhas)
-            st.dataframe(df_quad, hide_index=True, width="stretch")
+            if linhas:
+                df_quad = pd.DataFrame(linhas)
+                st.dataframe(df_quad, hide_index=True, width="stretch")
 
     # 3. Regressão à Média (informativo)
     regressao = metricas.get("regressao", None)
@@ -329,7 +326,7 @@ def _render_advanced_metrics(metricas):
             col1, col2, col3 = st.columns(3)
             col1.metric(
                 "Correlação ρ",
-                regressao["correlacao"],
+                f"{regressao['correlacao']:.3f}",
                 help="Correlação entre atraso e saída futura",
             )
             col2.metric(

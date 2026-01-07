@@ -112,35 +112,95 @@ The system assigns a score from 0 to 100 for each play based on 4 pillars:
 ```
 loto-science/
 │
-├── .venv/                   # Seu ambiente virtual
+├── data/                                    # Arquivos Excel (histórico)
+│   ├── mega_sena_sorteio.xlsx
+│   ├── quina_sorteio.xlsx
+│   ├── loto_facil_sorteio.xlsx
+│   └── loto_mania_sorteio.xlsx
 │
-├── .streamlit/              # Configuration folder
-│   └── config.toml          # Defines colors and theme (Dark/Light)
-│
-├── data/
-│   └── mega_sena*.xlsx      # Caixa data file
-│
-├── src/                     # Código Fonte
+├── app/
+│   │
 │   ├── __init__.py
-│   ├── data_loader.py       # (Model) Carregamento e limpeza de dados
-│   ├── statistics.py        # (Model) Cálculos pesados (Frequência, Poisson, etc.)
-│   ├── validator.py         # (Controller) Regras de validação (Gauss, Pares, Score)
-│   ├── generator.py         # (Controller) Algoritmos de geração de jogos
-│   ├── constants.py         # Constantes (Listas de Primos, Moldura, etc.)
-│   └── utils.py             # Funções auxiliares genéricas
+│   │
+│   ├── api/                                 # 🆕 FastAPI (nova camada)
+│   │   ├── __init__.py
+│   │   ├── main.py                          # App FastAPI + routers
+│   │   ├── deps.py                          # Dependency injection (get_service)
+│   │   │
+│   │   ├── routers/                         # Endpoints por domínio
+│   │   │   ├── __init__.py
+│   │   │   ├── games.py                     # GET /games, /games/{slug}/config, /context
+│   │   │   ├── stats.py                     # GET /games/{slug}/stats/*
+│   │   │   ├── generator.py                 # POST /games/{slug}/generate
+│   │   │   ├── validator.py                 # POST /games/{slug}/validate
+│   │   │   └── closures.py                  # POST /games/{slug}/closures
+│   │   │
+│   │   └── schemas/                         # 🆕 Modelos Pydantic (DTOs)
+│   │       ├── __init__.py
+│   │       ├── common.py                    # Tipos reutilizáveis
+│   │       ├── games.py                     # GameSummary, GameConfigOut, ContextOut
+│   │       ├── stats.py                     # Chi2Out, ICOut, InteligenciaItem, etc
+│   │       ├── generator.py                 # GenerateRequest, GenerateResponse
+│   │       ├── validator.py                 # ValidateRequest, ValidateResponse
+│   │       └── closures.py                  # ClosuresRequest, ClosuresResponse
+│   │
+│   ├── services/                            # 🆕 Camada de serviços (lógica compartilhada)
+│   │   ├── __init__.py
+│   │   └── lottery_service.py               # LotteryService (cache + orquestração)
+│   │
+│   ├── src/                                 # ✅ Core puro (SEM Streamlit)
+│   │   ├── __init__.py
+│   │   ├── games.py                         # GameConfig, GAMES, BoardLayout (sem mudança)
+│   │   ├── data_loader.py                   # 🔄 Ajustado: sem Streamlit, levanta exceções
+│   │   ├── statistics.py                    # 🔄 Ajustado: sem @st.cache_data
+│   │   ├── generator.py                     # Gerador (sem mudança)
+│   │   ├── validator.py                     # 🔄 Ajustado: game_constants movido para src
+│   │   ├── advanced_statistics.py           # Estatísticas avançadas (sem mudança)
+│   │   ├── constants.py                     # Constantes gerais (sem mudança)
+│   │   ├── game_constants.py                # 🔄 Movido de ui/ para src/
+│   │   └── logger.py                        # Logger (sem mudança)
+│   │
+│   └── ui/                                  # ✅ Streamlit (ajustado para usar service)
+│       ├── __init__.py
+│       │
+│       ├── shared.py                        # 🔄 Ajustado: usa LotteryService, retorna (ctx, svc)
+│       ├── page_config.py                   # Config de página (sem mudança)
+│       ├── styles.py                        # CSS customizado (sem mudança)
+│       ├── header.py                        # Header comum (sem mudança)
+│       ├── footer.py                        # Footer comum (sem mudança)
+│       ├── nav.py                           # Navegação (sem mudança)
+│       │
+│       ├── dashboard_ui.py                  # 🔄 Ajustado: recebe (ctx, svc)
+│       ├── generator_ui.py                  # 🔄 Ajustado: usa svc.generate()
+│       ├── validator_ui.py                  # 🔄 Ajustado: usa svc.validate()
+│       ├── closures_ui.py                   # 🔄 Ajustado: usa svc.closures()
+│       ├── bolao_ui.py                      # 🔄 Ajustado: usa svc.validate()
+│       ├── landing_ui.py                    # Landing page (sem mudança)
+│       └── board_ui.py                      # Visualização do volante (sem mudança)
 │
-├── components/              # (View) Componentes visuais reutilizáveis
+├── pages/                                   # Páginas Streamlit (ajustes mínimos)
+│   ├── 0_Inicio.py                          # 🔄 Ajustado: ctx, svc = load_context()
+│   ├── 0_Como_funciona.py                   # (sem mudança)
+│   ├── 1_Painel.py                          # 🔄 Ajustado: ctx, svc = load_context()
+│   ├── 2_Validador.py                       # 🔄 Ajustado: ctx, svc = load_context()
+│   ├── 3_Gerador.py                         # 🔄 Ajustado: ctx, svc = load_context()
+│   ├── 4_Fechamentos.py                     # 🔄 Ajustado: ctx, svc = load_context()
+│   └── 5_Bolao.py                           # 🔄 Ajustado: ctx, svc = load_context()
+│
+├── tests/                                   # 🆕 Testes (recomendado adicionar)
 │   ├── __init__.py
-│   ├── dashboard.py         # Conteúdo da Tab 1
-│   ├── validator_ui.py      # Conteúdo da Tab 2
-│   ├── generator_ui.py      # Conteúdo da Tab 3
-│   ├── closures_ui.py       # Conteúdo da Tab 4
-│   └── bolao_ui.py          # Conteúdo da Tab 5
+│   ├── test_generator.py
+│   ├── test_validator.py
+│   ├── test_statistics.py
+│   └── test_api.py
 │
-├── app.py                   # Application (Main)
-├── requirements.txt         # Libraries to install
-├── ARCHITECTURE.md          # System architecture
-└── README.md                # Instructions on how to use the project
+├── .env                                     # Variáveis de ambiente (se precisar)
+├── .gitignore
+├── requirements.txt                         # 🔄 Adicionar: fastapi, uvicorn, pydantic
+├── README.md
+│
+├── run_streamlit.py                         # Script para rodar UI Streamlit
+└── run_api.py                               # 🆕 Script para rodar API FastAPI
 ```
 
 ## Statistical Note

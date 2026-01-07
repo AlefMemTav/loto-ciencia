@@ -6,10 +6,10 @@ Substitui heurísticas por distribuições empíricas.
 
 import numpy as np
 import pandas as pd
-import streamlit as st
 from scipy import stats
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
+from app.src.statistics import calcular_atrasos
 
 
 # ============================================
@@ -27,7 +27,6 @@ class GeometricDistribution:
     z_scores: np.ndarray
 
 
-@st.cache_data
 def calcular_distribuicoes_geometricas(
     df, conjuntos: dict, config
 ) -> Dict[str, GeometricDistribution]:
@@ -178,32 +177,21 @@ def calcular_distancia_minima_historico(
 ) -> Tuple[int, float]:
     """
     Calcula a menor distância de Hamming entre o jogo e o histórico.
-
     Returns:
         (distancia_minima, similaridade_maxima)
     """
-    if df.empty:
+    if df.empty or config.bet_size != config.k:
         return (config.bet_size, 0.0)
 
-    # IMPORTANTE: Só compara se o tamanho for igual
-    # Lotomania (50 números) não pode ser comparada com sorteios (20 números)
-    if config.bet_size != config.k:
-        return (config.bet_size, 0.0)
-
-    # Considera apenas os N sorteios mais recentes
     df_recente = df.tail(top_n)
+    jogo_set = set(jogo)
 
-    min_dist = config.bet_size
-    max_sim = 0.0
+    distancias = df_recente[config.draw_cols].apply(
+        lambda row: len(jogo_set.symmetric_difference(set(row))), axis=1
+    )
 
-    for _, row in df_recente.iterrows():
-        sorteio = row[config.draw_cols].values.tolist()
-        dist = distancia_hamming(jogo, sorteio)
-
-        if dist < min_dist:
-            min_dist = dist
-            sim = 1 - (dist / config.bet_size)
-            max_sim = max(max_sim, sim)
+    min_dist = int(distancias.min())
+    max_sim = 1 - (min_dist / config.bet_size)
 
     return (min_dist, max_sim)
 
@@ -252,7 +240,6 @@ def penalizar_por_similaridade(report, numeros, df, config):
 # ============================================
 
 
-@st.cache_data
 def calcular_distribuicao_quadrantes(df, config) -> dict:
     """
     Calcula distribuição empírica de números por quadrante.
@@ -347,7 +334,6 @@ def avaliar_quadrantes_estatistico(numeros, config, stats_quadrantes) -> dict:
 # ============================================
 
 
-@st.cache_data
 def calcular_taxa_regressao(df, config, janela: int = 100) -> Optional[dict]:
     """
     Mede se números atrasados realmente tendem a sair.
@@ -355,8 +341,6 @@ def calcular_taxa_regressao(df, config, janela: int = 100) -> Optional[dict]:
     """
     if df.empty or len(df) < janela + 10:
         return None
-
-    from app.src.statistics import calcular_atrasos
 
     # Pega um ponto no passado
     df_analise = df.iloc[:-janela]

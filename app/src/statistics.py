@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-import streamlit as st
 from scipy.stats import poisson, chisquare, kstest
 from app.src.games import GameConfig
 
@@ -9,7 +8,6 @@ def _flatten_draws(df, config: GameConfig):
     return df[config.draw_cols].values.flatten()
 
 
-@st.cache_data
 def get_numeros_quentes_frios(df, config: GameConfig):
     """Retorna contagem de frequência de todos os números."""
     if df.empty:
@@ -18,7 +16,6 @@ def get_numeros_quentes_frios(df, config: GameConfig):
     return pd.Series(todos).value_counts().sort_values(ascending=False)
 
 
-@st.cache_data
 def analise_poisson(df, config: GameConfig, alpha=0.05):
     if df.empty:
         return []
@@ -62,7 +59,6 @@ def analise_poisson(df, config: GameConfig, alpha=0.05):
     return resultado
 
 
-@st.cache_data
 def get_historico_jogos(df, config: GameConfig):
     """SET de jogos já sorteados para lookup O(1)."""
     if df.empty:
@@ -85,7 +81,6 @@ def verificar_historico(numeros, df, config: GameConfig, alvos=None):
     return res
 
 
-@st.cache_data
 def get_reis_da_sequencia(df, config: GameConfig):
     """Identifica números que mais formam pares consecutivos."""
     if df.empty:
@@ -110,7 +105,6 @@ def get_reis_da_sequencia(df, config: GameConfig):
     return sorted(list(numeros))
 
 
-@st.cache_data
 def calcular_atrasos(df, config: GameConfig):
     """
     Adiciona normalização por tamanho da base.
@@ -137,7 +131,6 @@ def calcular_atrasos(df, config: GameConfig):
     return pd.Series(atrasos).sort_values(ascending=False)
 
 
-@st.cache_data
 def get_tabela_inteligencia(df, config: GameConfig):
     if df.empty:
         return pd.DataFrame()
@@ -176,7 +169,6 @@ def get_tabela_inteligencia(df, config: GameConfig):
     return df_stats
 
 
-@st.cache_data
 def calcular_chi_quadrado(df, config: GameConfig):
     if df.empty:
         return None
@@ -215,7 +207,6 @@ def calcular_chi_quadrado(df, config: GameConfig):
     }
 
 
-@st.cache_data
 def analise_intervalo_confianca(df, config: GameConfig):
     if df.empty:
         return None
@@ -242,7 +233,6 @@ def analise_intervalo_confianca(df, config: GameConfig):
     }
 
 
-@st.cache_data
 def calcular_coeficiente_variacao(df, config: GameConfig):
     if df.empty:
         return None

@@ -3,44 +3,47 @@ import logging
 import sys
 from pathlib import Path
 
-# Cria diretório de logs se não existir
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 
 
-def setup_logger(name: str = "LotoScience"):
-    """
-    Configura um logger estruturado que escreve em arquivo e no terminal.
-    """
+def setup_logger(name: str = "LotoScience", level=logging.INFO):
     logger = logging.getLogger(name)
 
-    # Evita duplicação de handlers se recarregar o Streamlit
     if logger.hasHandlers():
         return logger
 
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
 
-    # Formato Profissional: [HORA] [NÍVEL] [ARQUIVO] Mensagem
     formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(module)s:%(lineno)d | %(message)s",
+        "%(asctime)s | %(levelname)-8s | %(module)s:%(lineno)d | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # 1. Handler de Arquivo (para histórico)
-    file_handler = logging.FileHandler(LOG_DIR / "system.log", encoding="utf-8")
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.INFO)
-
-    # 2. Handler de Console (para ver no terminal enquanto roda)
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
     console_handler.setLevel(logging.INFO)
-
-    logger.addHandler(file_handler)
+    console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
+
+    file_handler = logging.FileHandler(LOG_DIR / "app.log", encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    error_handler = logging.FileHandler(LOG_DIR / "errors.log", encoding="utf-8")
+    error_handler.setLevel(logging.ERROR)
+    error_handler.setFormatter(formatter)
+    logger.addHandler(error_handler)
 
     return logger
 
 
-# Instância global para importação direta
+# Instância global
 logger = setup_logger()
+
+info = logger.info
+debug = logger.debug
+warning = logger.warning
+error = logger.error
+critical = logger.critical
+exception = logger.exception

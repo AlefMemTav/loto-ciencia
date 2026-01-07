@@ -1,18 +1,20 @@
 import math
 import numpy as np
-from app.ui.game_constants import get_constants_for_game
+from app.src.logger import logger
+from app.src.game_constants import (
+    get_constants_for_game,
+    get_grupos_geometricos_essenciais,
+)
 from collections import Counter
 from app.src.games import GameConfig
 
 from app.src.advanced_statistics import (
-    calcular_distribuicoes_geometricas,
     avaliar_jogo_geometria_estatistica,
     penalizar_por_similaridade,
     calcular_distribuicao_quadrantes,
     avaliar_quadrantes_estatistico,
     calcular_taxa_regressao,
 )
-
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
 
@@ -292,36 +294,23 @@ def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
         report["msgs"].append(f"✅ Distribuição espacial aceitável (Gini: {gini:.3f}).")
 
 
-def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
-    """
-    Análise geométrica baseada em estatística, não heurística.
-    """
-    if df_historico is None or df_historico.empty:
+def _analise_geometrica(report, numeros, config, distribuicoes_geometricas):
+    if not distribuicoes_geometricas:
         report["msgs"].append("ℹ️ Análise geométrica indisponível (sem histórico)")
         return
 
     constants = get_constants_for_game(config)
-    grupos = {
-        "moldura": constants["moldura"],
-        "miolo": constants["miolo"],
-        "cruz": constants["cruz"],
-        "xis": constants["xis"],
-        "cantos": constants["cantos"],
-    }
+    grupos_geometricos = get_grupos_geometricos_essenciais(config)
 
-    # 1. Calcula distribuições empíricas
-    distribuicoes = calcular_distribuicoes_geometricas(df_historico, grupos, config)
-
-    # 2. Avalia o jogo usando estatística
     resultado = avaliar_jogo_geometria_estatistica(
-        numeros, grupos, distribuicoes, config
+        numeros, grupos_geometricos, distribuicoes_geometricas, config
     )
 
     score_geom = resultado["score_geom"]
     report["metricas"]["score_geom"] = score_geom
     report["metricas"]["geom_detalhes"] = resultado["detalhes"]
 
-    # 3. Penalidades baseadas em significância estatística
+    # Penalidades baseadas em significância estatística
     detalhes = resultado["detalhes"]
 
     extremos = sum(1 for d in detalhes.values() if d["categoria"] == "Extremo")
@@ -330,26 +319,36 @@ def _analise_geometrica(report, numeros, config: GameConfig, df_historico=None):
 
     if extremos >= 2:
         report["score"] -= 15
-        report["msgs"].append("⚠️ Múltiplos padrões geométricos extremos (p < 0.001)")
+        report["msgs"].append(
+            f"⚠️ Múltiplos padrões geométricos extremos (p < 0.001) (Geom: {score_geom})."
+        )
         report["risco_divisao"] = "ALTO"
     elif extremos >= 1:
         report["score"] -= 10
-        report["msgs"].append("⚠️ Padrão geométrico extremo detectado")
+        report["msgs"].append(
+            f"⚠️ Padrão geométrico extremo detectado (Geom: {score_geom})."
+        )
     elif muito_raros >= 2:
         report["score"] -= 8
-        report["msgs"].append("⚠️ Geometria incomum (múltiplos padrões raros)")
+        report["msgs"].append(
+            f"⚠️ Geometria incomum (múltiplos padrões raros) (Geom: {score_geom})."
+        )
     elif raros >= 3:
         report["score"] -= 5
-        report["msgs"].append("ℹ️ Alguns padrões geométricos atípicos")
+        report["msgs"].append(
+            f"ℹ️ Alguns padrões geométricos atípicos (Geom: {score_geom})"
+        )
     else:
-        report["msgs"].append("✅ Geometria dentro do esperado historicamente")
+        report["msgs"].append(
+            f"✅ Geometria dentro do esperado historicamente (Geom: {score_geom})"
+        )
 
-    # Detalha os padrões mais problemáticos (apenas extremos/muito raros)
+    # Detalha os padrões mais problemáticos
     for nome, det in detalhes.items():
         if det["categoria"] in ["Extremo", "Muito Raro"]:
             report["msgs"].append(
-                f"  • {nome.title()}: {det['presentes']} números "
-                f"(μ={det['media_historica']}, z={det['z_score']})"
+                f"  • {nome}: {det['presentes']} números "
+                f"(μ={det['media_historica']:.1f}, z={det['z_score']:.2f})"
             )
 
 
@@ -371,7 +370,9 @@ def _analise_primos(report, numeros, config: GameConfig):
         report["msgs"].append(f"⚠️ {qtd_primos} números primos (atípico).")
 
 
-def _analises_avancadas(report, numeros, config: GameConfig, df_historico):
+def _analises_avancadas(
+    report, numeros, config: GameConfig, df_historico, stats_quadrantes=None
+):
     """
     Módulo completo de análises avançadas baseadas em dados.
     - Distância de Hamming
@@ -385,8 +386,14 @@ def _analises_avancadas(report, numeros, config: GameConfig, df_historico):
     penalizar_por_similaridade(report, numeros, df_historico, config)
 
     # 2. Quadrantes estatísticos
-    stats_quad = calcular_distribuicao_quadrantes(df_historico, config)
-    resultado_quad = avaliar_quadrantes_estatistico(numeros, config, stats_quad)
+    if stats_quadrantes:
+        resultado_quad = avaliar_quadrantes_estatistico(
+            numeros, config, stats_quadrantes
+        )
+    else:
+        # fallback (recalcula se necessário)
+        stats_quad = calcular_distribuicao_quadrantes(df_historico, config)
+        resultado_quad = avaliar_quadrantes_estatistico(numeros, config, stats_quad)
     report["metricas"]["quadrantes"] = resultado_quad
 
     if resultado_quad["score_quadrantes"] < 60:
@@ -408,12 +415,19 @@ def _analises_avancadas(report, numeros, config: GameConfig, df_historico):
 
 
 def validar_jogo(
-    numeros, config: GameConfig, historico_jogos=None, ic_info=None, df_historico=None
+    numeros,
+    config: GameConfig,
+    historico_jogos=None,
+    ic_info=None,
+    df_historico=None,
+    distribuicoes_geometricas: dict = None,
+    stats_quadrantes=None,
 ):
     """
     Validador genérico para qualquer jogo.
     Usa análises estatísticas avançadas.
     """
+    logger.debug(f"🔍 [VALIDATOR] Validando jogo {numeros} ({config.name})")
     report = {
         "score": 100,
         "msgs": [],
@@ -423,6 +437,18 @@ def validar_jogo(
         "score_original": 0,
         "metricas": {},
     }
+
+    if report["ja_saiu"]:
+        logger.warning(f"⚠️ [VALIDATOR] Jogo JÁ SAIU: {numeros}")
+
+    if report["score"] < 50:
+        logger.info(f"⚠️ [VALIDATOR] Score baixo ({report['score']}): {numeros}")
+
+    logger.debug(
+        f"✅ [VALIDATOR] Resultado: score={report['score']}, "
+        f"geom={report['metricas'].get('score_geom', 'N/A')}, "
+        f"risco={report['risco_divisao']}"
+    )
 
     # 1. Verificação de histórico
     if historico_jogos:
@@ -436,12 +462,12 @@ def validar_jogo(
     _analise_entropia(report, numeros, config)
     _analise_popularidade(report, numeros, config)
     _analise_distribuicao_espacial(report, numeros, config)
-    _analise_geometrica(report, numeros, config, df_historico=df_historico)
+    _analise_geometrica(report, numeros, config, distribuicoes_geometricas)
 
     _analise_primos(report, numeros, config)
 
     # Análises avançadas (Hamming, Quadrantes, Regressão)
-    _analises_avancadas(report, numeros, config, df_historico)
+    _analises_avancadas(report, numeros, config, df_historico, stats_quadrantes)
 
     # 3. Calcula score técnico
     score_tecnico = max(0, min(100, report["score"]))

@@ -1,20 +1,21 @@
+# app/ui/closures_ui.py
 import streamlit as st
-from app.src.generator import gerar_fechamento
 from app.src.logger import logger
-from app.src.games import GameConfig
-from app.ui.game_constants import get_constants_for_game
+from app.src.game_constants import get_constants_for_game
 
 
-def render_closures(config: GameConfig):
+def render_closures(ctx, svc):
+    config = ctx.config
+    slug = config.slug
     constants = get_constants_for_game(config)
     color = constants.get("heat_color", "#ef4444")
+
     st.markdown(
-        f"<h3> 📦 Fechamentos Matemáticos da <span style='color: {color};'>{config.name}</span></h3>",
+        f"<h3>📦 Fechamentos Matemáticos da <span style='color: {color};'>{config.name}</span></h3>",
         unsafe_allow_html=True,
     )
 
     qtd_aposta = config.bet_size
-
     min_base = qtd_aposta + 1
     max_base = qtd_aposta + 6
 
@@ -45,6 +46,10 @@ def render_closures(config: GameConfig):
                 )
             )
 
+            if not base:
+                st.error("❌ Digite ao menos um número.")
+                return
+
             if not all(1 <= n <= config.n_numbers for n in base):
                 st.error(
                     f"❌ Todos os números devem estar entre 1 e {config.n_numbers}."
@@ -56,20 +61,27 @@ def render_closures(config: GameConfig):
                     f"[{config.name}] Gerando fechamento para base de {len(base)} números: {base}"
                 )
 
-                resultado = gerar_fechamento(base, config)
+                # Usa o service para gerar fechamento
+                # max_combinacoes serve como proteção contra explosão combinatória
+                max_combinacoes = 10000
 
-                if isinstance(resultado, dict) and "erro" in resultado:
-                    st.error(resultado["erro"])
+                try:
+                    jogos = svc.closures(slug, base, max_combinacoes=max_combinacoes)
+                except ValueError as e:
+                    st.error(f"❌ {str(e)}")
+                    return
+                except Exception as e:
+                    logger.error(f"Erro no fechamento: {e}")
+                    st.error(f"❌ Erro ao gerar fechamento: {e}")
                     return
 
-                jogos = resultado
                 custo = len(jogos) * config.game_price
 
                 logger.info(
                     f"[{config.name}] Fechamento gerado com sucesso: {len(jogos)} jogos."
                 )
 
-                st.success(f"Operação realizada! Geramos **{len(jogos)} jogos**.")
+                st.success(f"✅ Operação realizada! Geramos **{len(jogos)} jogos**.")
 
                 st.markdown(
                     f"""
@@ -83,22 +95,28 @@ def render_closures(config: GameConfig):
                     unsafe_allow_html=True,
                 )
 
-                with st.expander("Ver Lista de Jogos"):
+                with st.expander("📋 Ver Lista de Jogos", expanded=False):
                     txt = ""
-                    for j in jogos:
-                        st.text(str(j))
-                        txt += f"{j}\n"
+                    for i, jogo in enumerate(jogos, 1):
+                        nums_fmt = " ".join([f"{n:02d}" for n in jogo])
+                        st.text(f"Jogo {i:3d}: {nums_fmt}")
+                        txt += f"{nums_fmt}\n"
 
                 st.download_button(
-                    "📥 Baixar Arquivo",
+                    "📥 Baixar Arquivo TXT",
                     txt,
-                    f"fechamento_{config.slug}.txt",
+                    f"fechamento_{config.slug}_{len(jogos)}_jogos.txt",
                     width="stretch",
                 )
             else:
                 st.warning(
                     f"⚠️ Para a {config.name}, escolha entre **{min_base} e {max_base} números**."
                 )
+        except ValueError as e:
+            logger.error(f"Erro ao processar entrada: {e}")
+            st.error(
+                f"❌ Entrada inválida. Use apenas números separados por espaço ou vírgula."
+            )
         except Exception as e:
-            logger.error(f"Erro no fechamento: {e}")
-            st.error(f"Erro: {e}")
+            logger.error(f"Erro inesperado no fechamento: {e}", exc_info=True)
+            st.error(f"❌ Erro inesperado: {e}")

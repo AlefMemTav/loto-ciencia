@@ -1,17 +1,17 @@
+# app/ui/generator_ui.py
 import streamlit as st
 import time
-from app.src.games import GameConfig
-from app.src.generator import gerar_jogo_perfeito, gerar_multiplos_jogos
-from app.src.validator import validar_jogo
-from app.src.statistics import analise_intervalo_confianca, get_historico_jogos
-from app.ui.game_constants import get_constants_for_game
+from app.src.game_constants import get_constants_for_game
 
 
-def render_generator(df, freq, poisson_finais, config: GameConfig):
+def render_generator(ctx, svc):
+    config = ctx.config
+    slug = config.slug
     constants = get_constants_for_game(config)
     color = constants.get("heat_color", "#ef4444")
+
     st.markdown(
-        f"<h3> 🤖 Gerador Híbrido da <span style='color: {color};'>{config.name}</span></h3>",
+        f"<h3>🤖 Gerador Híbrido da <span style='color: {color};'>{config.name}</span></h3>",
         unsafe_allow_html=True,
     )
     st.write(f"Algoritmo estatístico para gerar jogos otimizados da {config.name}.")
@@ -37,39 +37,32 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
     btn_gerar = st.button("✨ Gerar Agora", type="primary", width="stretch")
 
     if btn_gerar:
-        # Busca dados
-        ic_info = analise_intervalo_confianca(df, config)
-        historico = get_historico_jogos(df, config)
-
-        digits_poisson = (
-            [item["digito"] for item in poisson_finais] if poisson_finais else None
-        )
-
         # Barra de progresso e timer
         bar_text = st.empty()
         bar = st.progress(0)
         start_time = time.time()
 
-        jogos = []
+        # Monta payload para o service
+        payload = {
+            "quantidade": qtd,
+            "estrategia": estrategia,
+            "garantir_diversidade": diversidade,
+        }
 
-        if qtd == 1:
-            bar_text.text("Minerando jogo otimizado...")
-            jogo = gerar_jogo_perfeito(
-                df, config, finais_poisson=digits_poisson, estrategia=estrategia
-            )
-            jogos.append(jogo)
+        # Usa o service para gerar jogos
+        try:
+            if qtd == 1:
+                bar_text.text("Minerando jogo otimizado...")
+            else:
+                bar_text.text(f"Minerando {qtd} jogos otimizados...")
+
+            jogos = svc.generate(slug, payload)
             bar.progress(1.0)
-        else:
-            bar_text.text(f"Minerando {qtd} jogos otimizados...")
-            jogos = gerar_multiplos_jogos(
-                df,
-                config,
-                quantidade=qtd,
-                estrategia=estrategia,
-                garantir_diversidade=diversidade,
-                finais_poisson=digits_poisson,
-            )
-            bar.progress(1.0)
+        except Exception as e:
+            bar.empty()
+            bar_text.empty()
+            st.error(f"❌ Erro ao gerar jogos: {e}")
+            return
 
         bar.empty()
         bar_text.empty()
@@ -88,14 +81,9 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
         txt_out = f"LotoScience - Jogos {config.name} ({estrategia.title()})\n\n"
 
         # Exibição dos jogos
-        for i, jogo in enumerate(jogos):
-            val = validar_jogo(
-                jogo,
-                config,
-                historico_jogos=historico,
-                ic_info=ic_info,
-                df_historico=df,
-            )
+        for i, jogo in enumerate(jogos, 1):
+            # Usa o service para validar
+            val = svc.validate(slug, jogo)
 
             nums_fmt = "  ".join([f"{n:02d}" for n in jogo])
 
@@ -104,15 +92,13 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
 
                 with c_nums:
                     st.markdown(
-                        f"**Jogo {i+1}:** <code style='font-size:1.1rem; color:#0f172a'>{nums_fmt}</code>",
+                        f"**Jogo {i}:** <code style='font-size:1.1rem; color:#0f172a'>{nums_fmt}</code>",
                         unsafe_allow_html=True,
                     )
 
                 with c_score:
                     # Usa os targets do config para colorir
-                    if (
-                        val["score"] >= config.target_score_excellent
-                    ):  # Ex: 85 (Mega) ou 75 (Loto)
+                    if val["score"] >= config.target_score_excellent:
                         st.caption(f"💎 Score: {val['score']}")
                     elif val["score"] >= config.target_score_accept:
                         st.caption(f"✅ Score: {val['score']}")
@@ -141,25 +127,22 @@ def render_generator(df, freq, poisson_finais, config: GameConfig):
 
         # Expander com detalhes
         with st.expander("📊 Ver Análise Detalhada dos Jogos"):
-            for i, jogo in enumerate(jogos):
-                val = validar_jogo(
-                    jogo,
-                    config,
-                    historico_jogos=historico,
-                    ic_info=ic_info,
-                    df_historico=df,
-                )
+            for i, jogo in enumerate(jogos, 1):
+                # Valida novamente (ou reutiliza se cachear)
+                val = svc.validate(slug, jogo)
 
-                st.markdown(f"**Jogo {i+1}:** {jogo}")
+                nums_fmt = " ".join([f"{n:02d}" for n in jogo])
+                st.markdown(f"**Jogo {i}:** `{nums_fmt}`")
 
                 metricas = val.get("metricas", {})
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("Soma", metricas.get("soma", 0))
-                col2.metric("Entropia", metricas.get("entropia", 0))
-                col3.metric("Gini", metricas.get("gini", 0))
+                col2.metric("Entropia", f"{metricas.get('entropia', 0):.2f}")
+                col3.metric("Gini", f"{metricas.get('gini', 0):.3f}")
                 col4.metric("Pares", metricas.get("pares", 0))
 
-                for msg in val["msgs"][:3]:
+                # Mostra primeiras 3 mensagens
+                for msg in val.get("msgs", [])[:3]:
                     st.caption(msg)
 
                 st.markdown("---")
