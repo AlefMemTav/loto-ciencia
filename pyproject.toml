@@ -1,0 +1,49 @@
+[project]
+name = "loto-science"
+version = "2.0.0"
+description = "Sistema de análise inteligente de jogos de loteria"
+readme = "README.md"
+requires-python = ">=3.13,<3.15"
+license = {text = "MIT"}
+authors = [
+    {name = "Pedro Lucas Garcia", email = "garcia.lucas@aluno.unb.br"}
+]
+
+dependencies = [
+    "fastapi>=0.115.0,<0.116.0",
+    "streamlit>=1.40.0,<1.41.0",
+    "pandas>=2.2.0,<2.3.0",
+    "numpy>=2.1.0,<2.2.0",
+    "pydantic>=2.10.0,<2.11.0",
+]
+
+[project.optional-dependencies]
+api = [
+    "uvicorn[standard]>=0.32.0",
+    "psycopg2-binary>=2.9.10",
+    "python-jose[cryptography]>=3.3.0",
+]
+
+dev = [
+    "pytest>=8.3.0",
+    "black>=24.10.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 88
+target-version = ['py313']
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true

@@ -13,7 +13,7 @@ from app.src.game_constants import (
     get_grupos_geometricos_essenciais,
 )
 from app.src.games import GAMES, GameConfig
-from app.src.data_loader import carregar_dados_loteria_excel
+from app.services.data_loader import carregar_dados_loteria_excel
 from app.src.statistics import (
     get_numeros_quentes_frios,
     analise_poisson,

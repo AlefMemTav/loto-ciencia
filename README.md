@@ -4,20 +4,12 @@
 
 > ⚠️ The system does not increase the chance of winning; it only improves statistical quality, distribution, and financial efficiency of bets.
 
-![LotoScience](/assets/images/lotoscience.png)
-
 ---
 
 ## About the Project
 
 **LotoScience Pro** is an interactive dashboard built in Python that uses data science to make betting more intelligent. It processes the official Caixa history, applies mathematical filters (Gaussian Curve, Quadrants, Poisson) and generates insights for individual bettors or syndicates.
 
-
-![Bet Validator](/assets/gifs/validador.gif)
-
-![Combinatorics](/assets/gifs/gerador_fechamento.gif)
-
-![Syndicate Audit](/assets/gifs/analise_bolao.gif)
 
 ### Main Features
 

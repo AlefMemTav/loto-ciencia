@@ -285,7 +285,7 @@ def _render_bar_charts(freq, num, config):
             .encode(y="y")
         )
 
-        st.altair_chart(barras + regua, width="stretch")
+        st.altair_chart(barras + regua, use_container_width=True)
 
     # --- GRÁFICO 2: FRIOS ---
     with c2:
@@ -305,7 +305,7 @@ def _render_bar_charts(freq, num, config):
             )
         )
 
-        st.altair_chart(barras_frias + regua, width="stretch")
+        st.altair_chart(barras_frias + regua, use_container_width=True)
 
 
 def _render_heatmap_section(freq, conjuntos, config):
@@ -415,7 +415,7 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config):
                 fontsize=7,
             )
 
-    st.pyplot(fig, width="stretch")
+    st.pyplot(fig, use_container_width=True)
 
 
 def _render_probability_report(conjuntos, config, svc, ctx):
@@ -503,7 +503,7 @@ def _render_probability_report(conjuntos, config, svc, ctx):
                 ),
             },
             hide_index=True,
-            width="stretch",
+            use_container_width=True,
         )
 
         st.info(
@@ -597,5 +597,5 @@ def _render_z_score_gaps_section(tabela):
         )
         st.dataframe(
             tabela.style.background_gradient(subset=["Peso_Geracao"], cmap="Greens"),
-            width="stretch",
+            use_container_width=True,
         )

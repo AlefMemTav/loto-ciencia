@@ -32,7 +32,7 @@ def render_closures(ctx, svc):
         placeholder=f"Ex: {placeholder_ex} ...",
     )
 
-    if st.button("⚙️ Calcular Fechamento", width="stretch"):
+    if st.button("⚙️ Calcular Fechamento", use_container_width=True):
         try:
             base = sorted(
                 list(
@@ -106,7 +106,7 @@ def render_closures(ctx, svc):
                     "📥 Baixar Arquivo TXT",
                     txt,
                     f"fechamento_{config.slug}_{len(jogos)}_jogos.txt",
-                    width="stretch",
+                    use_container_width=True,
                 )
             else:
                 st.warning(

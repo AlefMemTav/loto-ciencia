@@ -130,6 +130,21 @@ def apply_custom_css():
         }
         .footer-text { color: #94a3b8; font-size: 0.85rem; }
 
+        /* Links minimalistas no header */
+        a[href*='/Login'], a[href*='/Registro'] {
+            transition: opacity 0.2s ease;
+        }
+
+        a[href*='/Login']:hover, a[href*='/Registro']:hover {
+            opacity: 0.7;
+        }
+
+        /* Popover mais discreto */
+        [data-testid="stPopover"] > button {
+            padding: 4px 8px !important;
+            font-size: 1.1rem !important;
+        }
+
         /* --- COMPONENTES: APP INTERNO (DASHBOARD) --- */
 
         /* Tabs do Streamlit */

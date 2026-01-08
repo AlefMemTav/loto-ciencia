@@ -67,11 +67,11 @@ def render_landing_page():
         # Botões de Ação
         b1, b2 = st.columns([1, 1.2])
         with b1:
-            if st.button("Iniciar Análise", type="primary", width="stretch"):
+            if st.button("Iniciar Análise", type="primary", use_container_width=True):
                 st.switch_page("pages/1_Painel.py")
 
         with b2:
-            if st.button("📖 Entender a Ciência", width="stretch"):
+            if st.button("📖 Entender a Ciência", use_container_width=True):
                 st.switch_page("pages/0_Como_funciona.py")
 
         st.markdown("</div>", unsafe_allow_html=True)

@@ -1,13 +1,30 @@
-streamlit>=1.30.0
-pandas>=2.0.0
-numpy>=1.24.0
-scipy>=1.10.0
-openpyxl>=3.1.0
-matplotlib>=3.7.0
-altair>=5.0.0
+# ========================================
+# Frontend - Streamlit
+# Python: 3.13.11 (LTS - suporte até outubro 2029)
+# Atualizado: Janeiro 2026
+# ========================================
 
-# API
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-pydantic>=2.5.0
-python-multipart>=0.0.6
+# Streamlit framework
+streamlit==1.40.2
+
+# Análise de dados
+pandas==2.2.3
+numpy==2.1.3
+scipy==1.14.1
+
+# Visualização
+plotly==5.24.1
+matplotlib==3.10.8
+
+# Manipulação de arquivos Excel
+openpyxl==3.1.5
+
+# Comunicação com API
+requests==2.32.3
+
+# Utilitários
+python-dotenv==1.0.1
+
+# Dependências extras do Streamlit
+altair==5.4.1  # Gráficos alternativos
+pillow==11.0.0  # Manipulação de imagens

@@ -1,9 +1,11 @@
 # app/ui/validator_ui.py
+from datetime import date
 import streamlit as st
 import pandas as pd
 from app.src.logger import logger
 from app.ui.board_ui import render_volante_marcado
 from app.src.game_constants import get_constants_for_game
+from app.auth.api_client import APIClient
 
 
 def render_validator(ctx, svc):
@@ -28,7 +30,7 @@ def render_validator(ctx, svc):
         help="Separe por espaço, vírgula ou traço.",
     )
 
-    if st.button("🔬 Analisar Qualidade", type="primary", width="stretch"):
+    if st.button("🔬 Analisar Qualidade", type="primary", use_container_width=True):
         try:
             texto = entrada.replace(",", " ").replace("-", " ")
             nums = sorted(
@@ -50,6 +52,14 @@ def render_validator(ctx, svc):
             logger.info(f"[{config.name}] Validação manual solicitada para: {nums}")
 
             relatorio = svc.validate(slug, nums)
+
+            if APIClient.get_plan() != "pro":
+                today = date.today().isoformat()
+                if st.session_state.get("validator_marked_date") != today:
+                    success, msg = APIClient.mark_resource_used("validator")
+                    if success:
+                        st.session_state.validator_marked_date = today
+                        logger.info(f"✅ Validação marcada para {APIClient.get_plan()}")
 
             logger.info(
                 f"[{config.name}] Resultado validação: Score {relatorio['score']} | Status: {relatorio['status']}"
@@ -102,7 +112,7 @@ def render_validator(ctx, svc):
                     f"""
                 <div class="custom-metric-card">
                     <div class="metric-label">Risco de Divisão</div>
-                    <div class="metric-value">{risco.split(' ')[0]}</div> 
+                    <div class="metric-value">{risco.split(' ')[0]}</div>
                     <div class="metric-delta {risco_class}">{"Blindado" if "Baixo" in risco else "Risco Financeiro"}</div>
                 </div>
                 """,
@@ -252,7 +262,7 @@ def _render_geometric_metrics(metricas):
                 st.dataframe(
                     df_geom,
                     hide_index=True,
-                    width="stretch",
+                    use_container_width=True,
                     column_config={
                         "Grupo": st.column_config.TextColumn("Grupo"),
                         "No jogo": st.column_config.NumberColumn(
@@ -316,7 +326,7 @@ def _render_advanced_metrics(metricas):
 
             if linhas:
                 df_quad = pd.DataFrame(linhas)
-                st.dataframe(df_quad, hide_index=True, width="stretch")
+                st.dataframe(df_quad, hide_index=True, use_container_width=True)
 
     # 3. Regressão à Média (informativo)
     regressao = metricas.get("regressao", None)

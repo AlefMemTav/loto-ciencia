@@ -40,7 +40,7 @@ def render_bolao(ctx, svc):
         height=200,
     )
 
-    if st.button("🔍 Auditar Bolão", type="primary", width="stretch"):
+    if st.button("🔍 Auditar Bolão", type="primary", use_container_width=True):
         # 1. Processamento dos Dados
         jogos_validos, jogos_invalidos, todos_numeros = _processar_input_jogos(
             texto_bolao, config

@@ -1,7 +1,10 @@
 # app/ui/generator_ui.py
+from datetime import date
 import streamlit as st
 import time
+from app.src.logger import logger
 from app.src.game_constants import get_constants_for_game
+from app.auth.api_client import APIClient
 
 
 def render_generator(ctx, svc):
@@ -18,10 +21,8 @@ def render_generator(ctx, svc):
 
     # Opções de configuração
     col_config1, col_config2 = st.columns(2)
-
     with col_config1:
         qtd = st.slider("Quantidade de Jogos:", 1, 10, 3)
-
     with col_config2:
         estrategia = st.selectbox(
             "Estratégia:",
@@ -34,7 +35,7 @@ def render_generator(ctx, svc):
         value=True,
     )
 
-    btn_gerar = st.button("✨ Gerar Agora", type="primary", width="stretch")
+    btn_gerar = st.button("✨ Gerar Agora", type="primary", use_container_width=True)
 
     if btn_gerar:
         # Barra de progresso e timer
@@ -49,7 +50,6 @@ def render_generator(ctx, svc):
             "garantir_diversidade": diversidade,
         }
 
-        # Usa o service para gerar jogos
         try:
             if qtd == 1:
                 bar_text.text("Minerando jogo otimizado...")
@@ -57,7 +57,17 @@ def render_generator(ctx, svc):
                 bar_text.text(f"Minerando {qtd} jogos otimizados...")
 
             jogos = svc.generate(slug, payload)
+
+            if jogos and APIClient.get_plan() != "pro":
+                today = date.today().isoformat()
+                if st.session_state.get("generator_marked_date") != today:
+                    success, msg = APIClient.mark_resource_used("generator")
+                    if success:
+                        st.session_state.generator_marked_date = today
+                        logger.info(f"✅ Geração marcada para {APIClient.get_plan()}")
+
             bar.progress(1.0)
+
         except Exception as e:
             bar.empty()
             bar_text.empty()
@@ -66,8 +76,8 @@ def render_generator(ctx, svc):
 
         bar.empty()
         bar_text.empty()
-        tempo_total = time.time() - start_time
 
+        tempo_total = time.time() - start_time
         st.success(f"✅ {len(jogos)} jogos encontrados em {tempo_total:.2f}s!")
 
         if estrategia != "balanceada":
@@ -84,15 +94,14 @@ def render_generator(ctx, svc):
         for i, jogo in enumerate(jogos, 1):
             # Usa o service para validar
             val = svc.validate(slug, jogo)
-
-            nums_fmt = "  ".join([f"{n:02d}" for n in jogo])
+            nums_fmt = " ".join([f"{n:02d}" for n in jogo])
 
             with st.container():
                 c_nums, c_score, c_perfil = st.columns([3, 1, 1])
 
                 with c_nums:
                     st.markdown(
-                        f"**Jogo {i}:** <code style='font-size:1.1rem; color:#0f172a'>{nums_fmt}</code>",
+                        f"**Jogo {i}:** <code style='font-size:1.1rem; color:#0f172a;'>{nums_fmt}</code>",
                         unsafe_allow_html=True,
                     )
 
@@ -122,17 +131,17 @@ def render_generator(ctx, svc):
             "📥 Baixar Jogos (.txt)",
             txt_out,
             f"jogos_{config.slug}_{estrategia}.txt",
-            width="stretch",
+            use_container_width=True,
         )
 
         # Expander com detalhes
-        with st.expander("📊 Ver Análise Detalhada dos Jogos"):
+        with st.expander("🔍 Ver Análise Detalhada dos Jogos"):
             for i, jogo in enumerate(jogos, 1):
-                # Valida novamente (ou reutiliza se cachear)
+                # Valida novamente ou reutiliza se cachear
                 val = svc.validate(slug, jogo)
-
                 nums_fmt = " ".join([f"{n:02d}" for n in jogo])
-                st.markdown(f"**Jogo {i}:** `{nums_fmt}`")
+
+                st.markdown(f"**Jogo {i}:** {nums_fmt}")
 
                 metricas = val.get("metricas", {})
                 col1, col2, col3, col4 = st.columns(4)

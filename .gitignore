@@ -1,14 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Streamlit
+.streamlit/secrets.toml
+
 # Ambientes virtuais
 venv/
 .venv/
+ENV/
 env/
 
-# Arquivos temporários do Python
-__pycache__/
-*.py[cod]
+# Variáveis de ambiente
+.env
 
-# Arquivos de sistema
+# Banco de dados local
+*.db
+*.sqlite
+*.sqlite3
+data/users.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
+Thumbs.db
 
-/logs
+# Logs
 *.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Cache do Streamlit
+.streamlit/cache/

@@ -83,19 +83,19 @@ def _xis(layout) -> List[int]:
     Retorna as DUAS diagonais principais do volante (forma um X).
 
     Para grids retangulares (ex: 6x10 da Mega-Sena):
-    - Diagonal principal (\): onde row == col (até min(rows, cols))
-    - Diagonal secundária (/): onde row + col == cols - 1
+    - Diagonal principal: onde row == col (até min(rows, cols))
+    - Diagonal secundária: onde row + col == cols - 1
 
     Para grids quadrados (ex: 5x5 da Quina): diagonais completas.
     """
     pos = set()
     rows, cols = layout.rows, layout.cols
 
-    # Diagonal principal (\): linha == coluna
+    # Diagonal principal: linha == coluna
     for i in range(min(rows, cols)):
         pos.add((i, i))
 
-    # Diagonal secundária (/): linha + coluna == cols - 1
+    # Diagonal secundária: linha + coluna == cols - 1
     for r in range(rows):
         c = cols - 1 - r
         if 0 <= c < cols:
@@ -266,8 +266,8 @@ def get_diagonais_separadas(config: GameConfig) -> dict:
     """
     Diagonais principal e secundária SEPARADAS.
 
-    Diagonal Principal (\): [1, 12, 23, 34, 45, 56]
-    Diagonal Secundária (/): [10, 19, 28, 37, 46, 55]
+    Diagonal Principal: [1, 12, 23, 34, 45, 56]
+    Diagonal Secundária: [10, 19, 28, 37, 46, 55]
     """
     rows, cols = config.layout.rows, config.layout.cols
     principal = []
