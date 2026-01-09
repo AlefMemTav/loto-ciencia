@@ -3,7 +3,7 @@ from datetime import date
 import streamlit as st
 import time
 from app.core.logger import logger
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 
 
 def render_generator(ctx, svc):
@@ -58,13 +58,13 @@ def render_generator(ctx, svc):
 
             jogos = svc.generate(slug, payload)
 
-            if jogos and APIClient.get_plan() != "pro":
+            if jogos and AUTHClient.get_plan() != "pro":
                 today = date.today().isoformat()
                 if st.session_state.get("generator_marked_date") != today:
-                    success, msg = APIClient.mark_resource_used("generator")
+                    success, msg = AUTHClient.mark_resource_used("generator")
                     if success:
                         st.session_state.generator_marked_date = today
-                        logger.info(f"✅ Geração marcada para {APIClient.get_plan()}")
+                        logger.info(f"✅ Geração marcada para {AUTHClient.get_plan()}")
 
             bar.progress(1.0)
 

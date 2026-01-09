@@ -1,4 +1,4 @@
-# app/auth/cookie_manager.py
+# app/ui/services/cookie_manager.py
 """
 Gerenciador de cookies para persistir autenticação.
 """

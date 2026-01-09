@@ -1,4 +1,4 @@
-# app/auth/api_client.py
+# app/ui/services/api_client.py
 """
 Cliente para API LotoScience com cookies HttpOnly automáticos.
 Rate limiting apenas para usuários autenticados (free/pro).
@@ -12,7 +12,7 @@ import os
 API_BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
-class APIClient:
+class AUTHClient:
     """Cliente para API LotoScience"""
 
     # Sessão persistente para manter cookies
@@ -26,7 +26,7 @@ class APIClient:
         """
         # SEMPRE verifica com o backend (cookies são persistentes)
         try:
-            response = APIClient._session.get(
+            response = AUTHClient._session.get(
                 f"{API_BASE_URL}/auth/me",
                 timeout=5,
                 # ✅ Garante que os cookies sejam enviados
@@ -45,14 +45,14 @@ class APIClient:
                 return True
             else:
                 # ❌ Cookie inválido/expirado - limpa estado
-                APIClient._clear_session_state()
+                AUTHClient._clear_session_state()
                 return False
 
         except Exception as e:
             # Erro de conexão - mantém estado se já autenticado
             # (para funcionar offline depois de login)
             if not st.session_state.get("authenticated", False):
-                APIClient._clear_session_state()
+                AUTHClient._clear_session_state()
             return False
 
     @staticmethod
@@ -76,7 +76,7 @@ class APIClient:
     def register(email: str, password: str) -> Tuple[bool, str, Optional[dict]]:
         """Registra novo usuário (backend define cookie automaticamente)"""
         try:
-            response = APIClient._session.post(
+            response = AUTHClient._session.post(
                 f"{API_BASE_URL}/auth/register",
                 json={"email": email, "password": password},
                 timeout=10,
@@ -91,7 +91,7 @@ class APIClient:
                 st.session_state.user_plan = data["user"]["plan"]
                 return True, data["message"], data
             else:
-                return False, APIClient._handle_error(response), None
+                return False, AUTHClient._handle_error(response), None
 
         except Exception as e:
             return False, f"Erro de conexão: {e}", None
@@ -100,7 +100,7 @@ class APIClient:
     def login(email: str, password: str) -> Tuple[bool, str, Optional[dict]]:
         """Faz login (backend define cookie automaticamente)"""
         try:
-            response = APIClient._session.post(
+            response = AUTHClient._session.post(
                 f"{API_BASE_URL}/auth/login",
                 json={"email": email, "password": password},
                 timeout=10,
@@ -127,18 +127,18 @@ class APIClient:
     def logout():
         """Faz logout (backend remove cookie)"""
         try:
-            APIClient._session.post(f"{API_BASE_URL}/auth/logout", timeout=5)
+            AUTHClient._session.post(f"{API_BASE_URL}/auth/logout", timeout=5)
         except:
             pass
 
         # Limpa session_state
-        APIClient._clear_session_state()
+        AUTHClient._clear_session_state()
 
     @staticmethod
     def get_profile() -> Optional[dict]:
         """Retorna perfil do usuário (cookie enviado automaticamente)"""
         try:
-            response = APIClient._session.get(f"{API_BASE_URL}/auth/me", timeout=10)
+            response = AUTHClient._session.get(f"{API_BASE_URL}/auth/me", timeout=10)
             return response.json() if response.status_code == 200 else None
         except:
             return None
@@ -148,11 +148,11 @@ class APIClient:
     @staticmethod
     def check_rate_limit(resource: str) -> Tuple[bool, str]:
         """Verifica rate limit (APENAS consulta, não marca como usado)"""
-        if not APIClient.is_authenticated():
+        if not AUTHClient.is_authenticated():
             return False, "🔒 Login necessário"
 
         try:
-            response = APIClient._session.post(
+            response = AUTHClient._session.post(
                 f"{API_BASE_URL}/auth/check-rate-limit/{resource}", timeout=10
             )
 
@@ -160,7 +160,7 @@ class APIClient:
                 data = response.json()
                 return data["allowed"], data["message"]
             else:
-                return False, APIClient._handle_error(response)
+                return False, AUTHClient._handle_error(response)
 
         except Exception as e:
             return False, f"Erro: {e}"
@@ -170,11 +170,11 @@ class APIClient:
         """
         ✅ MARCA recurso como usado (chame APÓS validar/gerar).
         """
-        if not APIClient.is_authenticated():
+        if not AUTHClient.is_authenticated():
             return False, "Login necessário"
 
         try:
-            response = APIClient._session.post(
+            response = AUTHClient._session.post(
                 f"{API_BASE_URL}/auth/use-resource/{resource}", timeout=10
             )
 
@@ -182,7 +182,7 @@ class APIClient:
                 data = response.json()
                 return True, data["message"]
             else:
-                return False, APIClient._handle_error(response)
+                return False, AUTHClient._handle_error(response)
 
         except Exception as e:
             return False, f"Erro: {e}"
@@ -193,7 +193,7 @@ class APIClient:
     def upgrade_to_pro() -> Tuple[bool, str]:
         """Faz upgrade para Pro (cookie enviado automaticamente)"""
         try:
-            response = APIClient._session.post(
+            response = AUTHClient._session.post(
                 f"{API_BASE_URL}/auth/upgrade", timeout=10
             )
 
@@ -203,7 +203,7 @@ class APIClient:
                 data = response.json()
                 return True, data["message"]
             else:
-                return False, APIClient._handle_error(response)
+                return False, AUTHClient._handle_error(response)
 
         except Exception as e:
             return False, f"Erro: {e}"
@@ -216,10 +216,10 @@ class APIClient:
 
     @staticmethod
     def get_plan() -> str:
-        if not APIClient.is_authenticated():
+        if not AUTHClient.is_authenticated():
             return "guest"
         return st.session_state.get("user_plan", "free")
 
     @staticmethod
     def is_pro() -> bool:
-        return APIClient.get_plan() == "pro"
+        return AUTHClient.get_plan() == "pro"

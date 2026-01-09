@@ -1,16 +1,16 @@
 # pages/8_Planos.py
 """Página de Planos"""
 import streamlit as st
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 from app.ui.core.styles import apply_custom_css
 
 st.set_page_config(page_title="Planos - LotoScience", page_icon="👑", layout="centered")
 apply_custom_css()
-APIClient.init()
+AUTHClient.init()
 st.title("👑 Escolha seu Plano")
 
 # Mostra plano atual se logado
-if APIClient.is_authenticated():
+if AUTHClient.is_authenticated():
     current_plan = st.session_state.get("user_plan", "free")
     if current_plan == "pro":
         st.success("✅ Você já é PRO! Aproveite todos os recursos.")
@@ -38,7 +38,7 @@ with col1:
     """
     )
 
-    if not APIClient.is_authenticated():
+    if not AUTHClient.is_authenticated():
         if st.button("📝 Criar Conta FREE", use_container_width=True):
             st.switch_page("pages/7_Registro.py")
 
@@ -57,10 +57,10 @@ with col2:
     """
     )
 
-    if APIClient.is_authenticated():
+    if AUTHClient.is_authenticated():
         if st.button("🚀 Fazer Upgrade", type="primary", use_container_width=True):
             with st.spinner("Processando upgrade..."):
-                success, message = APIClient.upgrade_to_pro()
+                success, message = AUTHClient.upgrade_to_pro()
 
                 if success:
                     st.success(message)

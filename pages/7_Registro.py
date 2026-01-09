@@ -1,7 +1,7 @@
 # pages/7_Registro.py
 """Página de Registro"""
 import streamlit as st
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 from app.ui.core.styles import apply_custom_css
 
 
@@ -9,9 +9,9 @@ st.set_page_config(
     page_title="Criar Conta - LotoScience", page_icon="📝", layout="centered"
 )
 apply_custom_css()
-APIClient.init()
+AUTHClient.init()
 # ===== REDIRECIONA SE JÁ ESTÁ LOGADO =====
-if APIClient.is_authenticated():
+if AUTHClient.is_authenticated():
     st.success(f"✅ Você já possui uma conta: {st.session_state.user_email}")
 
     col1, col2 = st.columns(2)
@@ -20,7 +20,7 @@ if APIClient.is_authenticated():
             st.switch_page("pages/1_Painel.py")
     with col2:
         if st.button("🚪 Sair e criar nova conta", use_container_width=True):
-            APIClient.logout()
+            AUTHClient.logout()
             st.rerun()
 
     st.stop()
@@ -67,7 +67,7 @@ with st.form("register_form"):
             st.error("❌ Este e-mail é reservado para o usuário demo. Escolha outro.")
         else:
             with st.spinner("Criando conta..."):
-                success, message, data = APIClient.register(email, password)
+                success, message, data = AUTHClient.register(email, password)
 
                 if success:
                     st.success(message)

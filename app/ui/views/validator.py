@@ -4,7 +4,7 @@ import streamlit as st
 import pandas as pd
 from app.core.logger import logger
 from app.ui.views.board import render_volante_marcado
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 
 
 def render_validator(ctx, svc):
@@ -52,13 +52,15 @@ def render_validator(ctx, svc):
 
             relatorio = svc.validate(slug, nums)
 
-            if APIClient.get_plan() != "pro":
+            if AUTHClient.get_plan() != "pro":
                 today = date.today().isoformat()
                 if st.session_state.get("validator_marked_date") != today:
-                    success, msg = APIClient.mark_resource_used("validator")
+                    success, msg = AUTHClient.mark_resource_used("validator")
                     if success:
                         st.session_state.validator_marked_date = today
-                        logger.info(f"✅ Validação marcada para {APIClient.get_plan()}")
+                        logger.info(
+                            f"✅ Validação marcada para {AUTHClient.get_plan()}"
+                        )
 
             logger.info(
                 f"[{config.name}] Resultado validação: Score {relatorio['score']} | Status: {relatorio['status']}"

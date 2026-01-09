@@ -9,7 +9,7 @@ from app.ui.shared import (
     render_game_selector,
     render_auth_status,
 )
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 
 
 def init_page(
@@ -35,24 +35,24 @@ def init_page(
 
     # 2. Inicialização de Estado e Auth
     init_game_state()
-    APIClient.init()
+    AUTHClient.init()
 
     # 3. Renderiza a Sidebar (Status de Auth)
     render_auth_status()
 
     # 4. Barreira de Autenticação (Login Wall)
-    if require_auth and not APIClient.is_authenticated():
+    if require_auth and not AUTHClient.is_authenticated():
         _render_lock_screen(title)
         st.stop()
 
     # 5. Barreira de Plano (Paywall - Pro Only)
-    if require_pro and not APIClient.is_pro():
+    if require_pro and not AUTHClient.is_pro():
         _render_paywall_screen()
         st.stop()
 
     # 6. Verificação de Rate Limit (Uso Diário para Free)
     if resource_usage:
-        can_use, message = APIClient.check_rate_limit(resource_usage)
+        can_use, message = AUTHClient.check_rate_limit(resource_usage)
         if message and "🔒" not in message:  # Ignora msg de login se já passou
             st.info(message)
 

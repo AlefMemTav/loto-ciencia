@@ -1,6 +1,6 @@
 # app/ui/header.py
 import streamlit as st
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 
 
 def render_app_header(config, df):
@@ -23,7 +23,7 @@ def render_app_header(config, df):
 def _render_auth_badge():
     """Badge minimalista de autenticação no header"""
 
-    if APIClient.is_authenticated():
+    if AUTHClient.is_authenticated():
         email = st.session_state.get("user_email", "Usuário")
         plan = st.session_state.get("user_plan", "free")
 
@@ -67,7 +67,7 @@ def _render_auth_badge():
                     st.divider()
 
                 if st.button("🚪 Sair", use_container_width=True):
-                    APIClient.logout()
+                    AUTHClient.logout()
                     st.rerun()
 
     else:

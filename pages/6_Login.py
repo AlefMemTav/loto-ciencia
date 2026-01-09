@@ -1,13 +1,13 @@
 # pages/6_Login.py
 """Página de Login"""
 import streamlit as st
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 from app.ui.core.styles import apply_custom_css
 
 st.set_page_config(page_title="Login - LotoScience", page_icon="🔐", layout="centered")
 apply_custom_css()
-APIClient.init()
-if APIClient.is_authenticated():
+AUTHClient.init()
+if AUTHClient.is_authenticated():
     st.success(f"✅ Você já está logado como {st.session_state.user_email}")
 
     plan_emoji = "👑" if st.session_state.user_plan == "pro" else "🆓"
@@ -19,7 +19,7 @@ if APIClient.is_authenticated():
             st.switch_page("pages/1_Painel.py")
     with col2:
         if st.button("🚪 Sair", use_container_width=True):
-            APIClient.logout()
+            AUTHClient.logout()
             st.rerun()
 
     st.stop()
@@ -48,7 +48,7 @@ with st.form("login_form"):
             st.error("❌ Preencha todos os campos")
         else:
             with st.spinner("Entrando..."):
-                success, message, data = APIClient.login(email, password)
+                success, message, data = AUTHClient.login(email, password)
 
                 if success:
                     st.success(message)

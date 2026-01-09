@@ -34,11 +34,11 @@ def render_auth_status():
     """
     Renderiza status minimalista na sidebar
     """
-    from app.auth.api_client import APIClient
+    from app.ui.services.auth_client import AUTHClient
 
     st.sidebar.markdown("---")
 
-    if APIClient.is_authenticated():
+    if AUTHClient.is_authenticated():
         email = st.session_state.get("user_email", "Usuário")
         plan = st.session_state.get("user_plan", "free")
 
@@ -69,7 +69,7 @@ def render_auth_status():
         st.sidebar.markdown("")  # espaçamento
 
         if st.sidebar.button("🚪 Sair", key="sidebar_logout", use_container_width=True):
-            APIClient.logout()
+            AUTHClient.logout()
             st.rerun()
 
     else:

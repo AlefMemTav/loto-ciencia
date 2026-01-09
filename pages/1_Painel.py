@@ -10,12 +10,12 @@ from app.ui.shared import (
     render_game_selector,
 )
 from app.ui.views.dashboard import render_dashboard
-from app.auth.api_client import APIClient
+from app.ui.services.auth_client import AUTHClient
 
 apply_page_config()
 apply_custom_css()
 
-APIClient.init()
+AUTHClient.init()
 
 init_game_state()
 
