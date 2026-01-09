@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from scipy.stats import poisson, chisquare, kstest
-from app.src.games import GameConfig
+from app.core.games import GameConfig
 
 
 def _flatten_draws(df, config: GameConfig):

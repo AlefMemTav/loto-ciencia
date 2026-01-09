@@ -10,7 +10,7 @@ from app.api.schemas.stats import (
     FrequenciaItem,
     InteligenciaItem,
 )
-from app.src.statistics import analise_poisson
+from app.core.statistics import analise_poisson
 
 router = APIRouter(tags=["stats"])
 

@@ -9,7 +9,7 @@ import pandas as pd
 from scipy import stats
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
-from app.src.statistics import calcular_atrasos
+from app.core.statistics import calcular_atrasos
 
 
 # ============================================

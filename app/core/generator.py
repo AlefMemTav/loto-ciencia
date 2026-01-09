@@ -4,15 +4,15 @@ import time
 import numpy as np
 from math import comb
 from itertools import combinations
-from app.src.advanced_statistics import calcular_distribuicoes_geometricas
-from app.src.game_constants import (
+from app.core.advanced_statistics import calcular_distribuicoes_geometricas
+from app.core.game_constants import (
     get_constants_for_game,
     get_grupos_geometricos_essenciais,
 )
-from app.src.validator import validar_jogo
-from app.src.games import GameConfig
-from app.src.logger import logger
-from app.src.statistics import (
+from app.core.validator import validar_jogo
+from app.core.games import GameConfig
+from app.core.logger import logger
+from app.core.statistics import (
     analise_intervalo_confianca,
     get_historico_jogos,
     get_tabela_inteligencia,

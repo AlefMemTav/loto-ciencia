@@ -8,7 +8,7 @@ router = APIRouter(tags=["games"])
 
 @router.get("/games", response_model=list[GameSummary])
 def list_games(svc=Depends(get_service)):
-    from app.src.games import GAMES
+    from app.core.games import GAMES
 
     return [{"slug": slug, "name": cfg.name} for slug, cfg in GAMES.items()]
 

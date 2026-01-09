@@ -1,7 +1,7 @@
 # app/ui/board_ui.py
 import matplotlib.pyplot as plt
 import streamlit as st
-from app.src.games import GameConfig
+from app.core.games import GameConfig
 
 
 def render_volante_marcado(nums, config: GameConfig, figsize=(6, 3)):

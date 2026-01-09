@@ -4,7 +4,7 @@ Gerenciador de cookies para persistir autenticação.
 """
 import streamlit as st
 import extra_streamlit_components as stx
-from app.src.logger import logger
+from app.core.logger import logger
 
 GUEST_ID_COOKIE = "lotoscience_guest_id"
 

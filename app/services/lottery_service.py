@@ -3,18 +3,18 @@ from dataclasses import dataclass
 from functools import lru_cache
 from logging import config
 from typing import Any, Optional
-from app.src.logger import logger
-from app.src.advanced_statistics import (
+from app.core.logger import logger
+from app.core.advanced_statistics import (
     calcular_distribuicao_quadrantes,
     calcular_distribuicoes_geometricas,
 )
-from app.src.game_constants import (
+from app.core.game_constants import (
     get_constants_for_game,
     get_grupos_geometricos_essenciais,
 )
-from app.src.games import GAMES, GameConfig
+from app.core.games import GAMES, GameConfig
 from app.services.data_loader import carregar_dados_loteria_excel
-from app.src.statistics import (
+from app.core.statistics import (
     get_numeros_quentes_frios,
     analise_poisson,
     get_tabela_inteligencia,
@@ -25,13 +25,13 @@ from app.src.statistics import (
     calcular_coeficiente_variacao,
     get_reis_da_sequencia,
 )
-from app.src.generator import (
+from app.core.generator import (
     gerar_jogo_perfeito,
     gerar_multiplos_jogos,
     gerar_com_restricoes,
     gerar_fechamento,
 )
-from app.src.validator import validar_jogo
+from app.core.validator import validar_jogo
 
 
 @dataclass(frozen=True)
@@ -298,7 +298,7 @@ class LotteryService:
             Dict com {nome_grupo: DistributionStats}
         """
         ctx = self.get_context(slug)
-        from app.src.advanced_statistics import calcular_distribuicoes_geometricas
+        from app.core.advanced_statistics import calcular_distribuicoes_geometricas
 
         return calcular_distribuicoes_geometricas(
             ctx.df, grupos_geometricos, ctx.config
@@ -317,7 +317,7 @@ class LotteryService:
             ou None se dados insuficientes
         """
         ctx = self.get_context(slug)
-        from app.src.advanced_statistics import calcular_taxa_regressao
+        from app.core.advanced_statistics import calcular_taxa_regressao
 
         return calcular_taxa_regressao(ctx.df, ctx.config, janela)
 
@@ -337,7 +337,7 @@ class LotteryService:
             Ex: {6: ['Conc. 2705', 'Conc. 2680'], 5: ['Conc. 2700'], 4: []}
         """
         ctx = self.get_context(slug)
-        from app.src.statistics import verificar_historico
+        from app.core.statistics import verificar_historico
 
         if targets is None:
             # Define alvos padrão baseado no jogo

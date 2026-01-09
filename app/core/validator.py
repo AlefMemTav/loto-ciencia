@@ -1,14 +1,14 @@
 import math
 import numpy as np
-from app.src.logger import logger
-from app.src.game_constants import (
+from app.core.logger import logger
+from app.core.game_constants import (
     get_constants_for_game,
     get_grupos_geometricos_essenciais,
 )
 from collections import Counter
-from app.src.games import GameConfig
+from app.core.games import GameConfig
 
-from app.src.advanced_statistics import (
+from app.core.advanced_statistics import (
     avaliar_jogo_geometria_estatistica,
     penalizar_por_similaridade,
     calcular_distribuicao_quadrantes,

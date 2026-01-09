@@ -2,9 +2,9 @@
 
 import streamlit as st
 import pandas as pd
-from app.src.games import GAMES
+from app.core.games import GAMES
 from app.services.lottery_service import LotteryService
-from app.src.logger import logger
+from app.core.logger import logger
 
 GLOBAL_KEY = "selected_game"
 WIDGET_KEY = "selected_game_widget"

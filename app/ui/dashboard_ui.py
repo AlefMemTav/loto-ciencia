@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import matplotlib.pyplot as plt
-from app.src.game_constants import get_constants_for_game
+from app.core.game_constants import get_constants_for_game
 
 
 def render_dashboard(ctx, svc):

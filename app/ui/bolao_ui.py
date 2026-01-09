@@ -2,9 +2,9 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from app.src.logger import logger
-from app.src.games import GameConfig
-from app.src.game_constants import get_constants_for_game
+from app.core.logger import logger
+from app.core.games import GameConfig
+from app.core.game_constants import get_constants_for_game
 
 
 def render_bolao(ctx, svc):

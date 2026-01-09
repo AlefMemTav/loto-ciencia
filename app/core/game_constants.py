@@ -1,8 +1,8 @@
-from app.src.games import GameConfig
+from app.core.games import GameConfig
 
 
 from typing import Dict, List
-from app.src.games import GameConfig
+from app.core.games import GameConfig
 
 
 def _numbers_by_positions(layout, positions):

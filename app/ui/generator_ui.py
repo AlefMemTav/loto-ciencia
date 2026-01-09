@@ -2,8 +2,8 @@
 from datetime import date
 import streamlit as st
 import time
-from app.src.logger import logger
-from app.src.game_constants import get_constants_for_game
+from app.core.logger import logger
+from app.core.game_constants import get_constants_for_game
 from app.auth.api_client import APIClient
 
 
