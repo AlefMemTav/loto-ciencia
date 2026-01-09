@@ -1,7 +1,7 @@
 import streamlit as st
 
 from app.ui.footer import render_footer
-from app.ui.styles import apply_custom_css
+from app.ui.core.styles import apply_custom_css
 
 
 def render_landing_page():

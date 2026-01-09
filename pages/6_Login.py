@@ -2,12 +2,11 @@
 """Página de Login"""
 import streamlit as st
 from app.auth.api_client import APIClient
-from app.ui.styles import apply_custom_css
+from app.ui.core.styles import apply_custom_css
 
 st.set_page_config(page_title="Login - LotoScience", page_icon="🔐", layout="centered")
 apply_custom_css()
 APIClient.init()
-# ===== REDIRECIONA SE JÁ ESTÁ LOGADO =====
 if APIClient.is_authenticated():
     st.success(f"✅ Você já está logado como {st.session_state.user_email}")
 

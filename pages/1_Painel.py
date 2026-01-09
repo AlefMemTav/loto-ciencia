@@ -2,7 +2,7 @@
 from app.ui.header import render_app_header
 from app.ui.nav import top_nav
 from app.ui.page_config import apply_page_config
-from app.ui.styles import apply_custom_css
+from app.ui.core.styles import apply_custom_css
 from app.ui.shared import (
     init_game_state,
     load_context,

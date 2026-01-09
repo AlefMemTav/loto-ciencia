@@ -2,7 +2,7 @@
 """Página de Registro"""
 import streamlit as st
 from app.auth.api_client import APIClient
-from app.ui.styles import apply_custom_css
+from app.ui.core.styles import apply_custom_css
 
 
 st.set_page_config(
