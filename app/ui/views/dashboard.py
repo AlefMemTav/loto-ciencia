@@ -1,9 +1,8 @@
-# app/ui/dashboard_ui.py
+# app/ui/dashboard.py
 import streamlit as st
 import pandas as pd
 import altair as alt
 import matplotlib.pyplot as plt
-from app.core.game_constants import get_constants_for_game
 
 
 def render_dashboard(ctx, svc):
@@ -17,7 +16,7 @@ def render_dashboard(ctx, svc):
     reis_sequencia = ctx.reis_sequencia
     tabela = ctx.tabela
     ic_info = ctx.ic_info
-    constants = get_constants_for_game(config)
+    constants = config.as_constants_dict()
     color = constants.get("heat_color", "#ef4444")
 
     st.markdown(
@@ -369,7 +368,7 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config):
         val = freq.get(n, 0)
 
         y = config.layout.rows - 1 - row
-        theme = get_constants_for_game(config)
+        theme = config.as_constants_dict()
         heat_color = theme["heat_color"]
 
         if n in nums_filtro_set:

@@ -1,13 +1,12 @@
-# app/ui/closures_ui.py
+# app/ui/closures.py
 import streamlit as st
 from app.core.logger import logger
-from app.core.game_constants import get_constants_for_game
 
 
 def render_closures(ctx, svc):
     config = ctx.config
     slug = config.slug
-    constants = get_constants_for_game(config)
+    constants = config.as_constants_dict()
     color = constants.get("heat_color", "#ef4444")
 
     st.markdown(

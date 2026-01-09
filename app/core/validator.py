@@ -1,12 +1,9 @@
+# app/core/validator.py
 import math
 import numpy as np
 from app.core.logger import logger
-from app.core.game_constants import (
-    get_constants_for_game,
-    get_grupos_geometricos_essenciais,
-)
 from collections import Counter
-from app.core.games import GameConfig
+from app.core.lottery import GameConfig
 
 from app.core.advanced_statistics import (
     avaliar_jogo_geometria_estatistica,
@@ -299,8 +296,7 @@ def _analise_geometrica(report, numeros, config, distribuicoes_geometricas):
         report["msgs"].append("ℹ️ Análise geométrica indisponível (sem histórico)")
         return
 
-    constants = get_constants_for_game(config)
-    grupos_geometricos = get_grupos_geometricos_essenciais(config)
+    grupos_geometricos = config.get_geometric_groups()
 
     resultado = avaliar_jogo_geometria_estatistica(
         numeros, grupos_geometricos, distribuicoes_geometricas, config

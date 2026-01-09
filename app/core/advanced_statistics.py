@@ -5,8 +5,6 @@ Substitui heurísticas por distribuições empíricas.
 """
 
 import numpy as np
-import pandas as pd
-from scipy import stats
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from app.core.statistics import calcular_atrasos

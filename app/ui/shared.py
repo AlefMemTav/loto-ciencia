@@ -2,7 +2,7 @@
 
 import streamlit as st
 import pandas as pd
-from app.core.games import GAMES
+from app.core.lottery import GAMES
 from app.services.lottery_service import LotteryService
 from app.core.logger import logger
 

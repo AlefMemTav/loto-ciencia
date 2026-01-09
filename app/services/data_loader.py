@@ -1,7 +1,7 @@
 # app/src/data_loader.py
 import pandas as pd
 from app.core.logger import logger
-from app.core.games import GameConfig
+from app.core.lottery import GameConfig
 
 
 class DataLoadError(Exception):

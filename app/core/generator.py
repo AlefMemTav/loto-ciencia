@@ -1,16 +1,12 @@
+# app/core/generator.py
 import math
 import random
 import time
-import numpy as np
 from math import comb
 from itertools import combinations
 from app.core.advanced_statistics import calcular_distribuicoes_geometricas
-from app.core.game_constants import (
-    get_constants_for_game,
-    get_grupos_geometricos_essenciais,
-)
 from app.core.validator import validar_jogo
-from app.core.games import GameConfig
+from app.core.lottery import GameConfig
 from app.core.logger import logger
 from app.core.statistics import (
     analise_intervalo_confianca,
@@ -52,8 +48,8 @@ def gerar_jogo_perfeito(
         historico_jogos = get_historico_jogos(df, config)
         ic_info = analise_intervalo_confianca(df, config)
 
-        constants = get_constants_for_game(config)
-        grupos_geometricos = get_grupos_geometricos_essenciais(config)
+        constants = config.as_constants_dict()
+        grupos_geometricos = config.get_geometric_groups()
         distribuicoes_geometricas = calcular_distribuicoes_geometricas(
             df, grupos_geometricos, config
         )
@@ -273,7 +269,7 @@ def gerar_com_restricoes(
         historico = get_historico_jogos(df, config)
         ic_info = analise_intervalo_confianca(df, config)
 
-        constants = get_constants_for_game(config)
+        constants = config.as_constants_dict()
         grupos_geometricos = {
             "Moldura (Borda)": constants["moldura"],
             "Miolo (Centro)": constants["miolo"],

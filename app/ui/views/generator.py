@@ -1,16 +1,16 @@
-# app/ui/generator_ui.py
+# app/ui/generator.py
 from datetime import date
 import streamlit as st
 import time
 from app.core.logger import logger
-from app.core.game_constants import get_constants_for_game
 from app.auth.api_client import APIClient
 
 
 def render_generator(ctx, svc):
     config = ctx.config
     slug = config.slug
-    constants = get_constants_for_game(config)
+    constants = config.as_constants_dict()
+
     color = constants.get("heat_color", "#ef4444")
 
     st.markdown(

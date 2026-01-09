@@ -1,10 +1,9 @@
-# app/ui/validator_ui.py
+# app/ui/validator.py
 from datetime import date
 import streamlit as st
 import pandas as pd
 from app.core.logger import logger
 from app.ui.views.board import render_volante_marcado
-from app.core.game_constants import get_constants_for_game
 from app.auth.api_client import APIClient
 
 
@@ -12,7 +11,7 @@ def render_validator(ctx, svc):
     config = ctx.config
     slug = config.slug
     df = ctx.df
-    constants = get_constants_for_game(config)
+    constants = config.as_constants_dict()
     color = constants.get("heat_color", "#ef4444")
 
     st.markdown(

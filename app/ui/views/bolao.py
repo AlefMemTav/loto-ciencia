@@ -1,17 +1,16 @@
-# app/ui/bolao_ui.py
+# app/ui/bolao.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 from app.core.logger import logger
-from app.core.games import GameConfig
-from app.core.game_constants import get_constants_for_game
+from app.core.lottery import GameConfig
 
 
 def render_bolao(ctx, svc):
     config = ctx.config
     slug = config.slug
     df = ctx.df
-    constants = get_constants_for_game(config)
+    constants = config.as_constants_dict()
     color = constants.get("heat_color", "#ef4444")
 
     st.markdown(
@@ -202,7 +201,7 @@ def _renderizar_heatmap_bolao(todos_numeros, config: GameConfig):
     elif min(layout.rows, layout.cols) >= 8:
         r = 0.38
 
-    theme = get_constants_for_game(config)
+    theme = config.as_constants_dict()
     heat_color = theme["heat_color"]
 
     for n in range(1, config.n_numbers + 1):
