@@ -1,8 +1,8 @@
 # app/ui/core/shell.py
 import streamlit as st
 from app.ui.core.styles import apply_custom_css
-from app.ui.header import render_app_header
-from app.ui.nav import top_nav
+from app.ui.components.header import render_app_header
+from app.ui.components.nav import top_nav
 from app.ui.shared import (
     load_context,
     init_game_state,

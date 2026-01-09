@@ -3,7 +3,7 @@ from datetime import date
 import streamlit as st
 import pandas as pd
 from app.core.logger import logger
-from app.ui.board_ui import render_volante_marcado
+from app.ui.views.board import render_volante_marcado
 from app.core.game_constants import get_constants_for_game
 from app.auth.api_client import APIClient
 

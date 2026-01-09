@@ -1,6 +1,6 @@
 # pages/1_Painel.py
-from app.ui.header import render_app_header
-from app.ui.nav import top_nav
+from app.ui.components.header import render_app_header
+from app.ui.components.nav import top_nav
 from app.ui.page_config import apply_page_config
 from app.ui.core.styles import apply_custom_css
 from app.ui.shared import (
@@ -9,7 +9,7 @@ from app.ui.shared import (
     render_auth_status,
     render_game_selector,
 )
-from app.ui.dashboard_ui import render_dashboard
+from app.ui.views.dashboard import render_dashboard
 from app.auth.api_client import APIClient
 
 apply_page_config()

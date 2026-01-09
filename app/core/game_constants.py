@@ -1,3 +1,4 @@
+# app/core/game_constants.py
 from app.core.games import GameConfig
 
 

@@ -1,6 +1,6 @@
 import streamlit as st
 
-from app.ui.footer import render_footer
+from app.ui.components.footer import render_footer
 from app.ui.core.styles import apply_custom_css
 
 
