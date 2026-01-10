@@ -3,12 +3,8 @@ import streamlit as st
 from app.ui.core.styles import apply_custom_css
 from app.ui.components.header import render_app_header
 from app.ui.components.nav import top_nav
-from app.ui.shared import (
-    load_context,
-    init_game_state,
-    render_game_selector,
-    render_auth_status,
-)
+from app.ui.core.state import load_context, init_game_state
+from app.ui.components.sidebar import render_game_selector, render_auth_status
 from app.ui.services.auth_client import AUTHClient
 
 
