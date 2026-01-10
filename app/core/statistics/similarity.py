@@ -365,5 +365,6 @@ def calcular_taxa_regressao(df: pd.DataFrame, config: GameConfig, janela: int = 
         }
     except ImportError:
         return None
-    except Exception as e:
+    except (ValueError, RuntimeError) as e:
+        # Catch specific statistical computation errors
         return None

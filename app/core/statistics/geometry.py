@@ -8,7 +8,6 @@ baseadas em dados reais, substituindo heurísticas por estatística empírica.
 
 import numpy as np
 import pandas as pd
-from typing import Dict
 from dataclasses import dataclass
 from app.core.lottery import GameConfig
 from app.core.statistics.basic import compute_zscore, EPSILON
@@ -47,7 +46,7 @@ class GeometricDistribution:
 
     mean: float
     std: float
-    percentiles: Dict[int, float]  # {5: val, 25: val, 50: val, 75: val, 95: val}
+    percentiles: dict[int, float]  # {5: val, 25: val, 50: val, 75: val, 95: val}
     z_scores: np.ndarray
 
 

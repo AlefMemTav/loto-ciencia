@@ -55,6 +55,21 @@ def compute_zscore(value: float, mean: float, std: float) -> float:
 
 
 def _flatten_draws(df: pd.DataFrame, config: GameConfig) -> np.ndarray:
+    """
+    Flatten all draw columns into a 1D array.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with lottery draws.
+    config : GameConfig
+        Game configuration.
+    
+    Returns
+    -------
+    np.ndarray
+        Flattened array of all drawn numbers.
+    """
     return df[config.draw_cols].values.flatten()
 
 
