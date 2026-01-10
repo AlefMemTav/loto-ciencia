@@ -30,10 +30,7 @@ from app.core.statistics.distributions import (
     CV_ACCEPTABLE,
 )
 
-from app.core.statistics.geometry import (
-    GeometricDistribution,
-    calcular_distribuicoes_geometricas,
-    avaliar_jogo_geometria_estatistica,
+from app.core.statistics.constants import (
     ZSCORE_EXTREME,
     ZSCORE_VERY_RARE,
     ZSCORE_RARE,
@@ -43,6 +40,14 @@ from app.core.statistics.geometry import (
     PENALTY_NORMAL,
     PENALTY_SCALE_FACTOR,
     SCORE_CONVERSION_FACTOR,
+    QUADRANT_CONCENTRATION_THRESHOLD,
+    QUADRANT_PVALUE_THRESHOLD,
+)
+
+from app.core.statistics.geometry import (
+    GeometricDistribution,
+    calcular_distribuicoes_geometricas,
+    avaliar_jogo_geometria_estatistica,
 )
 
 from app.core.statistics.similarity import (
@@ -52,8 +57,6 @@ from app.core.statistics.similarity import (
     calcular_distribuicao_quadrantes,
     avaliar_quadrantes_estatistico,
     calcular_taxa_regressao,
-    QUADRANT_CONCENTRATION_THRESHOLD,
-    QUADRANT_PVALUE_THRESHOLD,
 )
 
 __all__ = [

@@ -10,26 +10,13 @@ import numpy as np
 import pandas as pd
 from app.core.lottery import GameConfig
 from app.core.statistics.basic import calcular_atrasos, compute_zscore, EPSILON
-
-
-# ============================================
-# CONSTANTES DE CONFIGURAÇÃO ESTATÍSTICA
-# ============================================
-
-# Limiares de Z-score (baseado na regra empírica)
-ZSCORE_VERY_RARE: float = 2.0     # 5% de chance (2-sigma)
-
-# Fator de escala para penalidade
-PENALTY_SCALE_FACTOR: float = 0.5
-
-# Fator de conversão score (penalidade -> score 0-100)
-SCORE_CONVERSION_FACTOR: float = 8.0
-
-# Limiar de concentração em quadrantes
-QUADRANT_CONCENTRATION_THRESHOLD: float = 0.7
-
-# Limiar de p-value para quadrantes (90% IC)
-QUADRANT_PVALUE_THRESHOLD: float = 1.64
+from app.core.statistics.constants import (
+    ZSCORE_VERY_RARE,
+    PENALTY_SCALE_FACTOR,
+    SCORE_CONVERSION_FACTOR,
+    QUADRANT_CONCENTRATION_THRESHOLD,
+    QUADRANT_PVALUE_THRESHOLD,
+)
 
 
 # ============================================
@@ -68,7 +55,7 @@ def calcular_distancia_minima_historico(
 ) -> tuple[int, float]:
     """
     Calcula a menor distância de Hamming entre o jogo e o histórico.
-    
+
     Parameters
     ----------
     jogo : list[int]
@@ -79,7 +66,7 @@ def calcular_distancia_minima_historico(
         Configuração do jogo.
     top_n : int, optional
         Quantidade de sorteios recentes a verificar (default: 100).
-    
+
     Returns
     -------
     tuple[int, float]
@@ -103,13 +90,15 @@ def calcular_distancia_minima_historico(
     return (min_dist, max_sim)
 
 
-def penalizar_por_similaridade(report: dict, numeros: list[int], df: pd.DataFrame, config: GameConfig) -> None:
+def penalizar_por_similaridade(
+    report: dict, numeros: list[int], df: pd.DataFrame, config: GameConfig
+) -> None:
     """
     Adiciona penalidades baseadas em distância de Hamming.
-    
+
     Modifica o report in-place adicionando métricas de similaridade
     e ajustando o score baseado na proximidade com sorteios anteriores.
-    
+
     Parameters
     ----------
     report : dict
@@ -161,17 +150,19 @@ def penalizar_por_similaridade(report: dict, numeros: list[int], df: pd.DataFram
 # ============================================
 
 
-def calcular_distribuicao_quadrantes(df: pd.DataFrame, config: GameConfig) -> dict[int, dict[str, float]]:
+def calcular_distribuicao_quadrantes(
+    df: pd.DataFrame, config: GameConfig
+) -> dict[int, dict[str, float]]:
     """
     Calcula distribuição empírica de números por quadrante.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame com histórico de sorteios.
     config : GameConfig
         Configuração do jogo.
-    
+
     Returns
     -------
     dict[int, dict[str, float]]
@@ -208,10 +199,12 @@ def calcular_distribuicao_quadrantes(df: pd.DataFrame, config: GameConfig) -> di
     return stats
 
 
-def avaliar_quadrantes_estatistico(numeros: list[int], config: GameConfig, stats_quadrantes: dict) -> dict:
+def avaliar_quadrantes_estatistico(
+    numeros: list[int], config: GameConfig, stats_quadrantes: dict
+) -> dict:
     """
     Avalia distribuição de quadrantes usando estatística.
-    
+
     Parameters
     ----------
     numeros : list[int]
@@ -220,7 +213,7 @@ def avaliar_quadrantes_estatistico(numeros: list[int], config: GameConfig, stats
         Configuração do jogo.
     stats_quadrantes : dict
         Estatísticas dos quadrantes do histórico.
-    
+
     Returns
     -------
     dict
@@ -289,13 +282,15 @@ def avaliar_quadrantes_estatistico(numeros: list[int], config: GameConfig, stats
 # ============================================
 
 
-def calcular_taxa_regressao(df: pd.DataFrame, config: GameConfig, janela: int = 100) -> dict | None:
+def calcular_taxa_regressao(
+    df: pd.DataFrame, config: GameConfig, janela: int = 100
+) -> dict | None:
     """
     Mede se números atrasados realmente tendem a sair.
-    
+
     Valida se a "regressão à média" funciona nos dados, calculando
     correlação entre atrasos passados e frequência futura.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -304,7 +299,7 @@ def calcular_taxa_regressao(df: pd.DataFrame, config: GameConfig, janela: int = 
         Configuração do jogo.
     janela : int, optional
         Número de sorteios futuros a analisar (default: 100).
-    
+
     Returns
     -------
     dict | None

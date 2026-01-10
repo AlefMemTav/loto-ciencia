@@ -11,7 +11,7 @@ import pandas as pd
 from dataclasses import dataclass
 from app.core.lottery import GameConfig
 from app.core.statistics.basic import compute_zscore, EPSILON
-from app.core.statistics.similarity import (
+from app.core.statistics.constants import (
     ZSCORE_EXTREME,
     ZSCORE_VERY_RARE,
     ZSCORE_RARE,
@@ -44,7 +44,7 @@ def calcular_distribuicoes_geometricas(
 ) -> dict[str, GeometricDistribution]:
     """
     Calcula distribuições empíricas REAIS dos padrões geométricos.
-    
+
     Substitui heurísticas por estatística baseada em dados.
 
     Parameters
@@ -124,7 +124,7 @@ def avaliar_jogo_geometria_estatistica(
         - score_geom: score geométrico (0-100)
         - detalhes: análise por padrão com z_score, p_value e categoria
         - penalidade: penalidade total acumulada
-        
+
         Cada detalhe contém:
         - z_score: Quão anormal é cada padrão (-2 a +2 é normal)
         - p_value: Probabilidade de ver esse valor ou mais extremo
@@ -173,7 +173,9 @@ def avaliar_jogo_geometria_estatistica(
             categoria = "Normal"
             peso = PENALTY_NORMAL
 
-        penalidade_total += peso * abs(z_score) * PENALTY_SCALE_FACTOR  # Fator de escala
+        penalidade_total += (
+            peso * abs(z_score) * PENALTY_SCALE_FACTOR
+        )  # Fator de escala
 
         resultados[nome] = {
             "presentes": presentes,
