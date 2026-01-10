@@ -1,4 +1,4 @@
-# app/src/advanced_statistics.py
+# app/core/advanced_statistics.py
 """
 Análises estatísticas avançadas baseadas em dados reais.
 Substitui heurísticas por distribuições empíricas.
@@ -385,5 +385,7 @@ def calcular_taxa_regressao(df, config, janela: int = 100) -> Optional[dict]:
                 else "Regressão fraca" if corr > 0.1 else "Sem evidência clara"
             ),
         }
-    except:
+    except ImportError:
+        return None
+    except Exception as e:
         return None

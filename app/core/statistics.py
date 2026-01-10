@@ -184,7 +184,6 @@ def calcular_chi_quadrado(df, config: GameConfig):
 
     chi2_stat, p_chi = chisquare(f_obs, f_exp=f_esp)
 
-    uniform_sample = np.linspace(1, config.n_numbers, len(todos_numeros))
     ks_stat, p_ks = kstest(sorted(todos_numeros), lambda x: x / config.n_numbers)
 
     if p_chi > 0.05 and p_ks > 0.05:
