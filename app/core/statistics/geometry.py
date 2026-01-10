@@ -11,28 +11,17 @@ import pandas as pd
 from dataclasses import dataclass
 from app.core.lottery import GameConfig
 from app.core.statistics.basic import compute_zscore, EPSILON
-
-
-# ============================================
-# CONSTANTES DE CONFIGURAÇÃO ESTATÍSTICA
-# ============================================
-
-# Limiares de Z-score (baseado na regra empírica)
-ZSCORE_EXTREME: float = 3.0       # 0.3% de chance (3-sigma)
-ZSCORE_VERY_RARE: float = 2.0     # 5% de chance (2-sigma)
-ZSCORE_RARE: float = 1.0          # 32% de chance (1-sigma)
-
-# Pesos de penalidade por categoria
-PENALTY_EXTREME: float = 3.0
-PENALTY_VERY_RARE: float = 2.0
-PENALTY_RARE: float = 1.0
-PENALTY_NORMAL: float = 0.0
-
-# Fator de escala para penalidade
-PENALTY_SCALE_FACTOR: float = 0.5
-
-# Fator de conversão score (penalidade -> score 0-100)
-SCORE_CONVERSION_FACTOR: float = 8.0
+from app.core.statistics.similarity import (
+    ZSCORE_EXTREME,
+    ZSCORE_VERY_RARE,
+    ZSCORE_RARE,
+    PENALTY_EXTREME,
+    PENALTY_VERY_RARE,
+    PENALTY_RARE,
+    PENALTY_NORMAL,
+    PENALTY_SCALE_FACTOR,
+    SCORE_CONVERSION_FACTOR,
+)
 
 
 # ============================================
