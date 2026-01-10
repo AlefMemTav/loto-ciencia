@@ -62,7 +62,21 @@ def _flatten_draws(df: pd.DataFrame, config: GameConfig) -> np.ndarray:
 
 
 def get_numeros_quentes_frios(df: pd.DataFrame, config: GameConfig) -> pd.Series:
-    """Retorna contagem de frequência de todos os números."""
+    """
+    Retorna contagem de frequência de todos os números.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    pd.Series
+        Série com frequência de cada número, ordenada decrescentemente.
+    """
     if df.empty:
         return pd.Series()
     todos = _flatten_draws(df, config)
@@ -70,6 +84,33 @@ def get_numeros_quentes_frios(df: pd.DataFrame, config: GameConfig) -> pd.Series
 
 
 def analise_poisson(df: pd.DataFrame, config: GameConfig, alpha: float = 0.05) -> list[dict]:
+    """
+    Analisa dígitos finais usando distribuição de Poisson.
+    
+    Testa se os dígitos finais dos números sorteados seguem a distribuição
+    esperada baseada na distribuição teórica do jogo.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    alpha : float, optional
+        Nível de significância para o teste (default: 0.05).
+    
+    Returns
+    -------
+    list[dict]
+        Lista de dígitos com desvios significativos. Cada dicionário contém:
+        - digito: o dígito final (0-9)
+        - observado: contagem observada
+        - esperado: contagem esperada
+        - desvio: diferença (observado - esperado)
+        - tipo: "Déficit" ou "Excesso"
+        - p_value: valor-p do teste
+        - interpretacao: mensagem interpretativa
+    """
     if df.empty:
         return []
 
@@ -113,7 +154,21 @@ def analise_poisson(df: pd.DataFrame, config: GameConfig, alpha: float = 0.05) -
 
 
 def get_historico_jogos(df: pd.DataFrame, config: GameConfig) -> set[tuple]:
-    """SET de jogos já sorteados para lookup O(1)."""
+    """
+    SET de jogos já sorteados para lookup O(1).
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    set[tuple]
+        Conjunto de tuplas ordenadas representando cada jogo sorteado.
+    """
     if df.empty:
         return set()
     jogos = df[config.draw_cols].values
@@ -121,6 +176,26 @@ def get_historico_jogos(df: pd.DataFrame, config: GameConfig) -> set[tuple]:
 
 
 def verificar_historico(numeros: list[int], df: pd.DataFrame, config: GameConfig, alvos: list[int] | None = None) -> dict[int, list[str]]:
+    """
+    Verifica quantos acertos o jogo teria com sorteios históricos.
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo a verificar.
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    alvos : list[int] | None, optional
+        Lista de quantidades de acertos a verificar. 
+        Se None, usa [k, k-1, k-2] onde k é o tamanho do sorteio.
+    
+    Returns
+    -------
+    dict[int, list[str]]
+        Dicionário mapeando quantidade de acertos para lista de concursos.
+    """
     meus = set(numeros)
     if alvos is None:
         alvos = [config.k, config.k - 1, config.k - 2]
@@ -135,7 +210,21 @@ def verificar_historico(numeros: list[int], df: pd.DataFrame, config: GameConfig
 
 
 def get_reis_da_sequencia(df: pd.DataFrame, config: GameConfig) -> list[int]:
-    """Identifica números que mais formam pares consecutivos."""
+    """
+    Identifica números que mais formam pares consecutivos.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    list[int]
+        Lista de números que mais aparecem em sequências consecutivas.
+    """
     if df.empty:
         return []
 
@@ -162,6 +251,19 @@ def calcular_atrasos(df: pd.DataFrame, config: GameConfig) -> pd.Series:
     """
     Adiciona normalização por tamanho da base.
     Gap relativo = Gap absoluto / Total de jogos.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    pd.Series
+        Série com atraso de cada número desde o último sorteio,
+        ordenada decrescentemente.
     """
     if df.empty:
         return pd.Series()
@@ -185,6 +287,32 @@ def calcular_atrasos(df: pd.DataFrame, config: GameConfig) -> pd.Series:
 
 
 def get_tabela_inteligencia(df: pd.DataFrame, config: GameConfig) -> pd.DataFrame:
+    """
+    Calcula tabela de inteligência com frequências, atrasos e pesos.
+    
+    Calcula Z-scores para frequência e atraso, peso composto normalizado
+    e percentis para análise estatística dos números.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame com colunas:
+        - Frequencia: contagem de aparições
+        - Atraso: sorteios desde última aparição
+        - Z_Freq: Z-score da frequência
+        - Z_Gap: Z-score do atraso
+        - Peso_Composto: score combinado
+        - Peso_Geracao: peso normalizado para geração
+        - Percentil_Freq: percentil da frequência
+        - Percentil_Gap: percentil do atraso
+    """
     if df.empty:
         return pd.DataFrame()
 
@@ -223,6 +351,29 @@ def get_tabela_inteligencia(df: pd.DataFrame, config: GameConfig) -> pd.DataFram
 
 
 def calcular_chi_quadrado(df: pd.DataFrame, config: GameConfig) -> dict | None:
+    """
+    Testa aleatoriedade dos sorteios usando Chi-quadrado e Kolmogorov-Smirnov.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict | None
+        Dicionário com resultados dos testes:
+        - chi2_stat: estatística Chi-quadrado
+        - p_chi: p-value do teste Chi-quadrado
+        - ks_stat: estatística Kolmogorov-Smirnov
+        - p_ks: p-value do teste KS
+        - status: interpretação qualitativa
+        - confianca: nível de confiança (Alta/Média/Baixa)
+        - n_amostras: tamanho da amostra
+        Retorna None se df vazio.
+    """
     if df.empty:
         return None
 
@@ -260,6 +411,30 @@ def calcular_chi_quadrado(df: pd.DataFrame, config: GameConfig) -> dict | None:
 
 
 def analise_intervalo_confianca(df: pd.DataFrame, config: GameConfig) -> dict | None:
+    """
+    Calcula intervalos de confiança para a soma dos números sorteados.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict | None
+        Dicionário com estatísticas da soma:
+        - media: média das somas
+        - mediana: mediana das somas
+        - desvio: desvio padrão
+        - ic_50: intervalo de confiança 50% (Q1, Q3)
+        - ic_80: intervalo de confiança 80% (P10, P90)
+        - ic_95: intervalo de confiança 95% (P2.5, P97.5)
+        - min_historico: menor soma observada
+        - max_historico: maior soma observada
+        Retorna None se df vazio.
+    """
     if df.empty:
         return None
 
@@ -286,6 +461,30 @@ def analise_intervalo_confianca(df: pd.DataFrame, config: GameConfig) -> dict | 
 
 
 def calcular_coeficiente_variacao(df: pd.DataFrame, config: GameConfig) -> dict | None:
+    """
+    Calcula coeficiente de variação das frequências dos números.
+    
+    O coeficiente de variação (CV) mede a uniformidade da distribuição
+    de frequências. Valores baixos indicam distribuição mais uniforme.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict | None
+        Dicionário com:
+        - coeficiente_variacao: CV em percentual
+        - interpretacao: classificação da uniformidade
+        - freq_max: maior frequência observada
+        - freq_min: menor frequência observada
+        - amplitude: diferença entre máxima e mínima
+        Retorna None se df vazio.
+    """
     if df.empty:
         return None
 

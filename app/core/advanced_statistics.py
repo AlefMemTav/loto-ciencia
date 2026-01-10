@@ -60,10 +60,22 @@ def calcular_distribuicoes_geometricas(
 ) -> dict[str, GeometricDistribution]:
     """
     Calcula distribuições empíricas REAIS dos padrões geométricos.
+    
     Substitui heurísticas por estatística baseada em dados.
 
-    Returns:
-        Dict com distribuições para cada grupo (moldura, miolo, cruz, xis, cantos)
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    conjuntos : dict[str, list[int]]
+        Dicionário mapeando nome do padrão para lista de números.
+    config : GameConfig
+        Configuração do jogo.
+
+    Returns
+    -------
+    dict[str, GeometricDistribution]
+        Dicionário com distribuições para cada grupo (moldura, miolo, cruz, xis, cantos).
     """
     if df.empty:
         return {}
@@ -110,7 +122,26 @@ def avaliar_jogo_geometria_estatistica(
     """
     Avalia geometria usando PROBABILIDADE EMPÍRICA ao invés de heurísticas.
 
-    Retorna:
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo a avaliar.
+    conjuntos : dict[str, list[int]]
+        Dicionário mapeando nome do padrão para lista de números.
+    distribuicoes : dict[str, GeometricDistribution]
+        Distribuições empíricas calculadas.
+    config : GameConfig
+        Configuração do jogo.
+
+    Returns
+    -------
+    dict
+        Dicionário com:
+        - score_geom: score geométrico (0-100)
+        - detalhes: análise por padrão com z_score, p_value e categoria
+        - penalidade: penalidade total acumulada
+        
+        Cada detalhe contém:
         - z_score: Quão anormal é cada padrão (-2 a +2 é normal)
         - p_value: Probabilidade de ver esse valor ou mais extremo
         - categoria: Normal, Raro, Muito Raro, Extremo
@@ -190,10 +221,22 @@ def distancia_hamming(jogo1: list[int], jogo2: list[int]) -> int:
     """
     Conta quantos números são DIFERENTES entre dois jogos.
 
-    Exemplo:
-        jogo1 = [1, 2, 3, 4, 5, 6]
-        jogo2 = [1, 2, 3, 7, 8, 9]
-        hamming = 3 (números 4,5,6 vs 7,8,9)
+    Parameters
+    ----------
+    jogo1 : list[int]
+        Primeiro jogo.
+    jogo2 : list[int]
+        Segundo jogo.
+
+    Returns
+    -------
+    int
+        Número de elementos diferentes entre os dois jogos.
+
+    Examples
+    --------
+    >>> distancia_hamming([1, 2, 3, 4, 5, 6], [1, 2, 3, 7, 8, 9])
+    3
     """
     set1 = set(jogo1)
     set2 = set(jogo2)
@@ -205,8 +248,24 @@ def calcular_distancia_minima_historico(
 ) -> tuple[int, float]:
     """
     Calcula a menor distância de Hamming entre o jogo e o histórico.
-    Returns:
-        (distancia_minima, similaridade_maxima)
+    
+    Parameters
+    ----------
+    jogo : list[int]
+        Lista de números do jogo a verificar.
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    top_n : int, optional
+        Quantidade de sorteios recentes a verificar (default: 100).
+    
+    Returns
+    -------
+    tuple[int, float]
+        Tupla (distancia_minima, similaridade_maxima) onde:
+        - distancia_minima: menor distância de Hamming encontrada
+        - similaridade_maxima: 1 - (distancia_minima / tamanho_jogo)
     """
     if df.empty or config.bet_size != config.k:
         return (config.bet_size, 0.0)
@@ -227,6 +286,20 @@ def calcular_distancia_minima_historico(
 def penalizar_por_similaridade(report: dict, numeros: list[int], df: pd.DataFrame, config: GameConfig) -> None:
     """
     Adiciona penalidades baseadas em distância de Hamming.
+    
+    Modifica o report in-place adicionando métricas de similaridade
+    e ajustando o score baseado na proximidade com sorteios anteriores.
+    
+    Parameters
+    ----------
+    report : dict
+        Dicionário de relatório a ser modificado.
+    numeros : list[int]
+        Lista de números do jogo.
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
     """
     # Só aplica se o jogo tem mesmo tamanho do sorteio
     if config.bet_size != config.k:
@@ -271,6 +344,22 @@ def penalizar_por_similaridade(report: dict, numeros: list[int], df: pd.DataFram
 def calcular_distribuicao_quadrantes(df: pd.DataFrame, config: GameConfig) -> dict[int, dict[str, float]]:
     """
     Calcula distribuição empírica de números por quadrante.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict[int, dict[str, float]]
+        Dicionário mapeando quadrante (1-4) para estatísticas:
+        - mean: média de números por quadrante
+        - std: desvio padrão
+        - p5: percentil 5%
+        - p95: percentil 95%
     """
     if df.empty:
         return {}
@@ -302,6 +391,24 @@ def calcular_distribuicao_quadrantes(df: pd.DataFrame, config: GameConfig) -> di
 def avaliar_quadrantes_estatistico(numeros: list[int], config: GameConfig, stats_quadrantes: dict) -> dict:
     """
     Avalia distribuição de quadrantes usando estatística.
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo a avaliar.
+    config : GameConfig
+        Configuração do jogo.
+    stats_quadrantes : dict
+        Estatísticas dos quadrantes do histórico.
+    
+    Returns
+    -------
+    dict
+        Dicionário com:
+        - score_quadrantes: score (0-100)
+        - detalhes: análise por quadrante (Q1-Q4) com presentes, esperado, z_score e categoria
+        - penalidade: penalidade total
+        - alerta: mensagem se houver concentração extrema (opcional)
     """
     if not stats_quadrantes:
         return {"score_quadrantes": 100, "detalhes": {}, "penalidade": 0.0}
@@ -365,7 +472,28 @@ def avaliar_quadrantes_estatistico(numeros: list[int], config: GameConfig, stats
 def calcular_taxa_regressao(df: pd.DataFrame, config: GameConfig, janela: int = 100) -> dict | None:
     """
     Mede se números atrasados realmente tendem a sair.
-    Valida se a "regressão à média" funciona nos dados.
+    
+    Valida se a "regressão à média" funciona nos dados, calculando
+    correlação entre atrasos passados e frequência futura.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    janela : int, optional
+        Número de sorteios futuros a analisar (default: 100).
+    
+    Returns
+    -------
+    dict | None
+        Dicionário com:
+        - correlacao: correlação de Spearman entre atraso e frequência futura
+        - p_value: significância da correlação
+        - taxa_retorno: proporção de números atrasados que retornaram
+        - interpretacao: classificação da força da regressão
+        Retorna None se não houver dados suficientes ou erro na importação.
     """
     if df.empty or len(df) < janela + 10:
         return None
