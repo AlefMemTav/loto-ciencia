@@ -7,7 +7,37 @@ Substitui heurísticas por distribuições empíricas.
 import numpy as np
 from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
-from app.core.statistics import calcular_atrasos
+from app.core.statistics import calcular_atrasos, compute_zscore, EPSILON
+import pandas as pd
+from app.core.lottery import GameConfig
+
+
+# ============================================
+# CONSTANTES DE CONFIGURAÇÃO ESTATÍSTICA
+# ============================================
+
+# Limiares de Z-score (baseado na regra empírica)
+ZSCORE_EXTREME: float = 3.0       # 0.3% de chance (3-sigma)
+ZSCORE_VERY_RARE: float = 2.0     # 5% de chance (2-sigma)
+ZSCORE_RARE: float = 1.0          # 32% de chance (1-sigma)
+
+# Pesos de penalidade por categoria
+PENALTY_EXTREME: float = 3.0
+PENALTY_VERY_RARE: float = 2.0
+PENALTY_RARE: float = 1.0
+PENALTY_NORMAL: float = 0.0
+
+# Fator de escala para penalidade
+PENALTY_SCALE_FACTOR: float = 0.5
+
+# Fator de conversão score (penalidade -> score 0-100)
+SCORE_CONVERSION_FACTOR: float = 8.0
+
+# Limiar de concentração em quadrantes
+QUADRANT_CONCENTRATION_THRESHOLD: float = 0.7
+
+# Limiar de p-value para quadrantes (90% IC)
+QUADRANT_PVALUE_THRESHOLD: float = 1.64
 
 
 # ============================================
@@ -26,8 +56,8 @@ class GeometricDistribution:
 
 
 def calcular_distribuicoes_geometricas(
-    df, conjuntos: dict, config
-) -> Dict[str, GeometricDistribution]:
+    df: pd.DataFrame, conjuntos: dict[str, list[int]], config: GameConfig
+) -> dict[str, GeometricDistribution]:
     """
     Calcula distribuições empíricas REAIS dos padrões geométricos.
     Substitui heurísticas por estatística baseada em dados.
@@ -62,7 +92,7 @@ def calcular_distribuicoes_geometricas(
         }
 
         # Z-scores históricos (para detectar outliers)
-        z_scores = (contagens - mean) / (std + 1e-9)
+        z_scores = (contagens - mean) / (std + EPSILON)
 
         distribuicoes[nome] = GeometricDistribution(
             mean=mean, std=std, percentiles=percentiles, z_scores=z_scores
@@ -72,11 +102,11 @@ def calcular_distribuicoes_geometricas(
 
 
 def avaliar_jogo_geometria_estatistica(
-    numeros: list,
-    conjuntos: dict,
-    distribuicoes: Dict[str, GeometricDistribution],
-    config,
-) -> Dict:
+    numeros: list[int],
+    conjuntos: dict[str, list[int]],
+    distribuicoes: dict[str, GeometricDistribution],
+    config: GameConfig,
+) -> dict:
     """
     Avalia geometria usando PROBABILIDADE EMPÍRICA ao invés de heurísticas.
 
@@ -108,27 +138,27 @@ def avaliar_jogo_geometria_estatistica(
             std_ajustada = dist.std
 
         # Z-score: quantos desvios-padrão do normal?
-        z_score = (presentes - mean_ajustada) / (std_ajustada + 1e-9)
+        z_score = compute_zscore(presentes, mean_ajustada, std_ajustada)
 
         # P-value empírico: qual % dos sorteios históricos foram tão extremos?
         mais_extremos = np.sum(np.abs(dist.z_scores) >= abs(z_score))
         p_value = mais_extremos / len(dist.z_scores) if len(dist.z_scores) > 0 else 1.0
 
         # Categorização baseada em Z-scores
-        if abs(z_score) > 3:  # Evento de 3 sigma (0.3% de chance)
+        if abs(z_score) > ZSCORE_EXTREME:  # Evento de 3 sigma (0.3% de chance)
             categoria = "Extremo"
-            peso = 3.0
-        elif abs(z_score) > 2:  # 2 sigma (5% de chance)
+            peso = PENALTY_EXTREME
+        elif abs(z_score) > ZSCORE_VERY_RARE:  # 2 sigma (5% de chance)
             categoria = "Muito Raro"
-            peso = 2.0
-        elif abs(z_score) > 1:  # 1 sigma (32% de chance)
+            peso = PENALTY_VERY_RARE
+        elif abs(z_score) > ZSCORE_RARE:  # 1 sigma (32% de chance)
             categoria = "Raro"
-            peso = 1.0
+            peso = PENALTY_RARE
         else:
             categoria = "Normal"
-            peso = 0.0
+            peso = PENALTY_NORMAL
 
-        penalidade_total += peso * abs(z_score) * 0.5  # Fator de escala
+        penalidade_total += peso * abs(z_score) * PENALTY_SCALE_FACTOR  # Fator de escala
 
         resultados[nome] = {
             "presentes": presentes,
@@ -142,7 +172,7 @@ def avaliar_jogo_geometria_estatistica(
         }
 
     # Score geométrico baseado em desvios reais
-    score_geom = max(0, min(100, int(100 - penalidade_total * 8)))
+    score_geom = max(0, min(100, int(100 - penalidade_total * SCORE_CONVERSION_FACTOR)))
 
     return {
         "score_geom": score_geom,
@@ -156,7 +186,7 @@ def avaliar_jogo_geometria_estatistica(
 # ============================================
 
 
-def distancia_hamming(jogo1: List[int], jogo2: List[int]) -> int:
+def distancia_hamming(jogo1: list[int], jogo2: list[int]) -> int:
     """
     Conta quantos números são DIFERENTES entre dois jogos.
 
@@ -171,8 +201,8 @@ def distancia_hamming(jogo1: List[int], jogo2: List[int]) -> int:
 
 
 def calcular_distancia_minima_historico(
-    jogo: List[int], df, config, top_n: int = 100
-) -> Tuple[int, float]:
+    jogo: list[int], df: pd.DataFrame, config: GameConfig, top_n: int = 100
+) -> tuple[int, float]:
     """
     Calcula a menor distância de Hamming entre o jogo e o histórico.
     Returns:
@@ -194,7 +224,7 @@ def calcular_distancia_minima_historico(
     return (min_dist, max_sim)
 
 
-def penalizar_por_similaridade(report, numeros, df, config):
+def penalizar_por_similaridade(report: dict, numeros: list[int], df: pd.DataFrame, config: GameConfig) -> None:
     """
     Adiciona penalidades baseadas em distância de Hamming.
     """
@@ -238,7 +268,7 @@ def penalizar_por_similaridade(report, numeros, df, config):
 # ============================================
 
 
-def calcular_distribuicao_quadrantes(df, config) -> dict:
+def calcular_distribuicao_quadrantes(df: pd.DataFrame, config: GameConfig) -> dict[int, dict[str, float]]:
     """
     Calcula distribuição empírica de números por quadrante.
     """
@@ -269,7 +299,7 @@ def calcular_distribuicao_quadrantes(df, config) -> dict:
     return stats
 
 
-def avaliar_quadrantes_estatistico(numeros, config, stats_quadrantes) -> dict:
+def avaliar_quadrantes_estatistico(numeros: list[int], config: GameConfig, stats_quadrantes: dict) -> dict:
     """
     Avalia distribuição de quadrantes usando estatística.
     """
@@ -296,11 +326,11 @@ def avaliar_quadrantes_estatistico(numeros, config, stats_quadrantes) -> dict:
             mean_ajustada = stat["mean"]
             std_ajustada = stat["std"]
 
-        z = (presentes - mean_ajustada) / (std_ajustada + 1e-9)
+        z = compute_zscore(presentes, mean_ajustada, std_ajustada)
 
         # Evento extremo: fora do intervalo 90%
-        if abs(z) > 1.64:  # p < 0.10
-            penalidade += abs(z) * 0.5
+        if abs(z) > QUADRANT_PVALUE_THRESHOLD:  # p < 0.10
+            penalidade += abs(z) * PENALTY_SCALE_FACTOR
             categoria = "Atípico"
         else:
             categoria = "Normal"
@@ -314,11 +344,11 @@ def avaliar_quadrantes_estatistico(numeros, config, stats_quadrantes) -> dict:
 
     # Detecta concentração extrema
     max_concentracao = max(r["presentes"] for r in resultados.values())
-    if max_concentracao >= len(numeros) * 0.7:
-        penalidade += 2.0
+    if max_concentracao >= len(numeros) * QUADRANT_CONCENTRATION_THRESHOLD:
+        penalidade += PENALTY_VERY_RARE
         resultados["alerta"] = f"⚠️ {max_concentracao} números em 1 quadrante"
 
-    score = max(0, min(100, int(100 - penalidade * 8)))
+    score = max(0, min(100, int(100 - penalidade * SCORE_CONVERSION_FACTOR)))
 
     return {
         "score_quadrantes": score,
@@ -332,7 +362,7 @@ def avaliar_quadrantes_estatistico(numeros, config, stats_quadrantes) -> dict:
 # ============================================
 
 
-def calcular_taxa_regressao(df, config, janela: int = 100) -> Optional[dict]:
+def calcular_taxa_regressao(df: pd.DataFrame, config: GameConfig, janela: int = 100) -> dict | None:
     """
     Mede se números atrasados realmente tendem a sair.
     Valida se a "regressão à média" funciona nos dados.

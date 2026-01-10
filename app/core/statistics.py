@@ -5,11 +5,63 @@ from scipy.stats import poisson, chisquare, kstest
 from app.core.lottery import GameConfig
 
 
-def _flatten_draws(df, config: GameConfig):
+# ============================================
+# CONSTANTES DE CONFIGURAÇÃO ESTATÍSTICA
+# ============================================
+
+# Pesos para cálculo do score composto
+WEIGHT_FREQUENCY: float = 0.40
+WEIGHT_GAP: float = 0.60
+
+# Limiares de confiança para teste Chi²
+CHI2_HIGH_CONFIDENCE: float = 0.05
+CHI2_MEDIUM_CONFIDENCE: float = 0.01
+
+# Limiares de coeficiente de variação
+CV_EXCELLENT: float = 10.0
+CV_GOOD: float = 20.0
+CV_ACCEPTABLE: float = 30.0
+
+# Epsilon para evitar divisão por zero
+EPSILON: float = 1e-9
+
+
+def compute_zscore(value: float, mean: float, std: float) -> float:
+    """
+    Calcula o Z-score (desvio padrão normalizado) de um valor.
+    
+    O Z-score indica quantos desvios-padrão um valor está da média.
+    Usa EPSILON para evitar divisão por zero.
+    
+    Parameters
+    ----------
+    value : float
+        Valor observado.
+    mean : float
+        Média da distribuição.
+    std : float
+        Desvio padrão da distribuição.
+    
+    Returns
+    -------
+    float
+        Z-score calculado.
+    
+    Examples
+    --------
+    >>> compute_zscore(15, 10, 2)
+    2.5
+    >>> compute_zscore(10, 10, 0)  # std=0, usa EPSILON
+    0.0
+    """
+    return (value - mean) / (std + EPSILON)
+
+
+def _flatten_draws(df: pd.DataFrame, config: GameConfig) -> np.ndarray:
     return df[config.draw_cols].values.flatten()
 
 
-def get_numeros_quentes_frios(df, config: GameConfig):
+def get_numeros_quentes_frios(df: pd.DataFrame, config: GameConfig) -> pd.Series:
     """Retorna contagem de frequência de todos os números."""
     if df.empty:
         return pd.Series()
@@ -17,7 +69,7 @@ def get_numeros_quentes_frios(df, config: GameConfig):
     return pd.Series(todos).value_counts().sort_values(ascending=False)
 
 
-def analise_poisson(df, config: GameConfig, alpha=0.05):
+def analise_poisson(df: pd.DataFrame, config: GameConfig, alpha: float = 0.05) -> list[dict]:
     if df.empty:
         return []
 
@@ -60,7 +112,7 @@ def analise_poisson(df, config: GameConfig, alpha=0.05):
     return resultado
 
 
-def get_historico_jogos(df, config: GameConfig):
+def get_historico_jogos(df: pd.DataFrame, config: GameConfig) -> set[tuple]:
     """SET de jogos já sorteados para lookup O(1)."""
     if df.empty:
         return set()
@@ -68,7 +120,7 @@ def get_historico_jogos(df, config: GameConfig):
     return set(tuple(sorted(jogo)) for jogo in jogos)
 
 
-def verificar_historico(numeros, df, config: GameConfig, alvos=None):
+def verificar_historico(numeros: list[int], df: pd.DataFrame, config: GameConfig, alvos: list[int] | None = None) -> dict[int, list[str]]:
     meus = set(numeros)
     if alvos is None:
         alvos = [config.k, config.k - 1, config.k - 2]
@@ -82,7 +134,7 @@ def verificar_historico(numeros, df, config: GameConfig, alvos=None):
     return res
 
 
-def get_reis_da_sequencia(df, config: GameConfig):
+def get_reis_da_sequencia(df: pd.DataFrame, config: GameConfig) -> list[int]:
     """Identifica números que mais formam pares consecutivos."""
     if df.empty:
         return []
@@ -106,7 +158,7 @@ def get_reis_da_sequencia(df, config: GameConfig):
     return sorted(list(numeros))
 
 
-def calcular_atrasos(df, config: GameConfig):
+def calcular_atrasos(df: pd.DataFrame, config: GameConfig) -> pd.Series:
     """
     Adiciona normalização por tamanho da base.
     Gap relativo = Gap absoluto / Total de jogos.
@@ -132,7 +184,7 @@ def calcular_atrasos(df, config: GameConfig):
     return pd.Series(atrasos).sort_values(ascending=False)
 
 
-def get_tabela_inteligencia(df, config: GameConfig):
+def get_tabela_inteligencia(df: pd.DataFrame, config: GameConfig) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
@@ -147,20 +199,20 @@ def get_tabela_inteligencia(df, config: GameConfig):
     # 1. Z-Scores
     mu_freq = df_stats["Frequencia"].mean()
     sigma_freq = df_stats["Frequencia"].std()
-    df_stats["Z_Freq"] = (df_stats["Frequencia"] - mu_freq) / (sigma_freq + 1e-9)
+    df_stats["Z_Freq"] = compute_zscore(df_stats["Frequencia"], mu_freq, sigma_freq)
 
     mu_gap = df_stats["Atraso"].mean()
     sigma_gap = df_stats["Atraso"].std()
-    df_stats["Z_Gap"] = (df_stats["Atraso"] - mu_gap) / (sigma_gap + 1e-9)
+    df_stats["Z_Gap"] = compute_zscore(df_stats["Atraso"], mu_gap, sigma_gap)
 
     # 2. Peso Composto
-    df_stats["Peso_Composto"] = df_stats["Z_Freq"] * 0.40 + df_stats["Z_Gap"] * 0.60
+    df_stats["Peso_Composto"] = df_stats["Z_Freq"] * WEIGHT_FREQUENCY + df_stats["Z_Gap"] * WEIGHT_GAP
 
     # 3. Normalização
     peso_min = df_stats["Peso_Composto"].min()
     peso_max = df_stats["Peso_Composto"].max()
     df_stats["Peso_Geracao"] = (
-        (df_stats["Peso_Composto"] - peso_min) / (peso_max - peso_min + 1e-9)
+        (df_stats["Peso_Composto"] - peso_min) / (peso_max - peso_min + EPSILON)
     ) + 0.01
 
     # 4. Métricas adicionais
@@ -170,7 +222,7 @@ def get_tabela_inteligencia(df, config: GameConfig):
     return df_stats
 
 
-def calcular_chi_quadrado(df, config: GameConfig):
+def calcular_chi_quadrado(df: pd.DataFrame, config: GameConfig) -> dict | None:
     if df.empty:
         return None
 
@@ -186,10 +238,10 @@ def calcular_chi_quadrado(df, config: GameConfig):
 
     ks_stat, p_ks = kstest(sorted(todos_numeros), lambda x: x / config.n_numbers)
 
-    if p_chi > 0.05 and p_ks > 0.05:
+    if p_chi > CHI2_HIGH_CONFIDENCE and p_ks > CHI2_HIGH_CONFIDENCE:
         status = "✅ Honesto (Aleatório)"
         confianca = "Alta"
-    elif p_chi > 0.01 or p_ks > 0.01:
+    elif p_chi > CHI2_MEDIUM_CONFIDENCE or p_ks > CHI2_MEDIUM_CONFIDENCE:
         status = "⚠️ Possivelmente Honesto"
         confianca = "Média"
     else:
@@ -207,7 +259,7 @@ def calcular_chi_quadrado(df, config: GameConfig):
     }
 
 
-def analise_intervalo_confianca(df, config: GameConfig):
+def analise_intervalo_confianca(df: pd.DataFrame, config: GameConfig) -> dict | None:
     if df.empty:
         return None
 
@@ -233,18 +285,18 @@ def analise_intervalo_confianca(df, config: GameConfig):
     }
 
 
-def calcular_coeficiente_variacao(df, config: GameConfig):
+def calcular_coeficiente_variacao(df: pd.DataFrame, config: GameConfig) -> dict | None:
     if df.empty:
         return None
 
     freq = get_numeros_quentes_frios(df, config)
     cv = (freq.std() / freq.mean()) * 100
 
-    if cv < 10:
+    if cv < CV_EXCELLENT:
         interpretacao = "Excelente uniformidade"
-    elif cv < 20:
+    elif cv < CV_GOOD:
         interpretacao = "Boa uniformidade"
-    elif cv < 30:
+    elif cv < CV_ACCEPTABLE:
         interpretacao = "Uniformidade aceitável"
     else:
         interpretacao = "Possível viés detectado"
