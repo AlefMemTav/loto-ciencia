@@ -1,0 +1,369 @@
+# app/core/statistics/similarity.py
+"""
+Análises de similaridade e regressão à média para sorteios de loteria.
+
+Este módulo contém funções para análise de distância de Hamming,
+distribuição de quadrantes e regressão à média.
+"""
+
+import numpy as np
+import pandas as pd
+from app.core.lottery import GameConfig
+from app.core.statistics.basic import calcular_atrasos, compute_zscore, EPSILON
+
+
+# ============================================
+# CONSTANTES DE CONFIGURAÇÃO ESTATÍSTICA
+# ============================================
+
+# Limiares de Z-score (baseado na regra empírica)
+ZSCORE_VERY_RARE: float = 2.0     # 5% de chance (2-sigma)
+
+# Fator de escala para penalidade
+PENALTY_SCALE_FACTOR: float = 0.5
+
+# Fator de conversão score (penalidade -> score 0-100)
+SCORE_CONVERSION_FACTOR: float = 8.0
+
+# Limiar de concentração em quadrantes
+QUADRANT_CONCENTRATION_THRESHOLD: float = 0.7
+
+# Limiar de p-value para quadrantes (90% IC)
+QUADRANT_PVALUE_THRESHOLD: float = 1.64
+
+
+# ============================================
+# DISTÂNCIA DE HAMMING
+# ============================================
+
+
+def distancia_hamming(jogo1: list[int], jogo2: list[int]) -> int:
+    """
+    Conta quantos números são DIFERENTES entre dois jogos.
+
+    Parameters
+    ----------
+    jogo1 : list[int]
+        Primeiro jogo.
+    jogo2 : list[int]
+        Segundo jogo.
+
+    Returns
+    -------
+    int
+        Número de elementos diferentes entre os dois jogos.
+
+    Examples
+    --------
+    >>> distancia_hamming([1, 2, 3, 4, 5, 6], [1, 2, 3, 7, 8, 9])
+    3
+    """
+    set1 = set(jogo1)
+    set2 = set(jogo2)
+    return len(set1.symmetric_difference(set2))
+
+
+def calcular_distancia_minima_historico(
+    jogo: list[int], df: pd.DataFrame, config: GameConfig, top_n: int = 100
+) -> tuple[int, float]:
+    """
+    Calcula a menor distância de Hamming entre o jogo e o histórico.
+    
+    Parameters
+    ----------
+    jogo : list[int]
+        Lista de números do jogo a verificar.
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    top_n : int, optional
+        Quantidade de sorteios recentes a verificar (default: 100).
+    
+    Returns
+    -------
+    tuple[int, float]
+        Tupla (distancia_minima, similaridade_maxima) onde:
+        - distancia_minima: menor distância de Hamming encontrada
+        - similaridade_maxima: 1 - (distancia_minima / tamanho_jogo)
+    """
+    if df.empty or config.bet_size != config.k:
+        return (config.bet_size, 0.0)
+
+    df_recente = df.tail(top_n)
+    jogo_set = set(jogo)
+
+    distancias = df_recente[config.draw_cols].apply(
+        lambda row: len(jogo_set.symmetric_difference(set(row))), axis=1
+    )
+
+    min_dist = int(distancias.min())
+    max_sim = 1 - (min_dist / config.bet_size)
+
+    return (min_dist, max_sim)
+
+
+def penalizar_por_similaridade(report: dict, numeros: list[int], df: pd.DataFrame, config: GameConfig) -> None:
+    """
+    Adiciona penalidades baseadas em distância de Hamming.
+    
+    Modifica o report in-place adicionando métricas de similaridade
+    e ajustando o score baseado na proximidade com sorteios anteriores.
+    
+    Parameters
+    ----------
+    report : dict
+        Dicionário de relatório a ser modificado.
+    numeros : list[int]
+        Lista de números do jogo.
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    """
+    # Só aplica se o jogo tem mesmo tamanho do sorteio
+    if config.bet_size != config.k:
+        report["metricas"]["hamming_min"] = "N/A"
+        report["metricas"]["similaridade_max"] = "N/A"
+        return
+
+    min_dist, max_sim = calcular_distancia_minima_historico(numeros, df, config)
+
+    report["metricas"]["hamming_min"] = min_dist
+    report["metricas"]["similaridade_max"] = round(max_sim, 3)
+
+    k = config.bet_size
+
+    if min_dist == 0:
+        # Jogo idêntico (já detectado por outro sistema)
+        pass
+    elif min_dist == 1:
+        report["score"] -= 30
+        report["msgs"].append(
+            "🚨 Quase idêntico a um sorteio anterior (apenas 1 número diferente)"
+        )
+        report["risco_divisao"] = "ALTO"
+    elif min_dist == 2:
+        report["score"] -= 20
+        report["msgs"].append(
+            "⚠️ Muito similar a sorteio anterior (apenas 2 números diferentes)"
+        )
+        report["risco_divisao"] = "Médio"
+    elif min_dist <= k // 3:  # Ex: ≤2 diferentes em jogo de 6
+        report["score"] -= 10
+        report["msgs"].append(f"⚠️ Similaridade alta com histórico (Hamming={min_dist})")
+    elif min_dist >= k // 2:
+        report["msgs"].append(f"✅ Jogo suficientemente único (Hamming={min_dist})")
+
+
+# ============================================
+# ANÁLISE DE QUADRANTES
+# ============================================
+
+
+def calcular_distribuicao_quadrantes(df: pd.DataFrame, config: GameConfig) -> dict[int, dict[str, float]]:
+    """
+    Calcula distribuição empírica de números por quadrante.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict[int, dict[str, float]]
+        Dicionário mapeando quadrante (1-4) para estatísticas:
+        - mean: média de números por quadrante
+        - std: desvio padrão
+        - p5: percentil 5%
+        - p95: percentil 95%
+    """
+    if df.empty:
+        return {}
+
+    historico_sets = [set(row) for row in df[config.draw_cols].values]
+
+    contagens_por_quad = {1: [], 2: [], 3: [], 4: []}
+
+    for sorteio in historico_sets:
+        for q in range(1, 5):
+            nums_quadrante = set(config.layout.quadrant_numbers(q))
+            qtd = len(sorteio & nums_quadrante)
+            contagens_por_quad[q].append(qtd)
+
+    # Estatísticas por quadrante
+    stats = {}
+    for q, contagens in contagens_por_quad.items():
+        arr = np.array(contagens)
+        stats[q] = {
+            "mean": arr.mean(),
+            "std": arr.std(),
+            "p5": np.percentile(arr, 5),
+            "p95": np.percentile(arr, 95),
+        }
+
+    return stats
+
+
+def avaliar_quadrantes_estatistico(numeros: list[int], config: GameConfig, stats_quadrantes: dict) -> dict:
+    """
+    Avalia distribuição de quadrantes usando estatística.
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo a avaliar.
+    config : GameConfig
+        Configuração do jogo.
+    stats_quadrantes : dict
+        Estatísticas dos quadrantes do histórico.
+    
+    Returns
+    -------
+    dict
+        Dicionário com:
+        - score_quadrantes: score (0-100)
+        - detalhes: análise por quadrante (Q1-Q4) com presentes, esperado, z_score e categoria
+        - penalidade: penalidade total
+        - alerta: mensagem se houver concentração extrema (opcional)
+    """
+    if not stats_quadrantes:
+        return {"score_quadrantes": 100, "detalhes": {}, "penalidade": 0.0}
+
+    jogo = set(numeros)
+    resultados = {}
+    penalidade = 0.0
+
+    for q in range(1, 5):
+        nums_q = set(config.layout.quadrant_numbers(q))
+        presentes = len(jogo & nums_q)
+
+        stat = stats_quadrantes[q]
+
+        # Ajuste para jogos grandes (Lotomania)
+        qtd_jogada = len(numeros)
+        if config.k != qtd_jogada and config.k > 0:
+            fator = qtd_jogada / config.k
+            mean_ajustada = stat["mean"] * fator
+            std_ajustada = stat["std"] * np.sqrt(fator)
+        else:
+            mean_ajustada = stat["mean"]
+            std_ajustada = stat["std"]
+
+        z = compute_zscore(presentes, mean_ajustada, std_ajustada)
+
+        # Evento extremo: fora do intervalo 90%
+        if abs(z) > QUADRANT_PVALUE_THRESHOLD:  # p < 0.10
+            penalidade += abs(z) * PENALTY_SCALE_FACTOR
+            categoria = "Atípico"
+        else:
+            categoria = "Normal"
+
+        resultados[f"Q{q}"] = {
+            "presentes": presentes,
+            "esperado": round(float(mean_ajustada), 2),
+            "z_score": round(float(z), 2),
+            "categoria": categoria,
+        }
+
+    # Detecta concentração extrema
+    max_concentracao = max(r["presentes"] for r in resultados.values())
+    if max_concentracao >= len(numeros) * QUADRANT_CONCENTRATION_THRESHOLD:
+        penalidade += ZSCORE_VERY_RARE
+        resultados["alerta"] = f"⚠️ {max_concentracao} números em 1 quadrante"
+
+    score = max(0, min(100, int(100 - penalidade * SCORE_CONVERSION_FACTOR)))
+
+    return {
+        "score_quadrantes": score,
+        "detalhes": resultados,
+        "penalidade": round(float(penalidade), 2),
+    }
+
+
+# ============================================
+# REGRESSÃO À MÉDIA
+# ============================================
+
+
+def calcular_taxa_regressao(df: pd.DataFrame, config: GameConfig, janela: int = 100) -> dict | None:
+    """
+    Mede se números atrasados realmente tendem a sair.
+    
+    Valida se a "regressão à média" funciona nos dados, calculando
+    correlação entre atrasos passados e frequência futura.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    janela : int, optional
+        Número de sorteios futuros a analisar (default: 100).
+    
+    Returns
+    -------
+    dict | None
+        Dicionário com:
+        - correlacao: correlação de Spearman entre atraso e frequência futura
+        - p_value: significância da correlação
+        - taxa_retorno: proporção de números atrasados que retornaram
+        - interpretacao: classificação da força da regressão
+        Retorna None se não houver dados suficientes ou erro na importação.
+    """
+    if df.empty or len(df) < janela + 10:
+        return None
+
+    # Pega um ponto no passado
+    df_analise = df.iloc[:-janela]
+    df_futuro = df.iloc[-janela:]
+
+    atrasos_passado = calcular_atrasos(df_analise, config)
+
+    # Top 20% mais atrasados
+    top_atrasados = set(atrasos_passado.nlargest(int(config.n_numbers * 0.2)).index)
+
+    # Quantos saíram nos próximos 'janela' sorteios?
+    saidas = set()
+    for _, row in df_futuro.iterrows():
+        saidas.update(row[config.draw_cols].values)
+
+    retornaram = len(top_atrasados & saidas)
+    taxa_retorno = retornaram / len(top_atrasados) if top_atrasados else 0
+
+    # Correlação entre atraso e frequência futura
+    try:
+        from scipy.stats import spearmanr
+
+        freq_futura = []
+        for num in range(1, config.n_numbers + 1):
+            ocorrencias = sum(
+                1
+                for _, row in df_futuro.iterrows()
+                if num in row[config.draw_cols].values
+            )
+            freq_futura.append(ocorrencias)
+
+        atrasos_array = [
+            atrasos_passado.get(i, 0) for i in range(1, config.n_numbers + 1)
+        ]
+        corr, p_value = spearmanr(atrasos_array, freq_futura)
+
+        return {
+            "correlacao": round(corr, 3),
+            "p_value": round(p_value, 4),
+            "taxa_retorno": round(taxa_retorno, 3),
+            "interpretacao": (
+                "Regressão forte"
+                if corr > 0.3
+                else "Regressão fraca" if corr > 0.1 else "Sem evidência clara"
+            ),
+        }
+    except ImportError:
+        return None
+    except Exception as e:
+        return None
