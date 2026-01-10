@@ -4,7 +4,7 @@ import random
 import time
 from math import comb
 from itertools import combinations
-from app.core.advanced_statistics import calcular_distribuicoes_geometricas
+from app.core.statistics import calcular_distribuicoes_geometricas
 from app.core.validator import validar_jogo
 from app.core.lottery import GameConfig
 from app.core.logger import logger

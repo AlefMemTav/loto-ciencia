@@ -5,7 +5,7 @@ from app.core.logger import logger
 from collections import Counter
 from app.core.lottery import GameConfig
 
-from app.core.advanced_statistics import (
+from app.core.statistics import (
     avaliar_jogo_geometria_estatistica,
     penalizar_por_similaridade,
     calcular_distribuicao_quadrantes,
