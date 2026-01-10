@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import os
-from app.api.auth import router as auth_router
+from app.api.routers.auth import router as auth_router
 
 # ===== CONFIGURAÇÃO =====
 ENV = os.getenv("ENV", "development")

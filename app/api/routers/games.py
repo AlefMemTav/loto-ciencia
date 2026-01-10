@@ -2,13 +2,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.api.deps import get_service
 from app.api.schemas.games import GameSummary, GameConfigOut, ContextOut
+from app.core.lottery import GAMES
 
 router = APIRouter(tags=["games"])
 
 
 @router.get("/games", response_model=list[GameSummary])
 def list_games(svc=Depends(get_service)):
-    from app.core.games import GAMES
 
     return [{"slug": slug, "name": cfg.name} for slug, cfg in GAMES.items()]
 
