@@ -7,12 +7,10 @@ from app.core.logger import logger
 from app.core.lottery import GAMES, GameConfig
 from app.services.data_loader import carregar_dados_loteria_excel
 
-from app.core.advanced_statistics import (
+from app.core.statistics import (
     calcular_distribuicao_quadrantes,
     calcular_distribuicoes_geometricas,
     calcular_taxa_regressao,
-)
-from app.core.statistics import (
     get_numeros_quentes_frios,
     analise_poisson,
     get_tabela_inteligencia,
