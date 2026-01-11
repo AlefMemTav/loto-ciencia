@@ -8,6 +8,8 @@ tabela de inteligência e outras análises básicas.
 
 import pandas as pd
 import numpy as np
+import math
+from collections import Counter
 from app.core.lottery import GameConfig
 
 
@@ -382,9 +384,6 @@ def calcular_entropia_faixas(
         - 'distribuicao': contagem por faixa
         - 'faixas_vazias': número de faixas sem números
     """
-    import math
-    from collections import Counter
-    
     # Tamanho de cada faixa
     tamanho_faixa = config.n_numbers / n_faixas
     
