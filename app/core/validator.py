@@ -11,6 +11,7 @@ from app.core.statistics import (
     calcular_distribuicao_quadrantes,
     avaliar_quadrantes_estatistico,
     calcular_taxa_regressao,
+    calcular_atrasos,
 )
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
@@ -371,9 +372,10 @@ def _analises_avancadas(
 ):
     """
     Módulo completo de análises avançadas baseadas em dados.
+
     - Distância de Hamming
     - Quadrantes estatísticos
-    - Regressão à média (informativo)
+    - Regressão à média
     """
     if df_historico is None or df_historico.empty:
         return
@@ -390,21 +392,103 @@ def _analises_avancadas(
         # fallback (recalcula se necessário)
         stats_quad = calcular_distribuicao_quadrantes(df_historico, config)
         resultado_quad = avaliar_quadrantes_estatistico(numeros, config, stats_quad)
-    report["metricas"]["quadrantes"] = resultado_quad
 
+    report["metricas"]["quadrantes"] = resultado_quad
     if resultado_quad["score_quadrantes"] < 60:
         report["score"] -= 5
         report["msgs"].append("⚠️ Distribuição de quadrantes atípica")
 
-    # 3. Validação de Regressão (informativo apenas)
-    regressao = calcular_taxa_regressao(df_historico, config)
-    if regressao:
-        report["metricas"]["regressao"] = regressao
+    # 3. Validação de Regressão (COM AJUSTE DE SCORE)
+    if len(df_historico) >= 100:
+        taxa_regressao = calcular_taxa_regressao(df_historico, config, janela=100)
 
-        if regressao["correlacao"] > 0.2:
-            report["msgs"].append(
-                f"ℹ️ Evidência de regressão à média (ρ={regressao['correlacao']})"
-            )
+        if taxa_regressao:
+            # Adiciona métricas ao report
+            report["metricas"]["regressao_media"] = {
+                "correlacao": taxa_regressao["correlacao"],
+                "p_value": taxa_regressao["p_value"],
+                "taxa_retorno": taxa_regressao["taxa_retorno"],
+                "interpretacao": taxa_regressao["interpretacao"],
+            }
+
+            # ANÁLISE 1: Regressão estatisticamente significativa
+            if taxa_regressao["correlacao"] > 0.3 and taxa_regressao["p_value"] < 0.05:
+                # Regressão validada! Números atrasados importam
+                atrasos = calcular_atrasos(df_historico, config)
+                mediana_atrasos = atrasos.median()
+
+                # Conta quantos números do jogo estão atrasados
+                atrasados_no_jogo = [
+                    n for n in numeros if atrasos.get(n, 0) > mediana_atrasos
+                ]
+
+                proporcao_atrasados = len(atrasados_no_jogo) / len(numeros)
+
+                # BONIFICAÇÃO: Se 40%+ do jogo são números atrasados
+                if proporcao_atrasados >= 0.4:
+                    bonus = 5
+                    report["score"] += bonus
+                    report["msgs"].append(
+                        f"✅ Regressão validada: {len(atrasados_no_jogo)} números atrasados "
+                        f"(ρ={taxa_regressao['correlacao']:.2f}, p={taxa_regressao['p_value']:.4f})"
+                    )
+                    report["msgs"].append(
+                        f"   Histórico confirma: números atrasados tendem a sair (+{bonus} pts)"
+                    )
+
+                # NEUTRO: Entre 20% e 40%
+                elif proporcao_atrasados >= 0.2:
+                    report["msgs"].append(
+                        f"ℹ️ Regressão detectada: {len(atrasados_no_jogo)} números atrasados "
+                        f"(ρ={taxa_regressao['correlacao']:.2f})"
+                    )
+
+                # ALERTA: Menos de 20% de atrasados
+                else:
+                    report["msgs"].append(
+                        f"⚠️ Poucos números atrasados ({len(atrasados_no_jogo)}), "
+                        f"mas regressão histórica é forte (ρ={taxa_regressao['correlacao']:.2f})"
+                    )
+
+            # ANÁLISE 2: Regressão moderada (0.1 < ρ < 0.3)
+            elif 0.1 < taxa_regressao["correlacao"] <= 0.3:
+                report["msgs"].append(
+                    f"ℹ️ Regressão moderada detectada (ρ={taxa_regressao['correlacao']:.2f}): "
+                    "atrasos têm algum poder preditivo"
+                )
+
+            # ANÁLISE 3: Regressão fraca ou inexistente
+            else:
+                report["msgs"].append(
+                    f"ℹ️ Regressão fraca (ρ={taxa_regressao['correlacao']:.2f}): "
+                    "atrasos não são bons preditores neste jogo"
+                )
+
+                # INSIGHT ADICIONAL: Se o jogo tem muitos atrasados mas regressão é fraca
+                if len(df_historico) > 0:
+                    atrasos = calcular_atrasos(df_historico, config)
+                    mediana_atrasos = atrasos.median()
+                    atrasados_no_jogo = [
+                        n for n in numeros if atrasos.get(n, 0) > mediana_atrasos
+                    ]
+
+                    if len(atrasados_no_jogo) >= len(numeros) * 0.5:
+                        report["msgs"].append(
+                            "   ⚠️ Cuidado: jogo tem muitos atrasados, mas histórico "
+                            "não valida essa estratégia"
+                        )
+
+        else:
+            # Erro no cálculo ou dados insuficientes
+            report["metricas"]["regressao_media"] = "Dados insuficientes"
+
+    else:
+        # Menos de 100 sorteios no histórico
+        report["metricas"]["regressao_media"] = {
+            "status": "Histórico insuficiente",
+            "minimo_necessario": 100,
+            "disponivel": len(df_historico),
+        }
 
 
 # ===== FUNÇÃO PRINCIPAL =====
