@@ -279,7 +279,9 @@ def testar_distribuicao_gaps_bilhete(numeros: list[int], config: GameConfig) -> 
         Resultado do teste:
         - 'gaps': lista de gaps entre números consecutivos
         - 'gap_medio': média dos gaps
+        - 'gap_std': desvio padrão dos gaps
         - 'gap_esperado': gap médio esperado para distribuição uniforme
+        - 'cv_gaps': coeficiente de variação dos gaps
         - 'ks_statistic': estatística do teste KS
         - 'ks_pvalue': p-value do teste
         - 'conclusao': interpretação do resultado
@@ -399,7 +401,17 @@ def calcular_order_statistics(numeros: list[int], config: GameConfig) -> dict:
     Returns
     -------
     dict
-        Análise de cada posição com desvio do esperado.
+        Resultado da análise das posições, com as seguintes chaves:
+
+        - 'detalhes' (list[dict]): lista com a análise de cada posição,
+          contendo as chaves 'posicao', 'numero', 'esperado',
+          'desvio' e 'desvio_relativo'.
+        - 'desvio_medio' (float): desvio médio relativo entre as posições
+          observadas e as esperadas.
+        - 'conclusao' (str): texto resumindo se as posições estão dentro
+          ou fora do esperado.
+        - 'penalidade' (int): penalidade numérica associada ao desvio
+          médio observado.
     """
     numeros_sorted = sorted(numeros)
     k = len(numeros_sorted)

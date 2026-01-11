@@ -219,6 +219,8 @@ def calcular_simetria_reflexao(numeros: list[int], config: GameConfig) -> dict:
     -------
     dict
         - 'pares_simetricos': lista de pares (n, espelho)
+        - 'n_pares': número de pares simétricos detectados
+        - 'numeros_com_espelho': lista de números do jogo que possuem espelho
         - 'taxa_simetria': proporção de números com espelho no jogo
         - 'conclusao': interpretação
         - 'penalidade': penalidade sugerida

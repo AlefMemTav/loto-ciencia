@@ -11,7 +11,6 @@ Testa as funcionalidades implementadas na Issue #8:
 """
 
 import pytest
-import numpy as np
 from app.core.statistics import (
     testar_distribuicao_gaps_bilhete,
     calcular_min_gap_e_span,
@@ -20,7 +19,7 @@ from app.core.statistics import (
     detectar_motifs_gaps,
     calcular_simetria_reflexao,
 )
-from app.core.lottery.catalog import MEGASENA, LOTOFACIL
+from app.core.lottery.catalog import MEGASENA
 
 
 class TestDistribuicaoGaps:
