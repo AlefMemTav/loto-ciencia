@@ -117,7 +117,7 @@ def render_generator(ctx, svc):
                 with c_perfil:
                     risco = val.get("risco_divisao", "Baixo")
                     if "Baixo" in risco:
-                        st.caption("💎 Blindado")
+                        st.caption("🛡️ Blindado")
                     elif "Médio" in risco:
                         st.caption("⚠️ Médio")
                     else:
