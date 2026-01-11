@@ -22,6 +22,7 @@ from app.core.statistics import (
     calcular_min_gap_e_span,
     detectar_multiplos_de_d,
     calcular_indice_compressibilidade,
+    PRIMES_ANALYSIS_MAX_N,
 )
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
@@ -393,7 +394,7 @@ def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> N
     Para N <= 60, há ~17 primos (2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59)
     Fração esperada: ~28% para Mega-Sena
     """
-    if config.n_numbers > 100:
+    if config.n_numbers > PRIMES_ANALYSIS_MAX_N:
         # Para loterias muito grandes (Lotomania), primos são menos relevantes
         return
     
