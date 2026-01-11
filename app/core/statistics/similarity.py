@@ -363,3 +363,132 @@ def calcular_taxa_regressao(
     except (ValueError, RuntimeError) as e:
         # Catch specific statistical computation errors
         return None
+
+
+# ============================================
+# ANÁLISE DE GAPS GEOMÉTRICOS
+# ============================================
+
+
+def analisar_gaps_geometricos(
+    df: pd.DataFrame,
+    config: GameConfig,
+    numero: int
+) -> dict:
+    """
+    Analisa se os gaps de um número seguem distribuição geométrica.
+    
+    Para um sorteio aleatório, a probabilidade de um número específico
+    aparecer é p = k/n. Os gaps entre aparições devem seguir Geom(p).
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico de sorteios.
+    config : GameConfig
+        Configuração do jogo.
+    numero : int
+        Número a ser analisado (1 a n_numbers).
+    
+    Returns
+    -------
+    dict
+        Estatísticas do teste de aderência à distribuição geométrica:
+        - 'gaps': lista de gaps observados
+        - 'media_gap': média dos gaps
+        - 'media_teorica': média teórica (1/p)
+        - 'ks_statistic': estatística do teste KS
+        - 'ks_pvalue': p-value do teste KS
+        - 'conclusao': interpretação do resultado
+    """
+    if df.empty or numero < 1 or numero > config.n_numbers:
+        return None
+    
+    # Encontra índices dos sorteios onde o número apareceu
+    aparicoes = []
+    for idx, row in df.iterrows():
+        if numero in row[config.draw_cols].values:
+            aparicoes.append(idx)
+    
+    if len(aparicoes) < 2:
+        return {
+            'erro': f'Número {numero} apareceu menos de 2 vezes',
+            'aparicoes': len(aparicoes)
+        }
+    
+    # Calcula gaps entre aparições consecutivas
+    gaps = [aparicoes[i+1] - aparicoes[i] for i in range(len(aparicoes)-1)]
+    
+    # Probabilidade teórica de aparecer em um sorteio
+    p_teorico = config.k / config.n_numbers
+    
+    # Média teórica do gap (distribuição geométrica)
+    media_teorica = 1 / p_teorico
+    
+    # Teste de Kolmogorov-Smirnov
+    # Geom em scipy começa em 1, então ajustamos
+    try:
+        from scipy.stats import geom, kstest
+        
+        gaps_array = np.array(gaps)
+        ks_stat, ks_pvalue = kstest(gaps_array, geom(p_teorico).cdf)
+        
+        # Interpretação
+        if ks_pvalue > 0.05:
+            conclusao = "✅ Gaps seguem distribuição geométrica (aleatório)"
+        elif ks_pvalue > 0.01:
+            conclusao = "⚠️ Possível desvio da aleatoriedade"
+        else:
+            conclusao = "🚨 Gaps não seguem distribuição geométrica"
+        
+        return {
+            'numero': numero,
+            'gaps': gaps,
+            'n_gaps': len(gaps),
+            'media_gap': float(np.mean(gaps)),
+            'std_gap': float(np.std(gaps)),
+            'media_teorica': round(media_teorica, 2),
+            'p_teorico': round(p_teorico, 4),
+            'ks_statistic': round(ks_stat, 4),
+            'ks_pvalue': round(ks_pvalue, 4),
+            'conclusao': conclusao,
+        }
+    except ImportError:
+        return None
+
+
+def analisar_gaps_todos_numeros(
+    df: pd.DataFrame,
+    config: GameConfig
+) -> dict:
+    """
+    Analisa gaps geométricos para todos os números do jogo.
+    
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame com histórico.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict
+        Resumo com análise de todos os números e estatísticas agregadas.
+    """
+    resultados = {}
+    numeros_anomalos = []
+    
+    for num in range(1, config.n_numbers + 1):
+        resultado = analisar_gaps_geometricos(df, config, num)
+        if resultado and 'erro' not in resultado:
+            resultados[num] = resultado
+            if resultado['ks_pvalue'] < 0.05:
+                numeros_anomalos.append(num)
+    
+    return {
+        'resultados_por_numero': resultados,
+        'numeros_anomalos': numeros_anomalos,
+        'total_anomalos': len(numeros_anomalos),
+        'percentual_anomalos': round(len(numeros_anomalos) / config.n_numbers * 100, 2),
+    }
