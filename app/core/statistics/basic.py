@@ -510,10 +510,11 @@ def detectar_multiplos_de_d(
             'excesso': round(excesso, 3),
         }
     
-    # Encontra divisor dominante (maior fração observada, excluindo d=2 se empatar)
+    # Encontra divisor dominante (maior fração observada, preferindo d maiores em empate)
+    # Quando todos têm fração 1.0, prefere 10 > 5 > 3 > 2
     divisor_dominante = max(
         analise.keys(),
-        key=lambda d: (analise[d]['fracao_observada'], -d)
+        key=lambda d: (analise[d]['fracao_observada'], d)
     )
     
     fracao_max = analise[divisor_dominante]['fracao_observada']
