@@ -24,6 +24,22 @@ WEIGHT_GAP: float = 0.60
 # Epsilon para evitar divisão por zero
 EPSILON: float = 1e-9
 
+# Penalidades para detecção de múltiplos
+PENALTY_MULTIPLOS_10_ALL: int = 25  # Todos múltiplos de 10
+PENALTY_MULTIPLOS_3_5_ALL: int = 20  # Todos múltiplos de 3 ou 5
+PENALTY_MULTIPLOS_2_ALL: int = 20   # Todos pares
+PENALTY_MULTIPLOS_HIGH: int = 12    # >= 80% múltiplos quando esperado <= 50%
+PENALTY_MULTIPLOS_MEDIUM: int = 8   # >= 70% múltiplos de 5 ou 10
+
+# Limiares para análise de múltiplos
+FRACTION_ALL: float = 1.0           # 100% dos números
+FRACTION_HIGH: float = 0.8          # 80% dos números
+FRACTION_MEDIUM: float = 0.7        # 70% dos números
+FRACTION_EXPECTED_MAX: float = 0.5  # 50% esperado
+
+# Limite para análise de primos
+PRIMES_ANALYSIS_MAX_N: int = 100    # Máximo N para análise de primos
+
 
 def compute_zscore(value: float, mean: float, std: float) -> float:
     """
@@ -525,23 +541,23 @@ def detectar_multiplos_de_d(
     conclusao = "✅ Distribuição de múltiplos normal"
     
     # 100% múltiplos de d (exceto d=2 que é "todos pares")
-    if fracao_max == 1.0:
+    if fracao_max == FRACTION_ALL:
         if divisor_dominante == 10:
-            penalidade = 25
+            penalidade = PENALTY_MULTIPLOS_10_ALL
             conclusao = f"❌ TODOS múltiplos de 10 (ultra-compressível)"
         elif divisor_dominante in [3, 5]:
-            penalidade = 20
+            penalidade = PENALTY_MULTIPLOS_3_5_ALL
             conclusao = f"❌ TODOS múltiplos de {divisor_dominante} (padrão raro)"
         elif divisor_dominante == 2:
-            penalidade = 20
+            penalidade = PENALTY_MULTIPLOS_2_ALL
             conclusao = "❌ TODOS os números são pares (ultra-raro)"
     # >= 80% múltiplos quando esperado <= 50%
-    elif fracao_max >= 0.8 and fracao_esp <= 0.5:
-        penalidade = 12
+    elif fracao_max >= FRACTION_HIGH and fracao_esp <= FRACTION_EXPECTED_MAX:
+        penalidade = PENALTY_MULTIPLOS_HIGH
         conclusao = f"⚠️ {fracao_max*100:.0f}% múltiplos de {divisor_dominante} (acima do esperado)"
     # >= 70% múltiplos de 5 ou 10 (mais raro)
-    elif fracao_max >= 0.7 and divisor_dominante in [5, 10]:
-        penalidade = 8
+    elif fracao_max >= FRACTION_MEDIUM and divisor_dominante in [5, 10]:
+        penalidade = PENALTY_MULTIPLOS_MEDIUM
         conclusao = f"⚠️ Alta concentração de múltiplos de {divisor_dominante}"
     
     return {

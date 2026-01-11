@@ -20,6 +20,16 @@ from app.core.statistics.basic import (
     WEIGHT_FREQUENCY,
     WEIGHT_GAP,
     EPSILON,
+    PRIMES_ANALYSIS_MAX_N,
+    PENALTY_MULTIPLOS_10_ALL,
+    PENALTY_MULTIPLOS_3_5_ALL,
+    PENALTY_MULTIPLOS_2_ALL,
+    PENALTY_MULTIPLOS_HIGH,
+    PENALTY_MULTIPLOS_MEDIUM,
+    FRACTION_ALL,
+    FRACTION_HIGH,
+    FRACTION_MEDIUM,
+    FRACTION_EXPECTED_MAX,
 )
 
 from app.core.statistics.distributions import (
@@ -113,6 +123,16 @@ __all__ = [
     "WEIGHT_FREQUENCY",
     "WEIGHT_GAP",
     "EPSILON",
+    "PRIMES_ANALYSIS_MAX_N",
+    "PENALTY_MULTIPLOS_10_ALL",
+    "PENALTY_MULTIPLOS_3_5_ALL",
+    "PENALTY_MULTIPLOS_2_ALL",
+    "PENALTY_MULTIPLOS_HIGH",
+    "PENALTY_MULTIPLOS_MEDIUM",
+    "FRACTION_ALL",
+    "FRACTION_HIGH",
+    "FRACTION_MEDIUM",
+    "FRACTION_EXPECTED_MAX",
     # distributions
     "analise_poisson",
     "calcular_chi_quadrado",
