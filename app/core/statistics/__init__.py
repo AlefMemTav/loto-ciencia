@@ -57,6 +57,8 @@ from app.core.statistics.similarity import (
     calcular_distribuicao_quadrantes,
     avaliar_quadrantes_estatistico,
     calcular_taxa_regressao,
+    analisar_gaps_geometricos,
+    analisar_gaps_todos_numeros,
 )
 
 from app.core.statistics.advanced import (
@@ -68,6 +70,23 @@ from app.core.statistics.advanced import (
     teste_runs_numero,
     teste_runs_todos_numeros,
     indice_dispersao,
+)
+
+from app.core.statistics.monte_carlo import (
+    bootstrap_ic_soma,
+    monte_carlo_probabilidade_acerto,
+)
+
+from app.core.statistics.temporal import (
+    calcular_autocorrelacao_frequencias,
+    detectar_tendencia_frequencia,
+)
+
+from app.core.statistics.clustering import (
+    extrair_features_jogo,
+    clusterizar_jogos_kmeans,
+    clusterizar_jogos_dbscan,
+    encontrar_numero_otimo_clusters,
 )
 
 __all__ = [
@@ -123,4 +142,18 @@ __all__ = [
     "teste_runs_numero",
     "teste_runs_todos_numeros",
     "indice_dispersao",
+    # monte_carlo
+    "bootstrap_ic_soma",
+    "monte_carlo_probabilidade_acerto",
+    # gaps
+    "analisar_gaps_geometricos",
+    "analisar_gaps_todos_numeros",
+    # temporal
+    "calcular_autocorrelacao_frequencias",
+    "detectar_tendencia_frequencia",
+    # clustering
+    "extrair_features_jogo",
+    "clusterizar_jogos_kmeans",
+    "clusterizar_jogos_dbscan",
+    "encontrar_numero_otimo_clusters",
 ]
