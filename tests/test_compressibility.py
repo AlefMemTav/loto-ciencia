@@ -35,6 +35,8 @@ class TestDetectarMultiplos:
     def test_todos_multiplos_de_10(self):
         """Múltiplos de 10 são mais raros, penalidade máxima."""
         resultado = detectar_multiplos_de_d([10, 20, 30, 40, 50, 60], MEGASENA)
+        assert resultado['divisor_dominante'] == 10
+        assert resultado['fracao_maxima'] == 1.0
         assert resultado['penalidade'] >= 25
     
     def test_distribuicao_normal(self):
