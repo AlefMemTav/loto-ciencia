@@ -404,6 +404,12 @@ def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> N
     
     qtd_primos = len([n for n in numeros if n in primos_validos])
     k = len(numeros)
+    if k == 0:
+        # Nenhum número para analisar: evita divisão por zero e apenas registra métrica neutra
+        report["metricas"]["qtd_primos"] = 0
+        report["metricas"]["primos_esperado"] = 0.0
+        report["msgs"].append("⚠️ Análise de primos ignorada: lista de números vazia.")
+        return
     
     # Fração esperada de primos em 1..N
     frac_primos_universo = len(primos_validos) / config.n_numbers
