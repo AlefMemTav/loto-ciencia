@@ -222,6 +222,8 @@ def calcular_simetria_reflexao(
     -------
     dict
         - 'pares_simetricos': lista de pares (n, espelho)
+        - 'n_pares': número de pares simétricos detectados
+        - 'numeros_com_espelho': lista de números do jogo que possuem espelho
         - 'taxa_simetria': proporção de números com espelho no jogo
         - 'conclusao': interpretação
         - 'penalidade': penalidade sugerida
@@ -251,16 +253,38 @@ def calcular_simetria_reflexao(
     # Probabilidade de k números terem pelo menos 1 par simétrico é baixa
     # Para Mega (6 de 60): ~3% de chance de ter 1 par
     # Ter 2+ pares é muito raro (~0.1%)
+    # Para jogos maiores (LOTOFACIL 15 de 25), a chance é maior
     
-    if len(pares_simetricos) >= 2:
-        conclusao = "🚨 Alta simetria (múltiplos pares espelhados) - muito raro"
-        penalidade = 15
-    elif len(pares_simetricos) == 1:
-        conclusao = "⚠️ Par simétrico detectado"
-        penalidade = 5
-    else:
-        conclusao = "✅ Sem simetria por reflexão"
-        penalidade = 0
+    k = len(numeros)
+    k_ratio = k / N  # Proporção de números selecionados
+    
+    # Ajuste de thresholds baseado no tamanho do jogo
+    if k_ratio > 0.4:  # Jogos grandes como LOTOFACIL (15/25 = 0.6)
+        # Para jogos grandes, pares simétricos são mais comuns
+        # Exigir proporção alta para penalizar
+        if taxa_simetria >= 0.5:  # Metade ou mais dos números têm espelho
+            conclusao = "🚨 Alta simetria (múltiplos pares espelhados) - muito raro"
+            penalidade = 15
+        elif len(pares_simetricos) >= 2:
+            conclusao = "⚠️ Alguns pares simétricos detectados"
+            penalidade = 5
+        elif len(pares_simetricos) == 1:
+            conclusao = "ℹ️ Par simétrico detectado (aceitável para este jogo)"
+            penalidade = 0
+        else:
+            conclusao = "✅ Sem simetria por reflexão"
+            penalidade = 0
+    else:  # Jogos pequenos como MEGA-SENA (6/60 = 0.1)
+        # Para jogos pequenos, pares simétricos são raros
+        if len(pares_simetricos) >= 2:
+            conclusao = "🚨 Alta simetria (múltiplos pares espelhados) - muito raro"
+            penalidade = 15
+        elif len(pares_simetricos) == 1:
+            conclusao = "⚠️ Par simétrico detectado"
+            penalidade = 5
+        else:
+            conclusao = "✅ Sem simetria por reflexão"
+            penalidade = 0
     
     return {
         'pares_simetricos': pares_simetricos,

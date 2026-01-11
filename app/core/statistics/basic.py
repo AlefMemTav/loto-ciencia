@@ -314,6 +314,9 @@ def calcular_min_gap_e_span(numeros: list[int], config: GameConfig) -> dict:
         - 'max_gap': maior distância entre números consecutivos
         - 'span': amplitude total (max - min)
         - 'span_relativo': span / (n_numbers - 1)
+        - 'gaps': lista de gaps entre números consecutivos
+        - 'sequencias': quantidade de gaps iguais a 1 (números em sequência)
+        - 'taxa_sequencias': proporção de gaps iguais a 1 em relação ao total de gaps
         - 'compactacao': se o jogo está muito compacto
     
     Examples
@@ -383,6 +386,9 @@ def calcular_entropia_faixas(
         - 'entropia_normalizada': entropia / entropia_maxima
         - 'distribuicao': contagem por faixa
         - 'faixas_vazias': número de faixas sem números
+        - 'n_faixas': número total de faixas consideradas
+        - 'conclusao': interpretação qualitativa da distribuição
+        - 'penalidade': valor numérico de penalidade associado à distribuição
     """
     # Tamanho de cada faixa
     tamanho_faixa = config.n_numbers / n_faixas

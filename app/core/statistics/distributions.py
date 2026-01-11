@@ -280,7 +280,9 @@ def testar_distribuicao_gaps_bilhete(
         Resultado do teste:
         - 'gaps': lista de gaps entre números consecutivos
         - 'gap_medio': média dos gaps
+        - 'gap_std': desvio padrão dos gaps
         - 'gap_esperado': gap médio esperado para distribuição uniforme
+        - 'cv_gaps': coeficiente de variação dos gaps
         - 'ks_statistic': estatística do teste KS
         - 'ks_pvalue': p-value do teste
         - 'conclusao': interpretação do resultado
@@ -324,15 +326,37 @@ def testar_distribuicao_gaps_bilhete(
     cv_gaps = (gap_std / gap_medio) if gap_medio > 0 else 0
     
     # Interpretação e penalidade
+    # Ajuste de thresholds baseado no tamanho do jogo
+    # Jogos maiores (k > 10) têm naturalmente gaps menores e mais regulares
+    k_ratio = k / config.n_numbers  # Proporção de números selecionados
+    
+    # Thresholds adaptativos
+    if k_ratio > 0.4:  # Jogos grandes como LOTOFACIL (15/25 = 0.6)
+        cv_low_threshold = 0.3  # Mais permissivo
+        cv_moderate_threshold = 0.5
+        # Para jogos grandes, o KS test é menos confiável devido aos gaps pequenos
+        # Usar apenas CV como critério principal
+        use_ks_test = False
+    else:  # Jogos pequenos como MEGA-SENA (6/60 = 0.1)
+        cv_low_threshold = 0.2  # Mais restritivo
+        cv_moderate_threshold = 0.4
+        use_ks_test = True
+    
     penalidade = 0
     
-    if ks_pvalue < 0.01 or cv_gaps < 0.2:
+    # Critério principal: CV (coeficiente de variação)
+    if cv_gaps < cv_low_threshold:
         # Gaps muito regulares (progressão aritmética ou quase)
         conclusao = "❌ Gaps muito regulares (padrão aritmético detectado)"
         penalidade = 15
-    elif ks_pvalue < 0.05 or cv_gaps < 0.4:
-        conclusao = "⚠️ Gaps com baixa variabilidade"
-        penalidade = 8
+    elif cv_gaps < cv_moderate_threshold:
+        # Usar KS test como critério secundário apenas para jogos pequenos
+        if use_ks_test and ks_pvalue < 0.01:
+            conclusao = "❌ Gaps muito regulares (padrão aritmético detectado)"
+            penalidade = 15
+        else:
+            conclusao = "⚠️ Gaps com baixa variabilidade"
+            penalidade = 8
     elif cv_gaps > 1.5:
         # Gaps muito irregulares (possível concentração)
         conclusao = "⚠️ Gaps muito irregulares (possível concentração)"
@@ -374,7 +398,17 @@ def calcular_order_statistics(
     Returns
     -------
     dict
-        Análise de cada posição com desvio do esperado.
+        Resultado da análise das posições, com as seguintes chaves:
+        
+        - 'detalhes' (list[dict]): lista com a análise de cada posição,
+          contendo as chaves 'posicao', 'numero', 'esperado',
+          'desvio' e 'desvio_relativo'.
+        - 'desvio_medio' (float): desvio médio relativo entre as posições
+          observadas e as esperadas.
+        - 'conclusao' (str): texto resumindo se as posições estão dentro
+          ou fora do esperado.
+        - 'penalidade' (int): penalidade numérica associada ao desvio
+          médio observado.
     """
     numeros_sorted = sorted(numeros)
     k = len(numeros_sorted)
