@@ -290,3 +290,147 @@ def get_tabela_inteligencia(df: pd.DataFrame, config: GameConfig) -> pd.DataFram
     df_stats["Percentil_Gap"] = df_stats["Atraso"].rank(pct=True)
 
     return df_stats
+
+
+def calcular_min_gap_e_span(numeros: list[int], config: GameConfig) -> dict:
+    """
+    Calcula o menor gap entre números consecutivos e o span total.
+    
+    Otimizado para calcular ambas as métricas em um único passo.
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict
+        - 'min_gap': menor distância entre números consecutivos
+        - 'max_gap': maior distância entre números consecutivos
+        - 'span': amplitude total (max - min)
+        - 'span_relativo': span / (n_numbers - 1)
+        - 'compactacao': se o jogo está muito compacto
+    
+    Examples
+    --------
+    >>> calcular_min_gap_e_span([1, 2, 3, 10, 20, 30], config)
+    {'min_gap': 1, 'max_gap': 10, 'span': 29, ...}
+    """
+    if len(numeros) < 2:
+        return {'erro': 'Jogo precisa de pelo menos 2 números'}
+    
+    numeros_sorted = sorted(numeros)
+    
+    # Calcula gaps em um único passo
+    gaps = [numeros_sorted[i+1] - numeros_sorted[i] for i in range(len(numeros_sorted)-1)]
+    
+    min_gap = min(gaps)
+    max_gap = max(gaps)
+    span = numeros_sorted[-1] - numeros_sorted[0]
+    span_relativo = span / (config.n_numbers - 1)
+    
+    # Análise de compactação
+    # Se min_gap = 1 para muitos pares, jogo está compacto
+    sequencias = sum(1 for g in gaps if g == 1)
+    taxa_sequencias = sequencias / len(gaps)
+    
+    compactacao = "extrema" if taxa_sequencias > 0.6 else \
+                  "alta" if taxa_sequencias > 0.4 else \
+                  "normal"
+    
+    return {
+        'min_gap': min_gap,
+        'max_gap': max_gap,
+        'span': span,
+        'span_relativo': round(span_relativo, 3),
+        'gaps': gaps,
+        'sequencias': sequencias,
+        'taxa_sequencias': round(taxa_sequencias, 3),
+        'compactacao': compactacao,
+    }
+
+
+def calcular_entropia_faixas(
+    numeros: list[int],
+    config: GameConfig,
+    n_faixas: int = 10
+) -> dict:
+    """
+    Calcula entropia da distribuição de números por faixas do volante.
+    
+    Divide o volante em n_faixas e mede a uniformidade da distribuição
+    dos números escolhidos entre essas faixas.
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo.
+    config : GameConfig
+        Configuração do jogo.
+    n_faixas : int, default=10
+        Número de faixas para dividir o volante.
+    
+    Returns
+    -------
+    dict
+        - 'entropia': entropia calculada
+        - 'entropia_maxima': entropia máxima possível
+        - 'entropia_normalizada': entropia / entropia_maxima
+        - 'distribuicao': contagem por faixa
+        - 'faixas_vazias': número de faixas sem números
+    """
+    import math
+    from collections import Counter
+    
+    # Tamanho de cada faixa
+    tamanho_faixa = config.n_numbers / n_faixas
+    
+    # Conta números por faixa
+    contagem = Counter()
+    for num in numeros:
+        faixa = min(int((num - 1) / tamanho_faixa), n_faixas - 1)
+        contagem[faixa] += 1
+    
+    # Calcula entropia
+    total = len(numeros)
+    entropia = 0.0
+    
+    for faixa in range(n_faixas):
+        count = contagem.get(faixa, 0)
+        if count > 0:
+            p = count / total
+            entropia -= p * math.log2(p)
+    
+    # Entropia máxima (distribuição uniforme)
+    # Depende de quantas faixas podem ser ocupadas dado k números
+    faixas_ocupaveis = min(n_faixas, len(numeros))
+    entropia_maxima = math.log2(faixas_ocupaveis) if faixas_ocupaveis > 0 else 0
+    
+    entropia_norm = entropia / entropia_maxima if entropia_maxima > 0 else 0
+    
+    faixas_vazias = n_faixas - len(contagem)
+    
+    # Interpretação
+    if entropia_norm < 0.5:
+        conclusao = "⚠️ Alta concentração em poucas faixas"
+        penalidade = 10
+    elif entropia_norm < 0.7:
+        conclusao = "ℹ️ Concentração moderada"
+        penalidade = 5
+    else:
+        conclusao = "✅ Boa distribuição entre faixas"
+        penalidade = 0
+    
+    return {
+        'entropia': round(entropia, 3),
+        'entropia_maxima': round(entropia_maxima, 3),
+        'entropia_normalizada': round(entropia_norm, 3),
+        'distribuicao': dict(contagem),
+        'faixas_vazias': faixas_vazias,
+        'n_faixas': n_faixas,
+        'conclusao': conclusao,
+        'penalidade': penalidade,
+    }

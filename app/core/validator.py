@@ -14,6 +14,12 @@ from app.core.statistics import (
     calcular_atrasos,
     get_pares_que_se_repelem,
     get_pares_mais_frequentes,
+    testar_distribuicao_gaps_bilhete,
+    calcular_order_statistics,
+    calcular_entropia_faixas,
+    detectar_motifs_gaps,
+    calcular_simetria_reflexao,
+    calcular_min_gap_e_span,
 )
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
@@ -634,6 +640,79 @@ def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
         }
 
 
+def _analise_estrutural(report: dict, numeros: list[int], config: GameConfig) -> None:
+    """
+    Análise estrutural consolidada: span, gaps, motifs, simetria.
+    
+    Otimizada para calcular métricas relacionadas em conjunto.
+    """
+    # 1. Min-gap e Span (calculados juntos para otimização)
+    metricas_gaps = calcular_min_gap_e_span(numeros, config)
+    if 'erro' in metricas_gaps:
+        return
+        
+    report["metricas"]["min_gap"] = metricas_gaps["min_gap"]
+    report["metricas"]["span"] = metricas_gaps["span"]
+    report["metricas"]["span_relativo"] = metricas_gaps["span_relativo"]
+    
+    # Penalidade por span extremo
+    span_esperado = config.n_numbers * (len(numeros) - 1) / (len(numeros) + 1)
+    if metricas_gaps["span"] < span_esperado * 0.4:
+        report["score"] -= 15
+        report["msgs"].append(f"❌ Span muito baixo ({metricas_gaps['span']}): números muito concentrados")
+    elif metricas_gaps["span"] < span_esperado * 0.6:
+        report["score"] -= 8
+        report["msgs"].append(f"⚠️ Span baixo ({metricas_gaps['span']}): possível concentração")
+    elif metricas_gaps["span"] > span_esperado * 1.4:
+        report["msgs"].append(f"ℹ️ Span alto ({metricas_gaps['span']}): boa cobertura do volante")
+    else:
+        report["msgs"].append(f"✅ Span adequado ({metricas_gaps['span']})")
+    
+    # 2. Teste de distribuição de gaps
+    teste_gaps = testar_distribuicao_gaps_bilhete(numeros, config)
+    if 'erro' not in teste_gaps and teste_gaps.get("penalidade", 0) > 0:
+        report["score"] -= teste_gaps["penalidade"]
+        report["msgs"].append(teste_gaps["conclusao"])
+    report["metricas"]["cv_gaps"] = teste_gaps.get("cv_gaps")
+    
+    # 3. Detecção de motifs (padrões repetitivos)
+    motifs = detectar_motifs_gaps(numeros)
+    if motifs["motif_detectado"]:
+        report["score"] -= motifs["penalidade"]
+        report["msgs"].append(f"🔄 {motifs['tipo_motif']}")
+        report["risco_divisao"] = "ALTO"
+    
+    # 4. Simetria por reflexão
+    simetria = calcular_simetria_reflexao(numeros, config)
+    if simetria["penalidade"] > 0:
+        report["score"] -= simetria["penalidade"]
+        report["msgs"].append(simetria["conclusao"])
+    report["metricas"]["pares_simetricos"] = simetria["n_pares"]
+
+
+def _analise_order_statistics(report: dict, numeros: list[int], config: GameConfig) -> None:
+    """Análise de order statistics (posições esperadas)."""
+    order_stats = calcular_order_statistics(numeros, config)
+    
+    if order_stats["penalidade"] > 0:
+        report["score"] -= order_stats["penalidade"]
+        report["msgs"].append(order_stats["conclusao"])
+    
+    report["metricas"]["desvio_posicional"] = order_stats["desvio_medio"]
+
+
+def _analise_entropia_faixas(report: dict, numeros: list[int], config: GameConfig) -> None:
+    """Análise de entropia por faixas do volante."""
+    entropia_faixas = calcular_entropia_faixas(numeros, config)
+    
+    if entropia_faixas["penalidade"] > 0:
+        report["score"] -= entropia_faixas["penalidade"]
+        report["msgs"].append(entropia_faixas["conclusao"])
+    
+    report["metricas"]["entropia_faixas"] = entropia_faixas["entropia_normalizada"]
+    report["metricas"]["faixas_vazias"] = entropia_faixas["faixas_vazias"]
+
+
 # ===== FUNÇÃO PRINCIPAL =====
 
 
@@ -697,6 +776,15 @@ def validar_jogo(
 
     # Análise de pares populares (alerta sobre risco de divisão de prêmio)
     _analise_pares_populares(report, numeros, config, df_historico)
+
+    # Análises estruturais avançadas (span, gaps, motifs, simetria)
+    _analise_estrutural(report, numeros, config)
+    
+    # Análise de order statistics (posições esperadas)
+    _analise_order_statistics(report, numeros, config)
+    
+    # Análise de entropia por faixas
+    _analise_entropia_faixas(report, numeros, config)
 
     # 3. Calcula score técnico
     score_tecnico = max(0, min(100, report["score"]))

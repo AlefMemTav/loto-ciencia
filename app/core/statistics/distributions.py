@@ -255,3 +255,242 @@ def calcular_coeficiente_variacao(df: pd.DataFrame, config: GameConfig) -> dict 
         "freq_min": int(freq.min()),
         "amplitude": int(freq.max() - freq.min()),
     }
+
+
+def testar_distribuicao_gaps_bilhete(
+    numeros: list[int],
+    config: GameConfig
+) -> dict:
+    """
+    Testa se os gaps entre números do bilhete seguem distribuição esperada.
+    
+    Para um bilhete aleatório, os gaps devem seguir aproximadamente uma
+    distribuição exponencial (ou uniforme, dependendo da interpretação).
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo (ordenados).
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict
+        Resultado do teste:
+        - 'gaps': lista de gaps entre números consecutivos
+        - 'gap_medio': média dos gaps
+        - 'gap_esperado': gap médio esperado para distribuição uniforme
+        - 'ks_statistic': estatística do teste KS
+        - 'ks_pvalue': p-value do teste
+        - 'conclusao': interpretação do resultado
+        - 'penalidade': penalidade sugerida (0-15)
+    
+    Examples
+    --------
+    >>> resultado = testar_distribuicao_gaps_bilhete([1, 2, 3, 4, 5, 6], config)
+    >>> resultado['conclusao']
+    '❌ Gaps muito regulares (padrão aritmético)'
+    """
+    numeros_sorted = sorted(numeros)
+    k = len(numeros_sorted)
+    
+    if k < 3:
+        return {'erro': 'Jogo muito pequeno para análise de gaps'}
+    
+    # Calcula gaps entre números consecutivos
+    gaps = [numeros_sorted[i+1] - numeros_sorted[i] for i in range(k-1)]
+    
+    gap_medio = np.mean(gaps)
+    gap_std = np.std(gaps)
+    
+    # Gap esperado para distribuição uniforme: (N - 1) / (k - 1)
+    # onde N = n_numbers e k = quantidade de números no jogo
+    gap_esperado = (config.n_numbers - 1) / (k - 1)
+    
+    # Normaliza gaps para teste KS (escala 0-1)
+    gaps_norm = np.array(gaps) / config.n_numbers
+    
+    # Teste KS contra distribuição exponencial
+    # (gaps aleatórios tendem a seguir exponencial)
+    if gap_std > 0:
+        scale = gap_medio / config.n_numbers
+        ks_stat, ks_pvalue = kstest(gaps_norm, 'expon', args=(0, scale))
+    else:
+        # Todos os gaps iguais (padrão aritmético)
+        ks_stat, ks_pvalue = 1.0, 0.0
+    
+    # Análise adicional: coeficiente de variação dos gaps
+    cv_gaps = (gap_std / gap_medio) if gap_medio > 0 else 0
+    
+    # Interpretação e penalidade
+    penalidade = 0
+    
+    if ks_pvalue < 0.01 or cv_gaps < 0.2:
+        # Gaps muito regulares (progressão aritmética ou quase)
+        conclusao = "❌ Gaps muito regulares (padrão aritmético detectado)"
+        penalidade = 15
+    elif ks_pvalue < 0.05 or cv_gaps < 0.4:
+        conclusao = "⚠️ Gaps com baixa variabilidade"
+        penalidade = 8
+    elif cv_gaps > 1.5:
+        # Gaps muito irregulares (possível concentração)
+        conclusao = "⚠️ Gaps muito irregulares (possível concentração)"
+        penalidade = 5
+    else:
+        conclusao = "✅ Distribuição de gaps natural"
+        penalidade = 0
+    
+    return {
+        'gaps': gaps,
+        'gap_medio': round(gap_medio, 2),
+        'gap_std': round(gap_std, 2),
+        'gap_esperado': round(gap_esperado, 2),
+        'cv_gaps': round(cv_gaps, 3),
+        'ks_statistic': round(ks_stat, 4),
+        'ks_pvalue': round(ks_pvalue, 4),
+        'conclusao': conclusao,
+        'penalidade': penalidade,
+    }
+
+
+def calcular_order_statistics(
+    numeros: list[int],
+    config: GameConfig
+) -> dict:
+    """
+    Verifica se as posições dos números estão dentro do esperado.
+    
+    Para k números sorteados de N, a posição esperada do i-ésimo
+    menor número (order statistic) é: E[X(i)] = i * (N+1) / (k+1)
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict
+        Análise de cada posição com desvio do esperado.
+    """
+    numeros_sorted = sorted(numeros)
+    k = len(numeros_sorted)
+    N = config.n_numbers
+    
+    desvios = []
+    detalhes = []
+    
+    for i, num in enumerate(numeros_sorted, start=1):
+        # Valor esperado do i-ésimo order statistic
+        esperado = i * (N + 1) / (k + 1)
+        desvio = num - esperado
+        desvio_rel = desvio / (N / k)  # Normalizado
+        
+        desvios.append(abs(desvio_rel))
+        detalhes.append({
+            'posicao': i,
+            'numero': num,
+            'esperado': round(esperado, 1),
+            'desvio': round(desvio, 1),
+            'desvio_relativo': round(desvio_rel, 2),
+        })
+    
+    # Score baseado no desvio médio
+    desvio_medio = np.mean(desvios)
+    
+    if desvio_medio > 1.5:
+        conclusao = "⚠️ Posições muito atípicas"
+        penalidade = 8
+    elif desvio_medio > 1.0:
+        conclusao = "ℹ️ Algumas posições atípicas"
+        penalidade = 3
+    else:
+        conclusao = "✅ Posições dentro do esperado"
+        penalidade = 0
+    
+    return {
+        'detalhes': detalhes,
+        'desvio_medio': round(desvio_medio, 3),
+        'conclusao': conclusao,
+        'penalidade': penalidade,
+    }
+
+
+def detectar_motifs_gaps(numeros: list[int]) -> dict:
+    """
+    Detecta padrões periódicos (motifs) nos gaps entre números.
+    
+    Identifica se há repetições como [a, b, a, b] ou [a, a, a].
+    Esses padrões indicam escolha humana sistemática.
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo (será ordenada internamente).
+    
+    Returns
+    -------
+    dict
+        - 'motif_detectado': bool
+        - 'tipo_motif': descrição do padrão encontrado
+        - 'gaps': lista de gaps
+        - 'penalidade': penalidade sugerida
+    """
+    numeros_sorted = sorted(numeros)
+    k = len(numeros_sorted)
+    
+    if k < 4:
+        return {'motif_detectado': False, 'penalidade': 0, 'gaps': []}
+    
+    gaps = [numeros_sorted[i+1] - numeros_sorted[i] for i in range(k-1)]
+    
+    # Padrão 1: Todos os gaps iguais (progressão aritmética)
+    if len(set(gaps)) == 1:
+        return {
+            'motif_detectado': True,
+            'tipo_motif': 'Progressão aritmética (todos gaps iguais)',
+            'gaps': gaps,
+            'penalidade': 20,
+        }
+    
+    # Padrão 2: Alternância [a, b, a, b, ...]
+    if k >= 5:
+        alternante = True
+        for i in range(len(gaps) - 2):
+            if gaps[i] != gaps[i + 2]:
+                alternante = False
+                break
+        
+        if alternante and gaps[0] != gaps[1]:
+            return {
+                'motif_detectado': True,
+                'tipo_motif': f'Alternância detectada [{gaps[0]}, {gaps[1]}, ...]',
+                'gaps': gaps,
+                'penalidade': 15,
+            }
+    
+    # Padrão 3: Repetição de subsequência
+    for periodo in range(2, len(gaps) // 2 + 1):
+        padrao = gaps[:periodo]
+        repeticoes = 0
+        for i in range(0, len(gaps) - periodo + 1, periodo):
+            if gaps[i:i+periodo] == padrao:
+                repeticoes += 1
+        
+        if repeticoes >= 2 and repeticoes * periodo >= len(gaps) * 0.7:
+            return {
+                'motif_detectado': True,
+                'tipo_motif': f'Padrão repetitivo: {padrao}',
+                'gaps': gaps,
+                'penalidade': 12,
+            }
+    
+    return {
+        'motif_detectado': False,
+        'tipo_motif': None,
+        'gaps': gaps,
+        'penalidade': 0,
+    }
