@@ -312,7 +312,7 @@ curl -X POST "http://localhost:8000/games/mega_sena/validate" \
     "✅ Soma (192) equilibrada",
     "✅ Distribuição Par/Ímpar equilibrada",
     "✅ Finais bem distribuídos",
-    "💎 Aposta Blindada: Padrão único"
+    "🛡️ Aposta Blindada: Padrão único"
   ],
   "metricas": {
     "soma": 192,
