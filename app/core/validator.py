@@ -20,6 +20,8 @@ from app.core.statistics import (
     detectar_motifs_gaps,
     calcular_simetria_reflexao,
     calcular_min_gap_e_span,
+    detectar_multiplos_de_d,
+    calcular_indice_compressibilidade,
 )
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
@@ -381,22 +383,220 @@ def _analise_geometrica(report, numeros, config, distribuicoes_geometricas):
             )
 
 
-def _analise_primos(report, numeros, config: GameConfig):
-    """Análise de números primos (só relevante para jogos até 60)."""
-    if config.n_numbers > 60:
+def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> None:
+    """
+    Análise de números primos com tratamento de extremos.
+    
+    Casos extremos (todos primos, zero primos) são ultra-raros e devem
+    ter penalidade severa, não apenas desvio leve.
+    
+    Para N <= 60, há ~17 primos (2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59)
+    Fração esperada: ~28% para Mega-Sena
+    """
+    if config.n_numbers > 100:
+        # Para loterias muito grandes (Lotomania), primos são menos relevantes
         return
-
-    primos = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59}
-    qtd_primos = len([n for n in numeros if n in primos])
-
-    qtd = len(numeros)
-    esperado = int(qtd * 0.3)
-
+    
+    # Primos até 100
+    primos = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97}
+    primos_validos = {p for p in primos if p <= config.n_numbers}
+    
+    qtd_primos = len([n for n in numeros if n in primos_validos])
+    k = len(numeros)
+    
+    # Fração esperada de primos em 1..N
+    frac_primos_universo = len(primos_validos) / config.n_numbers
+    esperado = k * frac_primos_universo
+    
+    # Salva métrica
+    report["metricas"]["qtd_primos"] = qtd_primos
+    report["metricas"]["primos_esperado"] = round(esperado, 1)
+    
+    # CASO EXTREMO: Todos primos
+    if qtd_primos == k and k >= 4:
+        report["score"] -= 25
+        report["msgs"].append(f"❌ TODOS os {k} números são primos (ultra-raro)")
+        report["risco_divisao"] = "ALTO"
+        return
+    
+    # CASO EXTREMO: Quase todos primos (>= 90%)
+    if qtd_primos >= k * 0.9 and k >= 5:
+        report["score"] -= 18
+        report["msgs"].append(f"⚠️ {qtd_primos}/{k} números são primos ({qtd_primos/k*100:.0f}%)")
+        return
+    
+    # CASO EXTREMO: Zero primos (quando esperado >= 1.5)
+    if qtd_primos == 0 and esperado >= 1.5:
+        report["score"] -= 15
+        report["msgs"].append(f"⚠️ Nenhum número primo (esperado ~{esperado:.1f})")
+        return
+    
+    # Desvio normal (tolerância de ±2)
     if abs(qtd_primos - esperado) <= 2:
-        report["msgs"].append(f"✅ {qtd_primos} números primos (distribuição natural).")
+        report["msgs"].append(f"✅ {qtd_primos} primos (esperado ~{esperado:.1f})")
     else:
         report["score"] -= 5
-        report["msgs"].append(f"⚠️ {qtd_primos} números primos (atípico).")
+        report["msgs"].append(f"⚠️ {qtd_primos} primos (atípico, esperado ~{esperado:.1f})")
+
+
+def _analise_multiplos(report: dict, numeros: list[int], config: "GameConfig") -> None:
+    """
+    Analisa concentração de múltiplos de divisores comuns.
+    
+    Jogos com todos números múltiplos de 5, 10, etc. são
+    padrões "compressíveis" e combinatoriamente raros.
+    """
+    resultado = detectar_multiplos_de_d(numeros, config)
+    
+    # Salva métricas
+    report["metricas"]["multiplos"] = {
+        "divisor_dominante": resultado["divisor_dominante"],
+        "fracao_maxima": resultado["fracao_maxima"],
+        "fracao_esperada": resultado["fracao_esperada"],
+    }
+    
+    # Aplica penalidade
+    if resultado["penalidade"] > 0:
+        report["score"] -= resultado["penalidade"]
+        report["msgs"].append(resultado["conclusao"])
+        
+        # Se penalidade alta, marca risco de divisão
+        if resultado["penalidade"] >= 15:
+            report["risco_divisao"] = "ALTO"
+
+
+def _analise_quase_reta(report: dict, numeros: list[int], config: "GameConfig") -> None:
+    """
+    Detecta se 5+ números estão na mesma linha ou coluna do layout.
+    
+    Diferente de _verificar_linhas (que conta linhas vazias),
+    esta função detecta concentração extrema em UMA única linha/coluna,
+    que é um padrão visual óbvio e combinatoriamente raro.
+    """
+    layout = config.layout
+    if not layout or layout.rows == 0 or layout.cols == 0:
+        return
+    
+    k = len(numeros)
+    
+    # Define limiar dinâmico baseado no tamanho do jogo
+    # Para k=6: limiar=5 (83% em uma linha)
+    # Para k=15: limiar=6 (40% em uma linha)
+    if k <= 6:
+        limiar_linha = 5
+        limiar_coluna = 4
+    elif k <= 10:
+        limiar_linha = 6
+        limiar_coluna = 5
+    else:
+        limiar_linha = max(6, int(k * 0.4))
+        limiar_coluna = max(5, int(k * 0.35))
+    
+    # Conta números por linha e coluna
+    contagem_linhas = [0] * layout.rows
+    contagem_colunas = [0] * layout.cols
+    
+    for num in numeros:
+        if num < 1 or num > config.n_numbers:
+            continue
+        try:
+            row, col = layout.pos(num)
+            if 0 <= row < layout.rows:
+                contagem_linhas[row] += 1
+            if 0 <= col < layout.cols:
+                contagem_colunas[col] += 1
+        except (ValueError, IndexError):
+            continue
+    
+    max_linha = max(contagem_linhas) if contagem_linhas else 0
+    max_coluna = max(contagem_colunas) if contagem_colunas else 0
+    
+    # Salva métricas
+    report["metricas"]["max_numa_linha"] = max_linha
+    report["metricas"]["max_numa_coluna"] = max_coluna
+    
+    # Verifica concentração em linha
+    if max_linha >= limiar_linha:
+        penalidade = 15 if max_linha >= k * 0.8 else 10
+        report["score"] -= penalidade
+        report["msgs"].append(
+            f"❌ {max_linha} números na mesma linha (padrão visual óbvio)"
+        )
+        report["risco_divisao"] = "ALTO"
+        return
+    
+    # Verifica concentração em coluna
+    if max_coluna >= limiar_coluna:
+        penalidade = 12 if max_coluna >= k * 0.7 else 8
+        report["score"] -= penalidade
+        report["msgs"].append(
+            f"⚠️ {max_coluna} números na mesma coluna"
+        )
+
+
+def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
+    """
+    Aplica penalidade extra quando múltiplos padrões raros co-ocorrem.
+    
+    Se 2+ regras estruturais detectarem anomalias graves simultaneamente,
+    a probabilidade conjunta é ainda menor, justificando penalidade adicional.
+    """
+    metricas = report.get("metricas", {})
+    alertas_graves = 0
+    detalhes = []
+    
+    # Checa flags graves
+    
+    # 1. Simetria forte
+    if metricas.get("pares_simetricos", 0) >= 2:
+        alertas_graves += 1
+        detalhes.append("simetria")
+    
+    # 2. Gaps muito regulares
+    cv_gaps = metricas.get("cv_gaps")
+    if cv_gaps is not None and cv_gaps < 0.2:
+        alertas_graves += 1
+        detalhes.append("gaps_regulares")
+    
+    # 3. Múltiplos concentrados
+    multiplos = metricas.get("multiplos", {})
+    if multiplos.get("fracao_maxima", 0) >= 0.8:
+        alertas_graves += 1
+        detalhes.append("multiplos")
+    
+    # 4. Span muito baixo
+    if metricas.get("span_relativo", 1.0) < 0.4:
+        alertas_graves += 1
+        detalhes.append("span_baixo")
+    
+    # 5. Concentração em linha/coluna
+    if metricas.get("max_numa_linha", 0) >= 5:
+        alertas_graves += 1
+        detalhes.append("linha_concentrada")
+    
+    # 6. Entropia muito baixa
+    if metricas.get("entropia", 2.0) < 1.0:
+        alertas_graves += 1
+        detalhes.append("baixa_entropia")
+    
+    # Aplica penalidade conjunta
+    if alertas_graves >= 3:
+        penalidade = 15
+        report["score"] -= penalidade
+        report["msgs"].append(
+            f"🚨 Raridade conjunta extrema: {alertas_graves} padrões estruturais anômalos ({', '.join(detalhes)})"
+        )
+        report["risco_divisao"] = "ALTO"
+    elif alertas_graves >= 2:
+        penalidade = 8
+        report["score"] -= penalidade
+        report["msgs"].append(
+            f"⚠️ Raridade conjunta: {alertas_graves} padrões atípicos ({', '.join(detalhes)})"
+        )
+    
+    # Salva métrica
+    report["metricas"]["alertas_estruturais"] = alertas_graves
+    report["metricas"]["detalhes_alertas"] = detalhes
 
 
 def _analises_avancadas(
@@ -819,6 +1019,15 @@ def validar_jogo(
 
     # Análise de entropia por faixas
     _analise_entropia_faixas(report, numeros, config)
+
+    # === NOVAS ANÁLISES (Issue #10) ===
+    _analise_multiplos(report, numeros, config)      # NOVO - Fase 1
+    _analise_quase_reta(report, numeros, config)     # NOVO - Fase 1
+    _aplicar_raridade_conjunta(report, config)       # NOVO - Fase 2
+
+    # Calcula índice de compressibilidade (Fase 2)
+    compressibilidade = calcular_indice_compressibilidade(report, config)
+    report["metricas"]["compressibilidade"] = compressibilidade
 
     # 3. Calcula score técnico
     score_tecnico = max(0, min(100, report["score"]))

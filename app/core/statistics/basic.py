@@ -439,3 +439,228 @@ def calcular_entropia_faixas(
         'conclusao': conclusao,
         'penalidade': penalidade,
     }
+
+
+def detectar_multiplos_de_d(
+    numeros: list[int],
+    config: "GameConfig",
+    divisores: list[int] | None = None
+) -> dict:
+    """
+    Detecta se muitos números são múltiplos de um mesmo divisor.
+    
+    "Todos múltiplos de 5" ou "todos pares" são padrões ultra-compressíveis
+    e combinatoriamente raros no espaço C(N,k).
+    
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo.
+    config : GameConfig
+        Configuração do jogo.
+    divisores : list[int], optional
+        Lista de divisores a verificar. Default: [2, 3, 5, 10]
+    
+    Returns
+    -------
+    dict
+        - 'analise_por_divisor': dict com análise para cada d
+        - 'divisor_dominante': divisor com maior fração observada
+        - 'fracao_maxima': fração de números múltiplos do divisor dominante
+        - 'fracao_esperada': fração esperada sob aleatoriedade
+        - 'excesso': quanto acima do esperado está
+        - 'penalidade': penalidade sugerida (0-25)
+        - 'conclusao': interpretação do resultado
+    
+    Examples
+    --------
+    >>> detectar_multiplos_de_d([5, 10, 15, 20, 25, 30], config)
+    {'divisor_dominante': 5, 'fracao_maxima': 1.0, 'penalidade': 20, ...}
+    
+    >>> detectar_multiplos_de_d([2, 4, 6, 8, 10, 12], config)
+    {'divisor_dominante': 2, 'fracao_maxima': 1.0, 'penalidade': 20, ...}
+    """
+    if divisores is None:
+        divisores = [2, 3, 5, 10]
+    
+    k = len(numeros)
+    N = config.n_numbers
+    
+    analise = {}
+    
+    for d in divisores:
+        # Conta múltiplos no jogo
+        multiplos_no_jogo = sum(1 for n in numeros if n % d == 0)
+        fracao_observada = multiplos_no_jogo / k
+        
+        # Fração esperada: quantos múltiplos de d existem em 1..N
+        multiplos_em_N = N // d
+        fracao_esperada = multiplos_em_N / N
+        
+        # Excesso relativo
+        if fracao_esperada > 0:
+            excesso = (fracao_observada - fracao_esperada) / fracao_esperada
+        else:
+            excesso = 0
+        
+        analise[d] = {
+            'multiplos': multiplos_no_jogo,
+            'fracao_observada': round(fracao_observada, 3),
+            'fracao_esperada': round(fracao_esperada, 3),
+            'excesso': round(excesso, 3),
+        }
+    
+    # Encontra divisor dominante (maior fração observada, excluindo d=2 se empatar)
+    divisor_dominante = max(
+        analise.keys(),
+        key=lambda d: (analise[d]['fracao_observada'], -d)
+    )
+    
+    fracao_max = analise[divisor_dominante]['fracao_observada']
+    fracao_esp = analise[divisor_dominante]['fracao_esperada']
+    
+    # Calcula penalidade
+    penalidade = 0
+    conclusao = "✅ Distribuição de múltiplos normal"
+    
+    # 100% múltiplos de d (exceto d=2 que é "todos pares")
+    if fracao_max == 1.0:
+        if divisor_dominante == 10:
+            penalidade = 25
+            conclusao = f"❌ TODOS múltiplos de 10 (ultra-compressível)"
+        elif divisor_dominante in [3, 5]:
+            penalidade = 20
+            conclusao = f"❌ TODOS múltiplos de {divisor_dominante} (padrão raro)"
+        elif divisor_dominante == 2:
+            penalidade = 20
+            conclusao = "❌ TODOS os números são pares (ultra-raro)"
+    # >= 80% múltiplos quando esperado <= 50%
+    elif fracao_max >= 0.8 and fracao_esp <= 0.5:
+        penalidade = 12
+        conclusao = f"⚠️ {fracao_max*100:.0f}% múltiplos de {divisor_dominante} (acima do esperado)"
+    # >= 70% múltiplos de 5 ou 10 (mais raro)
+    elif fracao_max >= 0.7 and divisor_dominante in [5, 10]:
+        penalidade = 8
+        conclusao = f"⚠️ Alta concentração de múltiplos de {divisor_dominante}"
+    
+    return {
+        'analise_por_divisor': analise,
+        'divisor_dominante': divisor_dominante,
+        'fracao_maxima': fracao_max,
+        'fracao_esperada': fracao_esp,
+        'penalidade': penalidade,
+        'conclusao': conclusao,
+    }
+
+
+def calcular_indice_compressibilidade(report: dict, config: "GameConfig") -> dict:
+    """
+    Calcula índice agregado de compressibilidade do jogo.
+    
+    Combina todas as métricas estruturais em um único índice (0-100):
+    - 100 = alta complexidade/aleatoriedade (bom)
+    - 0 = muito compressível/regular (ruim)
+    
+    Parameters
+    ----------
+    report : dict
+        Report do validador com métricas já calculadas.
+    config : GameConfig
+        Configuração do jogo.
+    
+    Returns
+    -------
+    dict
+        - 'indice': valor 0-100
+        - 'categoria': "Excelente", "Bom", "Regular", "Compressível", "Ultra-compressível"
+        - 'flags_ativas': lista de regularidades detectadas
+        - 'penalidade_total': soma das penalidades estruturais
+    """
+    metricas = report.get("metricas", {})
+    flags = []
+    penalidade_estrutural = 0
+    
+    # Flag 1: Baixa entropia de gaps
+    entropia = metricas.get("entropia", 2.0)
+    if entropia < 1.0:
+        flags.append("baixa_entropia")
+        penalidade_estrutural += 15
+    elif entropia < 1.5:
+        flags.append("entropia_moderada")
+        penalidade_estrutural += 5
+    
+    # Flag 2: Gaps muito regulares (CV baixo)
+    cv_gaps = metricas.get("cv_gaps", 0.5)
+    if cv_gaps is not None and cv_gaps < 0.2:
+        flags.append("gaps_regulares")
+        penalidade_estrutural += 15
+    elif cv_gaps is not None and cv_gaps < 0.3:
+        flags.append("gaps_pouco_variados")
+        penalidade_estrutural += 8
+    
+    # Flag 3: Simetria por reflexão
+    pares_simetricos = metricas.get("pares_simetricos", 0)
+    if pares_simetricos >= 2:
+        flags.append("simetria_forte")
+        penalidade_estrutural += 12
+    elif pares_simetricos == 1:
+        flags.append("simetria_leve")
+        penalidade_estrutural += 5
+    
+    # Flag 4: Múltiplos concentrados
+    multiplos = metricas.get("multiplos", {})
+    if multiplos.get("fracao_maxima", 0) >= 0.8:
+        flags.append("multiplos_concentrados")
+        penalidade_estrutural += 15
+    
+    # Flag 5: Primos extremos
+    qtd_primos = metricas.get("qtd_primos", 0)
+    primos_esperado = metricas.get("primos_esperado", 2)
+    if qtd_primos == 0 and primos_esperado >= 1.5:
+        flags.append("zero_primos")
+        penalidade_estrutural += 10
+    
+    # Flag 6: Span muito baixo
+    span_rel = metricas.get("span_relativo", 0.8)
+    if span_rel < 0.4:
+        flags.append("span_muito_baixo")
+        penalidade_estrutural += 12
+    elif span_rel < 0.5:
+        flags.append("span_baixo")
+        penalidade_estrutural += 6
+    
+    # Flag 7: Concentração em linha/coluna
+    max_linha = metricas.get("max_numa_linha", 0)
+    max_coluna = metricas.get("max_numa_coluna", 0)
+    if max_linha >= 5 or max_coluna >= 4:
+        flags.append("concentracao_grid")
+        penalidade_estrutural += 10
+    
+    # Flag 8: Order statistics atípico
+    desvio_pos = metricas.get("desvio_posicional", 0.5)
+    if desvio_pos > 1.5:
+        flags.append("posicoes_atipicas")
+        penalidade_estrutural += 8
+    
+    # Calcula índice (100 - penalidades, mínimo 0)
+    indice = max(0, min(100, 100 - penalidade_estrutural))
+    
+    # Categoriza
+    if indice >= 85:
+        categoria = "Excelente"
+    elif indice >= 70:
+        categoria = "Bom"
+    elif indice >= 50:
+        categoria = "Regular"
+    elif indice >= 30:
+        categoria = "Compressível"
+    else:
+        categoria = "Ultra-compressível"
+    
+    return {
+        'indice': indice,
+        'categoria': categoria,
+        'flags_ativas': flags,
+        'total_flags': len(flags),
+        'penalidade_estrutural': penalidade_estrutural,
+    }
