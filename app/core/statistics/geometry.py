@@ -196,3 +196,103 @@ def avaliar_jogo_geometria_estatistica(
         "detalhes": resultados,
         "penalidade": round(float(penalidade_total), 2),
     }
+
+
+def calcular_simetria_reflexao(numeros: list[int], config: GameConfig) -> dict:
+    """
+    Calcula simetria por reflexão: quantos números têm seu "espelho".
+
+    O espelho de n é (N + 1 - n), onde N = n_numbers.
+    Ex: Em Mega-Sena (N=60), espelho de 1 é 60, de 2 é 59, etc.
+
+    Jogos com alta simetria são estatisticamente raros e indicam
+    padrão humano (ex: escolher 1, 60, 10, 51, etc.)
+
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo.
+    config : GameConfig
+        Configuração do jogo.
+
+    Returns
+    -------
+    dict
+        - 'pares_simetricos': lista de pares (n, espelho)
+        - 'n_pares': número de pares simétricos detectados
+        - 'numeros_com_espelho': lista de números do jogo que possuem espelho
+        - 'taxa_simetria': proporção de números com espelho no jogo
+        - 'conclusao': interpretação
+        - 'penalidade': penalidade sugerida
+
+    Examples
+    --------
+    >>> calcular_simetria_reflexao([1, 10, 51, 60], config_mega)
+    {'pares_simetricos': [(1, 60), (10, 51)], 'taxa_simetria': 1.0, ...}
+    """
+    N = config.n_numbers
+    numeros_set = set(numeros)
+
+    pares_simetricos = []
+    numeros_com_espelho = set()
+
+    for n in numeros:
+        espelho = N + 1 - n
+        if espelho in numeros_set and espelho != n and n not in numeros_com_espelho:
+            pares_simetricos.append((min(n, espelho), max(n, espelho)))
+            numeros_com_espelho.add(n)
+            numeros_com_espelho.add(espelho)
+
+    # Taxa de simetria: proporção de números que têm espelho no jogo
+    taxa_simetria = len(numeros_com_espelho) / len(numeros) if numeros else 0
+
+    # Interpretação AJUSTADA POR DENSIDADE DO JOGO
+    # Densidade = k / N (proporção do volante que é sorteada)
+    densidade = len(numeros) / N
+
+    # Para jogos densos (Lotofácil: 15/25 = 60%), simetrias são ESPERADAS
+    # Em Lotofácil, espera-se ~4-6 pares simétricos naturalmente
+    # Para jogos esparsos (Mega: 6/60 = 10%), simetria é rara
+
+    if densidade >= 0.5:
+        # Jogo denso (Lotofácil): simetrias são comuns
+        # Esperado: ~densidade * k / 2 pares
+        pares_esperados = int(densidade * len(numeros) / 2)
+
+        if len(pares_simetricos) > pares_esperados * 1.5:
+            conclusao = "⚠️ Simetria acima do esperado para este jogo"
+            penalidade = 5
+        else:
+            conclusao = "✅ Simetria dentro do esperado"
+            penalidade = 0
+    elif densidade >= 0.2:
+        # Jogo intermediário
+        if len(pares_simetricos) >= 3:
+            conclusao = "⚠️ Alta simetria detectada"
+            penalidade = 8
+        elif len(pares_simetricos) >= 1:
+            conclusao = "ℹ️ Par simétrico detectado"
+            penalidade = 2
+        else:
+            conclusao = "✅ Sem simetria por reflexão"
+            penalidade = 0
+    else:
+        # Jogo esparso (Mega-Sena): simetria é rara
+        if len(pares_simetricos) >= 2:
+            conclusao = "🚨 Alta simetria (múltiplos pares espelhados) - muito raro"
+            penalidade = 15
+        elif len(pares_simetricos) == 1:
+            conclusao = "⚠️ Par simétrico detectado"
+            penalidade = 5
+        else:
+            conclusao = "✅ Sem simetria por reflexão"
+            penalidade = 0
+
+    return {
+        "pares_simetricos": pares_simetricos,
+        "n_pares": len(pares_simetricos),
+        "numeros_com_espelho": list(numeros_com_espelho),
+        "taxa_simetria": round(taxa_simetria, 3),
+        "conclusao": conclusao,
+        "penalidade": penalidade,
+    }

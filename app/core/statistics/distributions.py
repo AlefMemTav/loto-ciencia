@@ -28,13 +28,15 @@ CV_GOOD: float = 20.0
 CV_ACCEPTABLE: float = 30.0
 
 
-def analise_poisson(df: pd.DataFrame, config: GameConfig, alpha: float = 0.05) -> list[dict]:
+def analise_poisson(
+    df: pd.DataFrame, config: GameConfig, alpha: float = 0.05
+) -> list[dict]:
     """
     Analisa dígitos finais usando distribuição de Poisson.
-    
+
     Testa se os dígitos finais dos números sorteados seguem a distribuição
     esperada baseada na distribuição teórica do jogo.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -43,7 +45,7 @@ def analise_poisson(df: pd.DataFrame, config: GameConfig, alpha: float = 0.05) -
         Configuração do jogo.
     alpha : float, optional
         Nível de significância para o teste (default: 0.05).
-    
+
     Returns
     -------
     list[dict]
@@ -101,14 +103,14 @@ def analise_poisson(df: pd.DataFrame, config: GameConfig, alpha: float = 0.05) -
 def calcular_chi_quadrado(df: pd.DataFrame, config: GameConfig) -> dict | None:
     """
     Testa aleatoriedade dos sorteios usando Chi-quadrado e Kolmogorov-Smirnov.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame com histórico de sorteios.
     config : GameConfig
         Configuração do jogo.
-    
+
     Returns
     -------
     dict | None
@@ -161,14 +163,14 @@ def calcular_chi_quadrado(df: pd.DataFrame, config: GameConfig) -> dict | None:
 def analise_intervalo_confianca(df: pd.DataFrame, config: GameConfig) -> dict | None:
     """
     Calcula intervalos de confiança para a soma dos números sorteados.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame com histórico de sorteios.
     config : GameConfig
         Configuração do jogo.
-    
+
     Returns
     -------
     dict | None
@@ -211,17 +213,17 @@ def analise_intervalo_confianca(df: pd.DataFrame, config: GameConfig) -> dict | 
 def calcular_coeficiente_variacao(df: pd.DataFrame, config: GameConfig) -> dict | None:
     """
     Calcula coeficiente de variação das frequências dos números.
-    
+
     O coeficiente de variação (CV) mede a uniformidade da distribuição
     de frequências. Valores baixos indicam distribuição mais uniforme.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
         DataFrame com histórico de sorteios.
     config : GameConfig
         Configuração do jogo.
-    
+
     Returns
     -------
     dict | None
@@ -254,4 +256,334 @@ def calcular_coeficiente_variacao(df: pd.DataFrame, config: GameConfig) -> dict 
         "freq_max": int(freq.max()),
         "freq_min": int(freq.min()),
         "amplitude": int(freq.max() - freq.min()),
+    }
+
+
+def testar_distribuicao_gaps_bilhete(numeros: list[int], config: GameConfig) -> dict:
+    """
+    Testa se os gaps entre números do bilhete seguem distribuição esperada.
+
+    Para um bilhete aleatório, os gaps devem seguir aproximadamente uma
+    distribuição exponencial (ou uniforme, dependendo da interpretação).
+
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo (ordenados).
+    config : GameConfig
+        Configuração do jogo.
+
+    Returns
+    -------
+    dict
+        Resultado do teste:
+        - 'gaps': lista de gaps entre números consecutivos
+        - 'gap_medio': média dos gaps
+        - 'gap_std': desvio padrão dos gaps
+        - 'gap_esperado': gap médio esperado para distribuição uniforme
+        - 'cv_gaps': coeficiente de variação dos gaps
+        - 'ks_statistic': estatística do teste KS
+        - 'ks_pvalue': p-value do teste
+        - 'conclusao': interpretação do resultado
+        - 'penalidade': penalidade sugerida (0-15)
+
+    Examples
+    --------
+    >>> resultado = testar_distribuicao_gaps_bilhete([1, 2, 3, 4, 5, 6], config)
+    >>> resultado['conclusao']
+    '❌ Gaps muito regulares (padrão aritmético)'
+    """
+    numeros_sorted = sorted(numeros)
+    k = len(numeros_sorted)
+
+    if k < 3:
+        return {"erro": "Jogo muito pequeno para análise de gaps"}
+
+    # Calcula gaps entre números consecutivos
+    gaps = [numeros_sorted[i + 1] - numeros_sorted[i] for i in range(k - 1)]
+
+    gap_medio = np.mean(gaps)
+    gap_std = np.std(gaps)
+
+    # Gap esperado para distribuição uniforme: (N - 1) / (k - 1)
+    # onde N = n_numbers e k = quantidade de números no jogo
+    gap_esperado = (config.n_numbers - 1) / (k - 1)
+
+    # Normaliza gaps para teste KS (escala 0-1)
+    gaps_norm = np.array(gaps) / config.n_numbers
+
+    # Teste KS contra distribuição exponencial
+    # (gaps aleatórios tendem a seguir exponencial)
+    if gap_std > 0:
+        scale = gap_medio / config.n_numbers
+        ks_stat, ks_pvalue = kstest(gaps_norm, "expon", args=(0, scale))
+    else:
+        # Todos os gaps iguais (padrão aritmético)
+        ks_stat, ks_pvalue = 1.0, 0.0
+
+    # Análise adicional: coeficiente de variação dos gaps
+    cv_gaps = (gap_std / gap_medio) if gap_medio > 0 else 0
+
+    # Interpretação e penalidade
+    # IMPORTANTE: Ajustar limiares baseado na densidade do jogo
+    # Densidade = k / N (proporção do volante que é sorteada)
+    densidade = k / config.n_numbers
+
+    penalidade = 0
+
+    # Para jogos densos (Lotofácil: 15/25 = 60%), gaps pequenos e regulares são ESPERADOS
+    # Para jogos esparsos (Mega: 6/60 = 10%), gaps regulares indicam padrão humano
+
+    if densidade >= 0.5:
+        # Jogo denso (Lotofácil, Lotomania): limiares mais tolerantes
+        if ks_pvalue < 0.001 and cv_gaps < 0.1:
+            conclusao = "⚠️ Gaps extremamente regulares"
+            penalidade = 8
+        elif cv_gaps < 0.15:
+            conclusao = "ℹ️ Gaps regulares (comum em jogos densos)"
+            penalidade = 0
+        else:
+            conclusao = "✅ Distribuição de gaps natural"
+            penalidade = 0
+    elif densidade >= 0.2:
+        # Jogo intermediário (Quina: 5/80 = 6%)
+        if ks_pvalue < 0.01 or cv_gaps < 0.15:
+            conclusao = "⚠️ Gaps muito regulares"
+            penalidade = 10
+        elif cv_gaps < 0.3:
+            conclusao = "ℹ️ Gaps com baixa variabilidade"
+            penalidade = 3
+        else:
+            conclusao = "✅ Distribuição de gaps natural"
+            penalidade = 0
+    else:
+        # Jogo esparso (Mega-Sena: 6/60 = 10%)
+        if ks_pvalue < 0.01 or cv_gaps < 0.2:
+            conclusao = "❌ Gaps muito regulares (padrão aritmético detectado)"
+            penalidade = 15
+        elif ks_pvalue < 0.05 or cv_gaps < 0.4:
+            conclusao = "⚠️ Gaps com baixa variabilidade"
+            penalidade = 8
+        elif cv_gaps > 1.5:
+            conclusao = "⚠️ Gaps muito irregulares (possível concentração)"
+            penalidade = 5
+        else:
+            conclusao = "✅ Distribuição de gaps natural"
+            penalidade = 0
+
+    return {
+        "gaps": gaps,
+        "gap_medio": round(gap_medio, 2),
+        "gap_std": round(gap_std, 2),
+        "gap_esperado": round(gap_esperado, 2),
+        "cv_gaps": round(cv_gaps, 3),
+        "ks_statistic": round(ks_stat, 4),
+        "ks_pvalue": round(ks_pvalue, 4),
+        "conclusao": conclusao,
+        "penalidade": penalidade,
+    }
+
+
+def calcular_order_statistics(numeros: list[int], config: GameConfig) -> dict:
+    """
+    Verifica se as posições dos números estão dentro do esperado.
+
+    Para k números sorteados de N, a posição esperada do i-ésimo
+    menor número (order statistic) é: E[X(i)] = i * (N+1) / (k+1)
+
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo.
+    config : GameConfig
+        Configuração do jogo.
+
+    Returns
+    -------
+    dict
+        Resultado da análise das posições, com as seguintes chaves:
+
+        - 'detalhes' (list[dict]): lista com a análise de cada posição,
+          contendo as chaves 'posicao', 'numero', 'esperado',
+          'desvio' e 'desvio_relativo'.
+        - 'desvio_medio' (float): desvio médio relativo entre as posições
+          observadas e as esperadas.
+        - 'conclusao' (str): texto resumindo se as posições estão dentro
+          ou fora do esperado.
+        - 'penalidade' (int): penalidade numérica associada ao desvio
+          médio observado.
+    """
+    numeros_sorted = sorted(numeros)
+    k = len(numeros_sorted)
+    N = config.n_numbers
+
+    desvios = []
+    detalhes = []
+
+    for i, num in enumerate(numeros_sorted, start=1):
+        # Valor esperado do i-ésimo order statistic
+        esperado = i * (N + 1) / (k + 1)
+        desvio = num - esperado
+        desvio_rel = desvio / (N / k)  # Normalizado
+
+        desvios.append(abs(desvio_rel))
+        detalhes.append(
+            {
+                "posicao": i,
+                "numero": num,
+                "esperado": round(esperado, 1),
+                "desvio": round(desvio, 1),
+                "desvio_relativo": round(desvio_rel, 2),
+            }
+        )
+
+    # Score baseado no desvio médio
+    desvio_medio = np.mean(desvios)
+
+    # Ajusta thresholds baseado na densidade do jogo
+    # Jogos densos (ex: Lotofácil 15/25) naturalmente têm posições mais variáveis
+    density = k / N
+    if density > 0.5:
+        # Alta densidade: thresholds mais relaxados
+        threshold_alto = 2.5
+        threshold_medio = 1.8
+    elif density > 0.3:
+        # Média densidade
+        threshold_alto = 2.0
+        threshold_medio = 1.3
+    else:
+        # Baixa densidade (Mega-Sena etc): thresholds originais
+        threshold_alto = 1.5
+        threshold_medio = 1.0
+
+    if desvio_medio > threshold_alto:
+        conclusao = "⚠️ Posições muito atípicas"
+        penalidade = 8
+    elif desvio_medio > threshold_medio:
+        conclusao = "ℹ️ Algumas posições atípicas"
+        penalidade = 3
+    else:
+        conclusao = "✅ Posições dentro do esperado"
+        penalidade = 0
+
+    return {
+        "detalhes": detalhes,
+        "desvio_medio": round(desvio_medio, 3),
+        "conclusao": conclusao,
+        "penalidade": penalidade,
+    }
+
+
+def detectar_motifs_gaps(numeros: list[int], config: GameConfig = None) -> dict:
+    """
+    Detecta padrões periódicos (motifs) nos gaps entre números.
+
+    Identifica se há repetições como [a, b, a, b] ou [a, a, a].
+    Esses padrões indicam escolha humana sistemática.
+
+    IMPORTANTE: Para jogos densos (Lotofácil), gaps pequenos repetidos
+    são ESPERADOS e não devem ser penalizados severamente.
+
+    Parameters
+    ----------
+    numeros : list[int]
+        Lista de números do jogo (será ordenada internamente).
+    config : GameConfig, optional
+        Configuração do jogo (para ajustar limiares por densidade).
+
+    Returns
+    -------
+    dict
+        - 'motif_detectado': bool
+        - 'tipo_motif': descrição do padrão encontrado
+        - 'gaps': lista de gaps
+        - 'penalidade': penalidade sugerida
+    """
+    numeros_sorted = sorted(numeros)
+    k = len(numeros_sorted)
+
+    if k < 4:
+        return {"motif_detectado": False, "penalidade": 0, "gaps": []}
+
+    gaps = [numeros_sorted[i + 1] - numeros_sorted[i] for i in range(k - 1)]
+
+    # Calcula densidade do jogo (se config disponível)
+    if config:
+        densidade = k / config.n_numbers
+    else:
+        densidade = 0.1  # Assume jogo esparso se não tiver config
+
+    # Para jogos densos (Lotofácil), reduzir penalidades significativamente
+    fator_densidade = 1.0 if densidade < 0.3 else (0.3 if densidade >= 0.5 else 0.5)
+
+    # Padrão 1: Todos os gaps iguais (progressão aritmética)
+    if len(set(gaps)) == 1:
+        # Para Lotofácil com gaps de 1 ou 2, isso pode ser natural
+        if densidade >= 0.5 and gaps[0] <= 2:
+            return {
+                "motif_detectado": False,
+                "tipo_motif": None,
+                "gaps": gaps,
+                "penalidade": 0,
+            }
+        return {
+            "motif_detectado": True,
+            "tipo_motif": "Progressão aritmética (todos gaps iguais)",
+            "gaps": gaps,
+            "penalidade": int(20 * fator_densidade),
+        }
+
+    # Padrão 2: Alternância [a, b, a, b, ...]
+    if k >= 5:
+        alternante = True
+        for i in range(len(gaps) - 2):
+            if gaps[i] != gaps[i + 2]:
+                alternante = False
+                break
+
+        if alternante and gaps[0] != gaps[1]:
+            # Para Lotofácil, alternância de gaps pequenos é esperada
+            if densidade >= 0.5 and max(gaps[0], gaps[1]) <= 3:
+                return {
+                    "motif_detectado": False,
+                    "tipo_motif": None,
+                    "gaps": gaps,
+                    "penalidade": 0,
+                }
+            return {
+                "motif_detectado": True,
+                "tipo_motif": f"Alternância detectada [{gaps[0]}, {gaps[1]}, ...]",
+                "gaps": gaps,
+                "penalidade": int(15 * fator_densidade),
+            }
+
+    # Padrão 3: Repetição de subsequência
+    for periodo in range(2, len(gaps) // 2 + 1):
+        padrao = gaps[:periodo]
+        repeticoes = 0
+        for i in range(0, len(gaps) - periodo + 1, periodo):
+            if gaps[i : i + periodo] == padrao:
+                repeticoes += 1
+
+        if repeticoes >= 2 and repeticoes * periodo >= len(gaps) * 0.7:
+            # Para jogos densos, padrões de gaps pequenos são naturais
+            if densidade >= 0.5 and max(padrao) <= 3:
+                return {
+                    "motif_detectado": False,
+                    "tipo_motif": None,
+                    "gaps": gaps,
+                    "penalidade": 0,
+                }
+            return {
+                "motif_detectado": True,
+                "tipo_motif": f"Padrão repetitivo: {padrao}",
+                "gaps": gaps,
+                "penalidade": int(12 * fator_densidade),
+            }
+
+    return {
+        "motif_detectado": False,
+        "tipo_motif": None,
+        "gaps": gaps,
+        "penalidade": 0,
     }
