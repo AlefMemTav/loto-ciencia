@@ -12,6 +12,8 @@ from app.core.statistics import (
     avaliar_quadrantes_estatistico,
     calcular_taxa_regressao,
     calcular_atrasos,
+    get_pares_que_se_repelem,
+    get_pares_mais_frequentes,
 )
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
@@ -491,6 +493,147 @@ def _analises_avancadas(
         }
 
 
+def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico):
+    """
+    Detecta se o jogo contém múltiplos pares que NUNCA ou RARAMENTE saíram juntos.
+
+    Filosofia: Não tentamos prever o futuro, mas evitamos combinações
+    estatisticamente raras (pares que historicamente quase nunca co-ocorrem).
+
+    Se um jogo tem muitos pares "repelentes", é estatisticamente improvável,
+    mesmo que cada número individualmente seja comum.
+    """
+    if df_historico is None or df_historico.empty or len(df_historico) < 50:
+        # Dados insuficientes para análise confiável
+        return
+
+    # Pega os 100 pares que mais se repelem (menor co-ocorrência)
+    pares_repelentes = get_pares_que_se_repelem(df_historico, config, top_n=100)
+
+    if not pares_repelentes:
+        return
+
+    # Cria set dos pares repelentes para lookup rápido
+    # Considera apenas pares que apareceram ZERO vezes ou muito poucas (razão < 0.3)
+    pares_muito_raros = set()
+    for item in pares_repelentes:
+        if item["ocorrencias"] == 0 or item["razao"] < 0.3:
+            pares_muito_raros.add(item["par"])
+
+    if not pares_muito_raros:
+        return
+
+    # Verifica quantos pares do jogo atual estão na lista de repelentes
+    pares_do_jogo = []
+    for i in range(len(numeros)):
+        for j in range(i + 1, len(numeros)):
+            par = (numeros[i], numeros[j])
+            if par in pares_muito_raros:
+                pares_do_jogo.append(par)
+
+    # Penalização baseada na quantidade de pares raros
+    n_pares_raros = len(pares_do_jogo)
+    total_pares = len(numeros) * (len(numeros) - 1) // 2
+    proporcao = n_pares_raros / total_pares if total_pares > 0 else 0
+
+    # Se mais de 20% dos pares são historicamente raros, penalizar
+    if proporcao >= 0.3:
+        # Muitos pares raros - combinação muito improvável
+        penalidade = 15
+        report["score"] -= penalidade
+        report["msgs"].append(
+            f"⚠️ Combinação rara: {n_pares_raros} pares nunca/raramente co-ocorreram "
+            f"({proporcao*100:.0f}% dos pares)"
+        )
+        report["metricas"]["pares_raros"] = {
+            "count": n_pares_raros,
+            "proporcao": round(proporcao, 3),
+            "exemplos": pares_do_jogo[:3],  # Mostra até 3 exemplos
+        }
+    elif proporcao >= 0.2:
+        # Alguns pares raros - alerta moderado
+        penalidade = 8
+        report["score"] -= penalidade
+        report["msgs"].append(
+            f"ℹ️ Alguns pares raros: {n_pares_raros} pares com baixa co-ocorrência histórica"
+        )
+        report["metricas"]["pares_raros"] = {
+            "count": n_pares_raros,
+            "proporcao": round(proporcao, 3),
+        }
+    elif proporcao >= 0.1:
+        # Poucos pares raros - apenas informativo
+        report["msgs"].append(
+            f"ℹ️ Contém {n_pares_raros} pares com baixa co-ocorrência histórica"
+        )
+
+
+def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
+    """
+    Detecta se o jogo contém muitos pares POPULARES (que saem frequentemente juntos).
+
+    Filosofia: Pares muito frequentes são apostados por muita gente.
+    Se você ganhar com um jogo cheio de pares populares, provavelmente
+    dividirá o prêmio com muitas outras pessoas.
+
+    Esta análise complementa _analise_coocorrencia_rara:
+    - Pares raros → Combinação estatisticamente improvável
+    - Pares populares → Risco de divisão de prêmio
+    """
+    if df_historico is None or df_historico.empty or len(df_historico) < 50:
+        return
+
+    # Pega os 50 pares mais frequentes (que mais saem juntos)
+    pares_frequentes = get_pares_mais_frequentes(df_historico, config, top_n=50)
+
+    if not pares_frequentes:
+        return
+
+    # Cria set dos pares muito populares (razão > 1.3 = 30% acima do esperado)
+    pares_populares = set()
+    for item in pares_frequentes:
+        if item["razao"] >= 1.3:
+            pares_populares.add(item["par"])
+
+    if not pares_populares:
+        return
+
+    # Verifica quantos pares do jogo atual estão na lista de populares
+    pares_do_jogo = []
+    for i in range(len(numeros)):
+        for j in range(i + 1, len(numeros)):
+            par = (numeros[i], numeros[j])
+            if par in pares_populares:
+                pares_do_jogo.append(par)
+
+    n_pares_populares = len(pares_do_jogo)
+    total_pares = len(numeros) * (len(numeros) - 1) // 2
+    proporcao = n_pares_populares / total_pares if total_pares > 0 else 0
+
+    # Se mais de 30% dos pares são muito populares, alertar sobre divisão
+    if proporcao >= 0.3:
+        report["msgs"].append(
+            f"💸 Risco de divisão: {n_pares_populares} pares muito populares "
+            f"({proporcao*100:.0f}% dos pares)"
+        )
+        report["metricas"]["pares_populares"] = {
+            "count": n_pares_populares,
+            "proporcao": round(proporcao, 3),
+            "exemplos": pares_do_jogo[:3],
+        }
+        # Aumenta risco de divisão mas não penaliza score técnico
+        if report.get("risco_divisao") != "ALTO":
+            report["risco_divisao"] = "Médio"
+    elif proporcao >= 0.2:
+        report["msgs"].append(
+            f"ℹ️ Alguns pares populares: {n_pares_populares} pares frequentes no histórico"
+        )
+        report["metricas"]["pares_populares"] = {
+            "count": n_pares_populares,
+            "proporcao": round(proporcao, 3),
+        }
+
+
 # ===== FUNÇÃO PRINCIPAL =====
 
 
@@ -548,6 +691,12 @@ def validar_jogo(
 
     # Análises avançadas (Hamming, Quadrantes, Regressão)
     _analises_avancadas(report, numeros, config, df_historico, stats_quadrantes)
+
+    # Análise de co-ocorrência rara (evita pares que historicamente não saem juntos)
+    _analise_coocorrencia_rara(report, numeros, config, df_historico)
+
+    # Análise de pares populares (alerta sobre risco de divisão de prêmio)
+    _analise_pares_populares(report, numeros, config, df_historico)
 
     # 3. Calcula score técnico
     score_tecnico = max(0, min(100, report["score"]))

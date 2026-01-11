@@ -59,6 +59,17 @@ from app.core.statistics.similarity import (
     calcular_taxa_regressao,
 )
 
+from app.core.statistics.advanced import (
+    matriz_coocorrencia_numeros,
+    get_pares_mais_frequentes,
+    get_pares_que_se_repelem,
+    calcular_matriz_transicao,
+    analisar_transicoes_anomalas,
+    teste_runs_numero,
+    teste_runs_todos_numeros,
+    indice_dispersao,
+)
+
 __all__ = [
     # basic
     "compute_zscore",
@@ -103,4 +114,13 @@ __all__ = [
     "calcular_taxa_regressao",
     "QUADRANT_CONCENTRATION_THRESHOLD",
     "QUADRANT_PVALUE_THRESHOLD",
+    # advanced
+    "matriz_coocorrencia_numeros",
+    "get_pares_mais_frequentes",
+    "get_pares_que_se_repelem",
+    "calcular_matriz_transicao",
+    "analisar_transicoes_anomalas",
+    "teste_runs_numero",
+    "teste_runs_todos_numeros",
+    "indice_dispersao",
 ]
