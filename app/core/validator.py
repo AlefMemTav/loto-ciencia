@@ -18,12 +18,30 @@ from app.core.statistics import (
     calcular_order_statistics,
     calcular_entropia_faixas,
     detectar_motifs_gaps,
-    calcular_simetria_reflexao,
     calcular_min_gap_e_span,
     detectar_multiplos_de_d,
+    calcular_simetria_reflexao,
     calcular_indice_compressibilidade,
     PRIMES_ANALYSIS_MAX_N,
 )
+
+# Importa detector de padrões avançados
+try:
+    from app.core.statistics.patterns import analise_completa_padroes
+
+    PATTERNS_AVAILABLE = True
+except ImportError:
+    PATTERNS_AVAILABLE = False
+    logger.warning("Módulo de padrões avançados não disponível")
+
+# Importa constantes com Bonferroni
+from app.core.statistics.constants import (
+    ajustar_threshold_por_densidade,
+    ZSCORE_EXTREME,
+    ZSCORE_VERY_RARE,
+    ZSCORE_RARE,
+)
+
 
 # ===== FUNÇÕES DE ANÁLISE ESPACIAL (GENÉRICAS) =====
 
@@ -148,12 +166,21 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
                 f"⚠️ Soma ({soma}) desviada da média teórica ({media_teorica:.0f})."
             )
 
-    # Regra 2: Pares e Ímpares
+    # Regra 2: Pares e Ímpares (com ajuste por densidade)
     qtd_numeros = len(numeros)
     pares = sum(1 for n in numeros if n % 2 == 0)
 
-    ideal_min = int(qtd_numeros * 0.35)
-    ideal_max = int(qtd_numeros * 0.65)
+    densidade = config.density
+    # Ajusta thresholds por densidade
+    ideal_min_base = 0.35
+    ideal_max_base = 0.65
+
+    ideal_min = int(
+        qtd_numeros * ajustar_threshold_por_densidade(ideal_min_base, densidade)
+    )
+    ideal_max = int(
+        qtd_numeros * ajustar_threshold_por_densidade(ideal_max_base, densidade)
+    )
 
     if pares in [0, qtd_numeros]:
         report["score"] -= 25
@@ -195,36 +222,50 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
             f"⚠️ Desequilíbrio vertical ({sup} superior, {inf} inferior)."
         )
 
-    # Regra 5: Finais
+    # Regra 5: Finais (com ajuste por densidade)
     finais = [n % 10 for n in numeros]
     contagem = Counter(finais)
     max_repeticao = max(contagem.values()) if contagem else 0
 
-    if max_repeticao >= config.final_digit_error:
+    # Ajusta thresholds por densidade
+    final_alert_ajustado = ajustar_threshold_por_densidade(
+        config.final_digit_alert, densidade
+    )
+    final_error_ajustado = ajustar_threshold_por_densidade(
+        config.final_digit_error, densidade
+    )
+
+    if max_repeticao >= final_error_ajustado:
         report["score"] -= 15
         report["msgs"].append(
             f"❌ Vício de Final: {max_repeticao} números terminam igual."
         )
-    elif max_repeticao >= config.final_digit_alert:
+    elif max_repeticao >= final_alert_ajustado:
         report["score"] -= 5
         report["msgs"].append(
             f"⚠️ Concentração: {max_repeticao} números com final igual."
         )
     else:
-        if max_repeticao < config.final_digit_alert:
+        if max_repeticao < final_alert_ajustado:
             report["msgs"].append("✅ Finais bem distribuídos.")
 
 
 def _analise_entropia(report, numeros, config: GameConfig):
-    """Detecta padrões visuais repetitivos."""
+    """Detecta padrões visuais repetitivos (com ajuste por densidade)."""
     if len(numeros) < 3:
         return
 
     entropia = _calcular_entropia_shannon(numeros)
 
     k = len(numeros)
-    limiar_baixo = 0.5 if k <= 6 else 1.0
-    limiar_alto = 2.0 if k <= 6 else 3.5
+    densidade = config.density
+
+    # Ajusta limiares por densidade
+    limiar_baixo_base = 0.5 if k <= 6 else 1.0
+    limiar_alto_base = 2.0 if k <= 6 else 3.5
+
+    limiar_baixo = ajustar_threshold_por_densidade(limiar_baixo_base, densidade)
+    limiar_alto = ajustar_threshold_por_densidade(limiar_alto_base, densidade)
 
     if entropia < limiar_baixo:
         report["score"] -= 25
@@ -252,24 +293,22 @@ def _analise_popularidade(report, numeros, config: GameConfig):
     qtd = len(numeros)
 
     # Calcula densidade para ajustar thresholds
-    density = qtd / config.n_numbers
+    densidade = config.density
 
     # Sequências - ajusta baseado na densidade
-    # Para Lotofácil (densidade ~0.6), sequências são naturais
-    if density > 0.5:
+    if densidade > 0.5:
         # Alta densidade: espera-se muitas sequências
-        # Para 15/25, esperado é ~9 sequências em média
-        limite_seq = max(3, int(qtd * 0.8))  # ~12 para Lotofácil
+        limite_seq = max(3, int(qtd * ajustar_threshold_por_densidade(0.8, densidade)))
     else:
         # Baixa densidade (Mega-Sena etc)
-        limite_seq = max(1, int(qtd * 0.6))
+        limite_seq = max(1, int(qtd * ajustar_threshold_por_densidade(0.6, densidade)))
 
     if seqs > limite_seq:
         pontos_risco += 2
         report["msgs"].append(f"⚠️ Muitas sequências ({seqs}).")
 
-    # Datas (1-31)
-    limite_datas = int(qtd * 0.70)
+    # Datas (1-31) - ajustado por densidade
+    limite_datas = int(qtd * ajustar_threshold_por_densidade(0.70, densidade))
     if qtd <= 6:
         limite_datas = max(limite_datas, 4)
 
@@ -278,14 +317,11 @@ def _analise_popularidade(report, numeros, config: GameConfig):
         report["msgs"].append(f"⚠️ Foco excessivo em datas ({datas} números <= 31).")
 
     # Lost numbers - ajusta threshold baseado na densidade
-    # Para Lotofácil (15/25), ~31% dos jogos têm 4+ Lost por acaso
-    # Só penaliza se tem TODOS os disponíveis para jogos densos
     lost_disponivel = len([n for n in lost_nums if n <= config.n_numbers])
-    if density > 0.5:
+    if densidade > 0.5:
         # Alta densidade: só penaliza se tem todos os Lost disponíveis
-        # E mesmo assim, com menor peso (é coincidência possível)
         if qtd_lost == lost_disponivel and lost_disponivel >= 4:
-            pontos_risco += 1  # Menor peso que para jogos esparsos
+            pontos_risco += 1
             report["msgs"].append(
                 f"ℹ️ Contém todos números Lost ({qtd_lost}/{lost_disponivel})."
             )
@@ -313,6 +349,25 @@ def _analise_popularidade(report, numeros, config: GameConfig):
             report["msgs"].append("🛡️ Aposta Blindada: Padrão único.")
 
 
+def _analise_numeros_sortudos(report, numeros, config: GameConfig):
+    """Penaliza excesso de números sortudos culturais."""
+    sortudos = {7, 3, 13, 21, 33, 11, 27, 9}
+    qtd_sortudos = len(set(numeros) & sortudos)
+
+    densidade = config.density
+    threshold = ajustar_threshold_por_densidade(5, densidade)
+
+    if qtd_sortudos >= threshold:
+        report["score"] -= 12
+        report["msgs"].append(
+            f"🍀 EXCESSO de números 'sortudos': {sorted(set(numeros) & sortudos)} ({qtd_sortudos})"
+        )
+        if report.get("risco_divisao") != "ALTO":
+            report["risco_divisao"] = "Médio"
+
+    report["metricas"]["qtd_sortudos"] = qtd_sortudos
+
+
 def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
     """Análise de distribuição espacial."""
     gini = _calcular_coeficiente_gini(numeros, config)
@@ -328,6 +383,7 @@ def _analise_distribuicao_espacial(report, numeros, config: GameConfig):
 
 
 def _analise_geometrica(report, numeros, config, distribuicoes_geometricas):
+    """Análise geométrica com thresholds Bonferroni."""
     if not distribuicoes_geometricas:
         report["msgs"].append("ℹ️ Análise geométrica indisponível (sem histórico)")
         return
@@ -342,7 +398,7 @@ def _analise_geometrica(report, numeros, config, distribuicoes_geometricas):
     report["metricas"]["score_geom"] = score_geom
     report["metricas"]["geom_detalhes"] = resultado["detalhes"]
 
-    # Penalidades baseadas em significância estatística
+    # Penalidades baseadas em significância estatística (COM BONFERRONI)
     detalhes = resultado["detalhes"]
 
     extremos = sum(1 for d in detalhes.values() if d["categoria"] == "Extremo")
@@ -385,20 +441,10 @@ def _analise_geometrica(report, numeros, config, distribuicoes_geometricas):
 
 
 def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> None:
-    """
-    Análise de números primos com tratamento de extremos.
-
-    Casos extremos (todos primos, zero primos) são ultra-raros e devem
-    ter penalidade severa, não apenas desvio leve.
-
-    Para N <= 60, há ~17 primos (2,3,5,7,11,13,17,19,23,29,31,37,41,43,47,53,59)
-    Fração esperada: ~28% para Mega-Sena
-    """
+    """Análise de números primos com ajuste por densidade."""
     if config.n_numbers > PRIMES_ANALYSIS_MAX_N:
-        # Para loterias muito grandes (Lotomania), primos são menos relevantes
         return
 
-    # Primos até 100
     primos = {
         2,
         3,
@@ -430,18 +476,19 @@ def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> N
 
     qtd_primos = len([n for n in numeros if n in primos_validos])
     k = len(numeros)
+
     if k == 0:
-        # Nenhum número para analisar: evita divisão por zero e apenas registra métrica neutra
         report["metricas"]["qtd_primos"] = 0
         report["metricas"]["primos_esperado"] = 0.0
         report["msgs"].append("⚠️ Análise de primos ignorada: lista de números vazia.")
         return
 
-    # Fração esperada de primos em 1..N
+    # Fração esperada com ajuste por densidade
+    densidade = config.density
     frac_primos_universo = len(primos_validos) / config.n_numbers
-    esperado = k * frac_primos_universo
+    esperado_base = k * frac_primos_universo
+    esperado = ajustar_threshold_por_densidade(esperado_base, densidade)
 
-    # Salva métrica
     report["metricas"]["qtd_primos"] = qtd_primos
     report["metricas"]["primos_esperado"] = round(esperado, 1)
 
@@ -466,8 +513,10 @@ def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> N
         report["msgs"].append(f"⚠️ Nenhum número primo (esperado ~{esperado:.1f})")
         return
 
-    # Desvio normal (tolerância de ±2)
-    if abs(qtd_primos - esperado) <= 2:
+    # Desvio normal (tolerância ajustada por densidade)
+    tolerancia = ajustar_threshold_por_densidade(2.0, densidade)
+
+    if abs(qtd_primos - esperado) <= tolerancia:
         report["msgs"].append(f"✅ {qtd_primos} primos (esperado ~{esperado:.1f})")
     else:
         report["score"] -= 5
@@ -477,12 +526,7 @@ def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> N
 
 
 def _analise_multiplos(report: dict, numeros: list[int], config: "GameConfig") -> None:
-    """
-    Analisa concentração de múltiplos de divisores comuns.
-
-    Jogos com todos números múltiplos de 5, 10, etc. são
-    padrões "compressíveis" e combinatoriamente raros.
-    """
+    """Analisa concentração de múltiplos de divisores comuns."""
     resultado = detectar_multiplos_de_d(numeros, config)
 
     # Salva métricas
@@ -503,31 +547,26 @@ def _analise_multiplos(report: dict, numeros: list[int], config: "GameConfig") -
 
 
 def _analise_quase_reta(report: dict, numeros: list[int], config: "GameConfig") -> None:
-    """
-    Detecta se 5+ números estão na mesma linha ou coluna do layout.
-
-    Diferente de _verificar_linhas (que conta linhas vazias),
-    esta função detecta concentração extrema em UMA única linha/coluna,
-    que é um padrão visual óbvio e combinatoriamente raro.
-    """
+    """Detecta se 5+ números estão na mesma linha ou coluna do layout."""
     layout = config.layout
     if not layout or layout.rows == 0 or layout.cols == 0:
         return
 
     k = len(numeros)
+    densidade = config.density
 
-    # Define limiar dinâmico baseado no tamanho do jogo
-    # Para k=6: limiar=5 (83% em uma linha)
-    # Para k=15: limiar=6 (40% em uma linha)
+    # Define limiar dinâmico baseado no tamanho do jogo E densidade
     if k <= 6:
-        limiar_linha = 5
-        limiar_coluna = 4
+        limiar_linha = int(ajustar_threshold_por_densidade(5, densidade))
+        limiar_coluna = int(ajustar_threshold_por_densidade(4, densidade))
     elif k <= 10:
-        limiar_linha = 6
-        limiar_coluna = 5
+        limiar_linha = int(ajustar_threshold_por_densidade(6, densidade))
+        limiar_coluna = int(ajustar_threshold_por_densidade(5, densidade))
     else:
-        limiar_linha = max(6, int(k * 0.4))
-        limiar_coluna = max(5, int(k * 0.35))
+        limiar_linha = max(6, int(k * ajustar_threshold_por_densidade(0.4, densidade)))
+        limiar_coluna = max(
+            5, int(k * ajustar_threshold_por_densidade(0.35, densidade))
+        )
 
     # Conta números por linha e coluna
     contagem_linhas = [0] * layout.rows
@@ -570,47 +609,51 @@ def _analise_quase_reta(report: dict, numeros: list[int], config: "GameConfig") 
 
 
 def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
-    """
-    Aplica penalidade extra quando múltiplos padrões raros co-ocorrem.
-
-    Se 2+ regras estruturais detectarem anomalias graves simultaneamente,
-    a probabilidade conjunta é ainda menor, justificando penalidade adicional.
-    """
+    """Aplica penalidade extra quando múltiplos padrões raros co-ocorrem."""
     metricas = report.get("metricas", {})
     alertas_graves = 0
     detalhes = []
 
-    # Checa flags graves
+    densidade = config.density
+
+    # Checa flags graves (com ajuste por densidade)
 
     # 1. Simetria forte
-    if metricas.get("pares_simetricos", 0) >= 2:
+    if metricas.get("pares_simetricos", 0) >= ajustar_threshold_por_densidade(
+        2, densidade
+    ):
         alertas_graves += 1
         detalhes.append("simetria")
 
     # 2. Gaps muito regulares
     cv_gaps = metricas.get("cv_gaps")
-    if cv_gaps is not None and cv_gaps < 0.2:
+    cv_threshold = ajustar_threshold_por_densidade(0.2, densidade)
+    if cv_gaps is not None and cv_gaps < cv_threshold:
         alertas_graves += 1
         detalhes.append("gaps_regulares")
 
     # 3. Múltiplos concentrados
     multiplos = metricas.get("multiplos", {})
-    if multiplos.get("fracao_maxima", 0) >= 0.8:
+    multiplos_threshold = ajustar_threshold_por_densidade(0.8, densidade)
+    if multiplos.get("fracao_maxima", 0) >= multiplos_threshold:
         alertas_graves += 1
         detalhes.append("multiplos")
 
     # 4. Span muito baixo
-    if metricas.get("span_relativo", 1.0) < 0.4:
+    span_threshold = ajustar_threshold_por_densidade(0.4, densidade)
+    if metricas.get("span_relativo", 1.0) < span_threshold:
         alertas_graves += 1
         detalhes.append("span_baixo")
 
     # 5. Concentração em linha/coluna
-    if metricas.get("max_numa_linha", 0) >= 5:
+    linha_threshold = ajustar_threshold_por_densidade(5, densidade)
+    if metricas.get("max_numa_linha", 0) >= linha_threshold:
         alertas_graves += 1
         detalhes.append("linha_concentrada")
 
     # 6. Entropia muito baixa
-    if metricas.get("entropia", 2.0) < 1.0:
+    entropia_threshold = ajustar_threshold_por_densidade(1.0, densidade)
+    if metricas.get("entropia", 2.0) < entropia_threshold:
         alertas_graves += 1
         detalhes.append("baixa_entropia")
 
@@ -637,13 +680,7 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
 def _analises_avancadas(
     report, numeros, config: GameConfig, df_historico, stats_quadrantes=None
 ):
-    """
-    Módulo completo de análises avançadas baseadas em dados.
-
-    - Distância de Hamming
-    - Quadrantes estatísticos
-    - Regressão à média
-    """
+    """Módulo completo de análises avançadas baseadas em dados."""
     if df_historico is None or df_historico.empty:
         return
 
@@ -656,7 +693,6 @@ def _analises_avancadas(
             numeros, config, stats_quadrantes
         )
     else:
-        # fallback (recalcula se necessário)
         stats_quad = calcular_distribuicao_quadrantes(df_historico, config)
         resultado_quad = avaliar_quadrantes_estatistico(numeros, config, stats_quad)
 
@@ -670,7 +706,6 @@ def _analises_avancadas(
         taxa_regressao = calcular_taxa_regressao(df_historico, config, janela=100)
 
         if taxa_regressao:
-            # Adiciona métricas ao report
             report["metricas"]["regressao_media"] = {
                 "correlacao": taxa_regressao["correlacao"],
                 "p_value": taxa_regressao["p_value"],
@@ -678,20 +713,17 @@ def _analises_avancadas(
                 "interpretacao": taxa_regressao["interpretacao"],
             }
 
-            # ANÁLISE 1: Regressão estatisticamente significativa
+            # Análise baseada em evidência estatística
             if taxa_regressao["correlacao"] > 0.3 and taxa_regressao["p_value"] < 0.05:
-                # Regressão validada! Números atrasados importam
                 atrasos = calcular_atrasos(df_historico, config)
                 mediana_atrasos = atrasos.median()
 
-                # Conta quantos números do jogo estão atrasados
                 atrasados_no_jogo = [
                     n for n in numeros if atrasos.get(n, 0) > mediana_atrasos
                 ]
 
                 proporcao_atrasados = len(atrasados_no_jogo) / len(numeros)
 
-                # BONIFICAÇÃO: Se 40%+ do jogo são números atrasados
                 if proporcao_atrasados >= 0.4:
                     bonus = 5
                     report["score"] += bonus
@@ -702,55 +734,31 @@ def _analises_avancadas(
                     report["msgs"].append(
                         f"   Histórico confirma: números atrasados tendem a sair (+{bonus} pts)"
                     )
-
-                # NEUTRO: Entre 20% e 40%
                 elif proporcao_atrasados >= 0.2:
                     report["msgs"].append(
                         f"ℹ️ Regressão detectada: {len(atrasados_no_jogo)} números atrasados "
                         f"(ρ={taxa_regressao['correlacao']:.2f})"
                     )
-
-                # ALERTA: Menos de 20% de atrasados
                 else:
                     report["msgs"].append(
                         f"⚠️ Poucos números atrasados ({len(atrasados_no_jogo)}), "
                         f"mas regressão histórica é forte (ρ={taxa_regressao['correlacao']:.2f})"
                     )
 
-            # ANÁLISE 2: Regressão moderada (0.1 < ρ < 0.3)
             elif 0.1 < taxa_regressao["correlacao"] <= 0.3:
                 report["msgs"].append(
                     f"ℹ️ Regressão moderada detectada (ρ={taxa_regressao['correlacao']:.2f}): "
                     "atrasos têm algum poder preditivo"
                 )
-
-            # ANÁLISE 3: Regressão fraca ou inexistente
             else:
                 report["msgs"].append(
                     f"ℹ️ Regressão fraca (ρ={taxa_regressao['correlacao']:.2f}): "
                     "atrasos não são bons preditores neste jogo"
                 )
 
-                # INSIGHT ADICIONAL: Se o jogo tem muitos atrasados mas regressão é fraca
-                if len(df_historico) > 0:
-                    atrasos = calcular_atrasos(df_historico, config)
-                    mediana_atrasos = atrasos.median()
-                    atrasados_no_jogo = [
-                        n for n in numeros if atrasos.get(n, 0) > mediana_atrasos
-                    ]
-
-                    if len(atrasados_no_jogo) >= len(numeros) * 0.5:
-                        report["msgs"].append(
-                            "   ⚠️ Cuidado: jogo tem muitos atrasados, mas histórico "
-                            "não valida essa estratégia"
-                        )
-
         else:
-            # Erro no cálculo ou dados insuficientes
             report["metricas"]["regressao_media"] = "Dados insuficientes"
-
     else:
-        # Menos de 100 sorteios no histórico
         report["metricas"]["regressao_media"] = {
             "status": "Histórico insuficiente",
             "minimo_necessario": 100,
@@ -759,27 +767,15 @@ def _analises_avancadas(
 
 
 def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico):
-    """
-    Detecta se o jogo contém múltiplos pares que NUNCA ou RARAMENTE saíram juntos.
-
-    Filosofia: Não tentamos prever o futuro, mas evitamos combinações
-    estatisticamente raras (pares que historicamente quase nunca co-ocorrem).
-
-    Se um jogo tem muitos pares "repelentes", é estatisticamente improvável,
-    mesmo que cada número individualmente seja comum.
-    """
+    """Detecta se o jogo contém múltiplos pares que NUNCA ou RARAMENTE saíram juntos."""
     if df_historico is None or df_historico.empty or len(df_historico) < 50:
-        # Dados insuficientes para análise confiável
         return
 
-    # Pega os 100 pares que mais se repelem (menor co-ocorrência)
     pares_repelentes = get_pares_que_se_repelem(df_historico, config, top_n=100)
 
     if not pares_repelentes:
         return
 
-    # Cria set dos pares repelentes para lookup rápido
-    # Considera apenas pares que apareceram ZERO vezes ou muito poucas (razão < 0.3)
     pares_muito_raros = set()
     for item in pares_repelentes:
         if item["ocorrencias"] == 0 or item["razao"] < 0.3:
@@ -788,7 +784,6 @@ def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico
     if not pares_muito_raros:
         return
 
-    # Verifica quantos pares do jogo atual estão na lista de repelentes
     pares_do_jogo = []
     for i in range(len(numeros)):
         for j in range(i + 1, len(numeros)):
@@ -796,14 +791,17 @@ def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico
             if par in pares_muito_raros:
                 pares_do_jogo.append(par)
 
-    # Penalização baseada na quantidade de pares raros
     n_pares_raros = len(pares_do_jogo)
     total_pares = len(numeros) * (len(numeros) - 1) // 2
     proporcao = n_pares_raros / total_pares if total_pares > 0 else 0
 
-    # Se mais de 20% dos pares são historicamente raros, penalizar
-    if proporcao >= 0.3:
-        # Muitos pares raros - combinação muito improvável
+    # Ajusta threshold por densidade
+    densidade = config.density
+    threshold_alto = ajustar_threshold_por_densidade(0.3, densidade)
+    threshold_medio = ajustar_threshold_por_densidade(0.2, densidade)
+    threshold_baixo = ajustar_threshold_por_densidade(0.1, densidade)
+
+    if proporcao >= threshold_alto:
         penalidade = 15
         report["score"] -= penalidade
         report["msgs"].append(
@@ -813,10 +811,9 @@ def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico
         report["metricas"]["pares_raros"] = {
             "count": n_pares_raros,
             "proporcao": round(proporcao, 3),
-            "exemplos": pares_do_jogo[:3],  # Mostra até 3 exemplos
+            "exemplos": pares_do_jogo[:3],
         }
-    elif proporcao >= 0.2:
-        # Alguns pares raros - alerta moderado
+    elif proporcao >= threshold_medio:
         penalidade = 8
         report["score"] -= penalidade
         report["msgs"].append(
@@ -826,35 +823,22 @@ def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico
             "count": n_pares_raros,
             "proporcao": round(proporcao, 3),
         }
-    elif proporcao >= 0.1:
-        # Poucos pares raros - apenas informativo
+    elif proporcao >= threshold_baixo:
         report["msgs"].append(
             f"ℹ️ Contém {n_pares_raros} pares com baixa co-ocorrência histórica"
         )
 
 
 def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
-    """
-    Detecta se o jogo contém muitos pares POPULARES (que saem frequentemente juntos).
-
-    Filosofia: Pares muito frequentes são apostados por muita gente.
-    Se você ganhar com um jogo cheio de pares populares, provavelmente
-    dividirá o prêmio com muitas outras pessoas.
-
-    Esta análise complementa _analise_coocorrencia_rara:
-    - Pares raros → Combinação estatisticamente improvável
-    - Pares populares → Risco de divisão de prêmio
-    """
+    """Detecta se o jogo contém muitos pares POPULARES."""
     if df_historico is None or df_historico.empty or len(df_historico) < 50:
         return
 
-    # Pega os 50 pares mais frequentes (que mais saem juntos)
     pares_frequentes = get_pares_mais_frequentes(df_historico, config, top_n=50)
 
     if not pares_frequentes:
         return
 
-    # Cria set dos pares muito populares (razão > 1.3 = 30% acima do esperado)
     pares_populares = set()
     for item in pares_frequentes:
         if item["razao"] >= 1.3:
@@ -863,7 +847,6 @@ def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
     if not pares_populares:
         return
 
-    # Verifica quantos pares do jogo atual estão na lista de populares
     pares_do_jogo = []
     for i in range(len(numeros)):
         for j in range(i + 1, len(numeros)):
@@ -875,8 +858,12 @@ def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
     total_pares = len(numeros) * (len(numeros) - 1) // 2
     proporcao = n_pares_populares / total_pares if total_pares > 0 else 0
 
-    # Se mais de 30% dos pares são muito populares, alertar sobre divisão
-    if proporcao >= 0.3:
+    # Ajusta threshold por densidade
+    densidade = config.density
+    threshold_alto = ajustar_threshold_por_densidade(0.3, densidade)
+    threshold_medio = ajustar_threshold_por_densidade(0.2, densidade)
+
+    if proporcao >= threshold_alto:
         report["msgs"].append(
             f"💸 Risco de divisão: {n_pares_populares} pares muito populares "
             f"({proporcao*100:.0f}% dos pares)"
@@ -886,10 +873,9 @@ def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
             "proporcao": round(proporcao, 3),
             "exemplos": pares_do_jogo[:3],
         }
-        # Aumenta risco de divisão mas não penaliza score técnico
         if report.get("risco_divisao") != "ALTO":
             report["risco_divisao"] = "Médio"
-    elif proporcao >= 0.2:
+    elif proporcao >= threshold_medio:
         report["msgs"].append(
             f"ℹ️ Alguns pares populares: {n_pares_populares} pares frequentes no histórico"
         )
@@ -900,11 +886,7 @@ def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
 
 
 def _analise_estrutural(report: dict, numeros: list[int], config: GameConfig) -> None:
-    """
-    Análise estrutural consolidada: span, gaps, motifs, simetria.
-
-    Otimizada para calcular métricas relacionadas em conjunto.
-    """
+    """Análise estrutural consolidada: span, gaps, motifs, simetria."""
     # 1. Min-gap e Span (calculados juntos para otimização)
     metricas_gaps = calcular_min_gap_e_span(numeros, config)
     if "erro" in metricas_gaps:
@@ -914,19 +896,25 @@ def _analise_estrutural(report: dict, numeros: list[int], config: GameConfig) ->
     report["metricas"]["span"] = metricas_gaps["span"]
     report["metricas"]["span_relativo"] = metricas_gaps["span_relativo"]
 
-    # Penalidade por span extremo
+    # Penalidade por span extremo (ajustado por densidade)
+    densidade = config.density
     span_esperado = config.n_numbers * (len(numeros) - 1) / (len(numeros) + 1)
-    if metricas_gaps["span"] < span_esperado * 0.4:
+
+    threshold_baixo = ajustar_threshold_por_densidade(0.4, densidade)
+    threshold_medio = ajustar_threshold_por_densidade(0.6, densidade)
+    threshold_alto = ajustar_threshold_por_densidade(1.4, densidade)
+
+    if metricas_gaps["span"] < span_esperado * threshold_baixo:
         report["score"] -= 15
         report["msgs"].append(
             f"❌ Span muito baixo ({metricas_gaps['span']}): números muito concentrados"
         )
-    elif metricas_gaps["span"] < span_esperado * 0.6:
+    elif metricas_gaps["span"] < span_esperado * threshold_medio:
         report["score"] -= 8
         report["msgs"].append(
             f"⚠️ Span baixo ({metricas_gaps['span']}): possível concentração"
         )
-    elif metricas_gaps["span"] > span_esperado * 1.4:
+    elif metricas_gaps["span"] > span_esperado * threshold_alto:
         report["msgs"].append(
             f"ℹ️ Span alto ({metricas_gaps['span']}): boa cobertura do volante"
         )
@@ -982,6 +970,46 @@ def _analise_entropia_faixas(
     report["metricas"]["faixas_vazias"] = entropia_faixas["faixas_vazias"]
 
 
+def _analise_padroes_avancados(
+    report: dict, numeros: list[int], config: GameConfig
+) -> None:
+    """
+    Análise completa de padrões avançados.
+
+    Detecta:
+    - PA com qualquer razão
+    - Sequências longas
+    - Diagonais no volante
+    - Bordas extremas
+    """
+    if not PATTERNS_AVAILABLE:
+        return
+
+    try:
+        resultado = analise_completa_padroes(numeros, config)
+
+        # Aplica penalidade total
+        if resultado["penalidade_total"] > 0:
+            report["score"] -= resultado["penalidade_total"]
+
+        # Adiciona conclusões
+        report["msgs"].extend(resultado["conclusoes"])
+
+        # Salva detalhes
+        report["metricas"]["padroes_avancados"] = {
+            "padroes_detectados": resultado["padroes_detectados"],
+            "penalidade_total": resultado["penalidade_total"],
+            "detalhes": resultado["detalhes"],
+        }
+
+        # Se detectou múltiplos padrões graves, marca risco alto
+        if resultado["padroes_detectados"] >= 2:
+            report["risco_divisao"] = "ALTO"
+
+    except Exception as e:
+        logger.error(f"Erro na análise de padrões avançados: {e}")
+
+
 # ===== FUNÇÃO PRINCIPAL =====
 
 
@@ -996,9 +1024,17 @@ def validar_jogo(
 ):
     """
     Validador genérico para qualquer jogo.
-    Usa análises estatísticas avançadas.
+    Usa análises estatísticas avançadas com correção de Bonferroni.
+
+    Versão 2.0 - Melhorias:
+    - Correção de Bonferroni (α = 0.0033)
+    - Ajustes por densidade em todas as análises
+    - Detecção de PA genérica (qualquer razão)
+    - Padrões avançados (sequências longas, diagonais, bordas)
+    - Validação de regressão à média
     """
     logger.debug(f"🔍 [VALIDATOR] Validando jogo {numeros} ({config.name})")
+
     report = {
         "score": 100,
         "msgs": [],
@@ -1009,18 +1045,6 @@ def validar_jogo(
         "metricas": {},
     }
 
-    if report["ja_saiu"]:
-        logger.warning(f"⚠️ [VALIDATOR] Jogo JÁ SAIU: {numeros}")
-
-    if report["score"] < 50:
-        logger.info(f"⚠️ [VALIDATOR] Score baixo ({report['score']}): {numeros}")
-
-    logger.debug(
-        f"✅ [VALIDATOR] Resultado: score={report['score']}, "
-        f"geom={report['metricas'].get('score_geom', 'N/A')}, "
-        f"risco={report['risco_divisao']}"
-    )
-
     # 1. Verificação de histórico
     if historico_jogos:
         if len(numeros) == config.k:
@@ -1028,47 +1052,70 @@ def validar_jogo(
             if jogo_tuple in historico_jogos:
                 report["ja_saiu"] = True
 
-    # 2. Análises técnicas
+    # ============================================
+    # 2. ANÁLISES TÉCNICAS BÁSICAS
+    # ============================================
     _analise_tecnica(report, numeros, config, ic_info)
     _analise_entropia(report, numeros, config)
     _analise_popularidade(report, numeros, config)
+    _analise_numeros_sortudos(report, numeros, config)
     _analise_distribuicao_espacial(report, numeros, config)
+
+    # ============================================
+    # 3. ANÁLISE GEOMÉTRICA (COM BONFERRONI)
+    # ============================================
     _analise_geometrica(report, numeros, config, distribuicoes_geometricas)
 
+    # ============================================
+    # 4. ANÁLISES MATEMÁTICAS
+    # ============================================
     _analise_primos(report, numeros, config)
+    _analise_multiplos(report, numeros, config)
+    _analise_quase_reta(report, numeros, config)
 
-    # Análises avançadas (Hamming, Quadrantes, Regressão)
+    # ============================================
+    # 5. ANÁLISES AVANÇADAS (Hamming, Quadrantes, Regressão)
+    # ============================================
     _analises_avancadas(report, numeros, config, df_historico, stats_quadrantes)
 
-    # Análise de co-ocorrência rara (evita pares que historicamente não saem juntos)
+    # ============================================
+    # 6. ANÁLISE DE CO-OCORRÊNCIA
+    # ============================================
     _analise_coocorrencia_rara(report, numeros, config, df_historico)
-
-    # Análise de pares populares (alerta sobre risco de divisão de prêmio)
     _analise_pares_populares(report, numeros, config, df_historico)
 
-    # Análises estruturais avançadas (span, gaps, motifs, simetria)
+    # ============================================
+    # 7. ANÁLISES ESTRUTURAIS
+    # ============================================
     _analise_estrutural(report, numeros, config)
-
-    # Análise de order statistics (posições esperadas)
     _analise_order_statistics(report, numeros, config)
-
-    # Análise de entropia por faixas
     _analise_entropia_faixas(report, numeros, config)
 
-    # === NOVAS ANÁLISES (Issue #10) ===
-    _analise_multiplos(report, numeros, config)  # NOVO - Fase 1
-    _analise_quase_reta(report, numeros, config)  # NOVO - Fase 1
-    _aplicar_raridade_conjunta(report, config)  # NOVO - Fase 2
+    # ============================================
+    # 8. PADRÕES AVANÇADOS (NOVO)
+    # ============================================
+    _analise_padroes_avancados(report, numeros, config)
 
-    # Calcula índice de compressibilidade (Fase 2)
+    # ============================================
+    # 9. RARIDADE CONJUNTA (Fase 2)
+    # ============================================
+    _aplicar_raridade_conjunta(report, config)
+
+    # ============================================
+    # 10. ÍNDICE DE COMPRESSIBILIDADE (Fase 2)
+    # ============================================
     compressibilidade = calcular_indice_compressibilidade(report, config)
     report["metricas"]["compressibilidade"] = compressibilidade
 
-    # 3. Calcula score técnico
+    # ============================================
+    # 11. CALCULA SCORE TÉCNICO FINAL
+    # ============================================
     score_tecnico = max(0, min(100, report["score"]))
     report["score_original"] = score_tecnico
 
-    # 4. Métricas adicionais
+    # ============================================
+    # 12. MÉTRICAS ADICIONAIS
+    # ============================================
     report["metricas"].update(
         {
             "soma": sum(numeros),
@@ -1081,7 +1128,9 @@ def validar_jogo(
         }
     )
 
-    # 5. Penalidade final
+    # ============================================
+    # 13. PENALIDADE FINAL E STATUS
+    # ============================================
     if report["ja_saiu"]:
         report["score"] = 0
         report["status"] = "⛔ Já Saiu"
@@ -1099,5 +1148,19 @@ def validar_jogo(
             report["status"] = "⚠️ Razoável"
         else:
             report["status"] = "🗑️ Fraco"
+
+    # Logging final
+    if report["ja_saiu"]:
+        logger.warning(f"⚠️ [VALIDATOR] Jogo JÁ SAIU: {numeros}")
+
+    if report["score"] < 50:
+        logger.info(f"⚠️ [VALIDATOR] Score baixo ({report['score']}): {numeros}")
+
+    logger.debug(
+        f"✅ [VALIDATOR] Resultado: score={report['score']}, "
+        f"geom={report['metricas'].get('score_geom', 'N/A')}, "
+        f"risco={report['risco_divisao']}, "
+        f"padrões_avançados={report['metricas'].get('padroes_avancados', {}).get('padroes_detectados', 0)}"
+    )
 
     return report

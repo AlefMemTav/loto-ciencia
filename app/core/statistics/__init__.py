@@ -107,6 +107,22 @@ from app.core.statistics.clustering import (
     encontrar_numero_otimo_clusters,
 )
 
+# Backtest
+from app.core.statistics.backtest import (
+    backtest_validator,
+    comparar_estrategias_gerador,
+    validar_regressao_media,
+)
+
+# Padrões avançados
+from app.core.statistics.patterns import (
+    detectar_progressao_aritmetica_geral,
+    detectar_sequencias_longas,
+    detectar_diagonal_volante,
+    detectar_bordas_extremas,
+    analise_completa_padroes,
+)
+
 __all__ = [
     # basic
     "compute_zscore",
@@ -192,4 +208,14 @@ __all__ = [
     "clusterizar_jogos_kmeans",
     "clusterizar_jogos_dbscan",
     "encontrar_numero_otimo_clusters",
+    # Backtest
+    "backtest_validator",
+    "comparar_estrategias_gerador",
+    "validar_regressao_media",
+    # Patterns
+    "detectar_progressao_aritmetica_geral",
+    "detectar_sequencias_longas",
+    "detectar_diagonal_volante",
+    "detectar_bordas_extremas",
+    "analise_completa_padroes",
 ]

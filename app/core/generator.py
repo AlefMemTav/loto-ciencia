@@ -4,7 +4,10 @@ import random
 import time
 from math import comb
 from itertools import combinations
-from app.core.statistics import calcular_distribuicoes_geometricas
+from app.core.statistics import (
+    calcular_distribuicoes_geometricas,
+    calcular_taxa_regressao,
+)
 from app.core.validator import validar_jogo
 from app.core.lottery import GameConfig
 from app.core.logger import logger
@@ -15,6 +18,48 @@ from app.core.statistics import (
 )
 
 
+# ============================================
+# MÉTRICAS DE PERFORMANCE
+# ============================================
+_performance_stats = {
+    "total_geracoes": 0,
+    "tentativas_acumuladas": 0,
+    "early_stop_count": 0,
+    "fallback_count": 0,
+    "tempo_total_ms": 0,
+}
+
+
+def _registrar_performance(tentativas: int, tempo_ms: float, early_stop: bool):
+    """Registra métricas de performance do gerador."""
+    global _performance_stats
+    _performance_stats["total_geracoes"] += 1
+    _performance_stats["tentativas_acumuladas"] += tentativas
+    _performance_stats["tempo_total_ms"] += tempo_ms
+    if early_stop:
+        _performance_stats["early_stop_count"] += 1
+    else:
+        _performance_stats["fallback_count"] += 1
+
+
+def get_performance_stats() -> dict:
+    """Retorna estatísticas de performance acumuladas."""
+    if _performance_stats["total_geracoes"] == 0:
+        return {"erro": "Nenhuma geração registrada"}
+
+    return {
+        "total_geracoes": _performance_stats["total_geracoes"],
+        "tentativas_media": _performance_stats["tentativas_acumuladas"]
+        / _performance_stats["total_geracoes"],
+        "tempo_medio_ms": _performance_stats["tempo_total_ms"]
+        / _performance_stats["total_geracoes"],
+        "taxa_early_stop": _performance_stats["early_stop_count"]
+        / _performance_stats["total_geracoes"],
+        "taxa_fallback": _performance_stats["fallback_count"]
+        / _performance_stats["total_geracoes"],
+    }
+
+
 def gerar_jogo_perfeito(
     df,
     config: GameConfig,
@@ -23,16 +68,16 @@ def gerar_jogo_perfeito(
     contexto_precomputado=None,
 ):
     """
-    Gerador genérico para qualquer jogo (Mega-Sena, Quina, Lotofácil).
+    Gerador genérico para qualquer jogo (MEGASENA, QUINA, LOTOFACIL, LOTOMANIA).
 
     Args:
         df: DataFrame com histórico
-        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
+        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL, LOTOMANIA)
         finais_poisson: Lista de dígitos finais atrasados (não usado)
         estrategia: 'balanceada', 'conservadora', 'agressiva', 'pura'
 
     Returns:
-        Lista com k números ordenados (6 para Mega, 5 para Quina, 15 para Lotofácil)
+        Lista com k números ordenados (6 para MEGASENA, 5 para QUINA, 15 para LOTOFACIL, 50 para LOTOMANIA)
     """
 
     start_time = time.time()
@@ -42,6 +87,7 @@ def gerar_jogo_perfeito(
         historico_jogos = contexto_precomputado["historico_jogos"]
         ic_info = contexto_precomputado["ic_info"]
         distribuicoes_geometricas = contexto_precomputado["distribuicoes_geometricas"]
+        taxa_regressao = contexto_precomputado.get("taxa_regressao")
     else:
         logger.warning(f"⚠️ [GENERATOR] Contexto não fornecido, recalculando (LENTO)")
         tabela = get_tabela_inteligencia(df, config)
@@ -54,10 +100,11 @@ def gerar_jogo_perfeito(
             df, grupos_geometricos, config
         )
 
-    # 1. Busca dados
-    tabela = get_tabela_inteligencia(df, config)
-    historico = get_historico_jogos(df, config)
-    ic_info = analise_intervalo_confianca(df, config)
+        # Calcula regressão se houver dados suficientes
+        taxa_regressao = None
+        if len(df) >= 150:
+            taxa_regressao = calcular_taxa_regressao(df, config, janela=100)
+
     tamanho_aposta = config.bet_size
 
     if tabela.empty:
@@ -66,23 +113,62 @@ def gerar_jogo_perfeito(
 
     numeros_disponiveis = tabela.index.tolist()  # [1, 2, ..., N]
 
-    # 2. Seleciona pesos
-    if estrategia == "conservadora":
-        pesos_raw = tabela["Z_Freq"] * 0.70 + tabela["Z_Gap"] * 0.30
-    elif estrategia == "agressiva":
-        pesos_raw = tabela["Z_Freq"] * 0.20 + tabela["Z_Gap"] * 0.80
-    elif estrategia == "pura":
+    # ============================================
+    # Ajuste dinâmico de pesos baseado em regressão
+    # ============================================
+    if estrategia == "pura":
+        # Estratégia pura: sem viés
         pesos_raw = [1.0] * config.n_numbers
+        peso_gap_usado = 0.0
     else:
-        pesos_raw = tabela["Peso_Geracao"]
+        # Determina peso de gaps baseado em evidência empírica
+        if (
+            taxa_regressao
+            and taxa_regressao["correlacao"] > 0.3
+            and taxa_regressao["p_value"] < 0.05
+        ):
+            # Regressão FORTE validada: atrasos importam
+            logger.debug(
+                f"✅ Regressão validada (ρ={taxa_regressao['correlacao']:.2f})"
+            )
 
-    if estrategia != "pura":
+            if estrategia == "agressiva":
+                peso_gap = 0.80
+            elif estrategia == "conservadora":
+                peso_gap = 0.50
+            else:  # balanceada
+                peso_gap = 0.65
+
+        elif taxa_regressao and taxa_regressao["correlacao"] > 0.1:
+            # Regressão MODERADA: reduz peso de gaps
+            logger.debug(f"⚠️ Regressão moderada (ρ={taxa_regressao['correlacao']:.2f})")
+
+            if estrategia == "agressiva":
+                peso_gap = 0.60
+            elif estrategia == "conservadora":
+                peso_gap = 0.40
+            else:  # balanceada
+                peso_gap = 0.50
+
+        else:
+            # SEM evidência de regressão: ignora atrasos (anti-falácia do apostador)
+            logger.debug(f"❌ Sem evidência de regressão, ignorando atrasos")
+
+            if estrategia == "agressiva":
+                peso_gap = 0.30  # Reduzido drasticamente
+            elif estrategia == "conservadora":
+                peso_gap = 0.70  # Inverte: prioriza frequência
+            else:  # balanceada
+                peso_gap = 0.20  # Quase ignora gaps
+
+        peso_gap_usado = peso_gap
+        pesos_raw = tabela["Z_Freq"] * (1 - peso_gap) + tabela["Z_Gap"] * peso_gap
         pesos = pesos_raw - pesos_raw.min() + 0.01
         pesos = pesos.tolist()
-    else:
-        pesos = pesos_raw
 
-    # 3. Loop de geração
+    # ============================================
+    # Loop de geração
+    # ============================================
     tentativas = 0
     melhor_jogo = None
     melhor_score = -1
@@ -102,11 +188,11 @@ def gerar_jogo_perfeito(
 
         jogo = sorted(list(pre_jogo))
 
-        # 4. Validação
+        # Validação
         val = validar_jogo(
             jogo,
             config,
-            historico_jogos=historico,
+            historico_jogos=historico_jogos,
             ic_info=ic_info,
             df_historico=df,
             distribuicoes_geometricas=distribuicoes_geometricas,
@@ -126,31 +212,33 @@ def gerar_jogo_perfeito(
             melhor_score = score_final
             melhor_jogo = jogo.copy()
 
-        # Early stopping com limites dinâmicos baseados em estatística
-        # Critérios:
-        # 1. Score técnico >= target excellent (85 para Mega, 70 para Lotofácil, etc)
-        # 2. Score geométrico >= 50 (significa que não há padrões extremos)
-        #    Nota: 50 é um limiar conservador - padrões "Normais" ficam 70-100
-
-        score_geom_minimo = 50  # Limiar baseado na nova análise estatística
+        # Early stopping com limites dinâmicos
+        score_geom_minimo = 50
 
         if val["score"] >= config.target_score_excellent and (
             score_geom is None or score_geom >= score_geom_minimo
         ):
-            # Log de sucesso (Performance)
-            duration = time.time() - start_time
+            duration = (time.time() - start_time) * 1000
+            _registrar_performance(tentativas, duration, early_stop=True)
+
             logger.info(
-                f"[{config.name}] Jogo encontrado em {tentativas} tentativas ({duration:.3f}s). "
-                f"Score: {val['score']}, Geom: {score_geom}"
+                f"[{config.name}] Jogo encontrado em {tentativas} tentativas ({duration:.1f}ms). "
+                f"Score: {val['score']}, Geom: {score_geom}, Peso Gap: {peso_gap_usado:.2f}"
             )
             return jogo
 
         # Fallback adaptativo
         if tentativas == 5000 and melhor_score >= config.target_score_accept:
+            duration = (time.time() - start_time) * 1000
+            _registrar_performance(tentativas, duration, early_stop=False)
+
             logger.info(
-                f"[{config.name}] Fallback acionado em 5000 tentativas. Melhor Score: {melhor_score}"
+                f"[{config.name}] Fallback acionado em 5000 tentativas. Melhor Score: {melhor_score:.1f}"
             )
             return melhor_jogo
+
+    duration = (time.time() - start_time) * 1000
+    _registrar_performance(tentativas, duration, early_stop=False)
 
     logger.warning(
         f"[{config.name}] Limite de 10k tentativas atingido. Retornando melhor esforço (Score {melhor_score})."
@@ -195,8 +283,8 @@ def gerar_multiplos_jogos(
     tentativas = 0
     max_tentativas = quantidade * 100
 
-    # Se o universo for pequeno (Lotofácil) ou o jogo muito denso, aumentamos a tolerância
-    if config.n_numbers <= 25:  # Lotofácil
+    # Se o universo for pequeno (LOTOFACIL) ou o jogo muito denso, aumentamos a tolerância
+    if config.n_numbers <= 25:  # LOTOFACIL
         fator_diversidade = 0.85  # Permite até 12 números iguais (15 * 0.85 = 12.7)
     else:
         fator_diversidade = 0.70  # Padrão para Mega/Quina

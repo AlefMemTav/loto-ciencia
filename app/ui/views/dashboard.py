@@ -13,6 +13,7 @@ def render_dashboard(ctx, svc):
     atrasos = ctx.atrasos
     chi2 = ctx.chi2
     coef_variacao = ctx.coef_variacao
+    regressao = ctx.taxa_regressao
     reis_sequencia = ctx.reis_sequencia
     tabela = ctx.tabela
     ic_info = ctx.ic_info
@@ -142,7 +143,7 @@ def render_dashboard(ctx, svc):
         else:
             st.info("Dados insuficientes para calcular o CV.")
 
-    _render_regression_analysis(config, svc)
+    _render_regression_analysis(config, ctx)
 
     # 7. Tabela Científica (Escondida para curiosos)
     _render_z_score_gaps_section(tabela)
@@ -512,13 +513,14 @@ def _render_probability_report(conjuntos, config, svc, ctx):
         )
 
 
-def _render_regression_analysis(config, svc):
+def _render_regression_analysis(config, ctx):
     """
     Exibe análise de regressão à média validando a estratégia "agressiva".
     """
 
     with st.expander("📈 Validação: Regressão à Média Funciona?", expanded=False):
-        regressao = svc.analyze_regression(config.slug, janela=100)
+
+        regressao = ctx.taxa_regressao
         if not regressao:
             st.info("Dados insuficientes.")
             return

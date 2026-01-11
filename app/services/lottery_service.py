@@ -48,6 +48,7 @@ class GameContext:
     reis_sequencia: List[int]
     distribuicoes_geometricas: Any
     stats_quadrantes: Any
+    taxa_regressao: Optional[dict] = None
 
 
 class LotteryService:
@@ -93,6 +94,9 @@ class LotteryService:
         coef_variacao = calcular_coeficiente_variacao(df, config)
         reis_sequencia = get_reis_da_sequencia(df, config)
 
+        # Adicionado: taxa de regressão padrão (janela=100)
+        taxa_regressao = calcular_taxa_regressao(df, config, janela=100)
+
         logger.info(f"✅ [CACHE] {slug}: contexto carregado ({len(df)} sorteios)")
 
         return GameContext(
@@ -109,6 +113,7 @@ class LotteryService:
             reis_sequencia=reis_sequencia,
             distribuicoes_geometricas=distribuicoes,
             stats_quadrantes=quadrantes,
+            taxa_regressao=taxa_regressao,
         )
 
     def _build_empty_context(self, config, df):
@@ -126,6 +131,7 @@ class LotteryService:
             reis_sequencia=[],
             distribuicoes_geometricas={},
             stats_quadrantes={},
+            taxa_regressao=None,
         )
 
     def validate(self, slug: str, numbers: List[int]) -> dict:
