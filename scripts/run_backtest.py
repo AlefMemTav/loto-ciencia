@@ -94,7 +94,9 @@ def main():
         # Salva resultado parcial
         output_dir = Path("backtest_results")
         output_dir.mkdir(exist_ok=True)
-        output_file = output_dir / f"v1_{data_str}_restante.json"
+        output_file = (
+            output_dir / f"v1_{data_str}_{args.jogo}_{args.amostras}_amostras.json"
+        )
 
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(

@@ -1,0 +1,49 @@
+{
+  "jogo": "Quina",
+  "slug": "quina_sorteio",
+  "config": {
+    "bet_size": 5,
+    "n_numbers": 80,
+    "density": 0.0625
+  },
+  "data": "20260112",
+  "total_sorteios": 6918,
+  "consecutivos": {
+    "media": 9.377186641607633,
+    "mediana": 10.0,
+    "std": 1.0590517089707245,
+    "min": 4,
+    "max": 10,
+    "q25": 8.0,
+    "q50": 10.0,
+    "q75": 10.0,
+    "q90": 10.0,
+    "q95": 10.0
+  },
+  "minimos": {
+    "media": 4.142690739662202,
+    "mediana": 4.0,
+    "std": 0.8244977708972355,
+    "min": 0,
+    "max": 8,
+    "q25": 4.0,
+    "q50": 4.0,
+    "q75": 4.0,
+    "q90": 6.0,
+    "q95": 6.0
+  },
+  "aleatorios": {
+    "media": 3.796,
+    "mediana": 4.0,
+    "std": 0.6059028275828937,
+    "min": 2,
+    "max": 4,
+    "q25": 4.0,
+    "q50": 4.0,
+    "q75": 4.0,
+    "q90": 4.0,
+    "q95": 4.0
+  },
+  "diferenca_alea_vs_real": -0.3466907396622019,
+  "hamming_backtest": null
+}
