@@ -57,13 +57,18 @@ def main():
 
     # Extrai todos os jogos históricos
     jogos = []
+    if config.slug == "loto_mania_sorteio":
+        n_bolas = config.k  # 20 bolas sorteadas
+    else:
+        n_bolas = config.bet_size
+
     for _, row in df.iterrows():
         jogo = []
-        for i in range(1, bet_size + 1):  # ← Usa bet_size!
+        for i in range(1, n_bolas + 1):
             col_name = f"D{i}"
             if col_name in row and pd.notna(row[col_name]):
                 jogo.append(int(row[col_name]))
-        if len(jogo) == bet_size:
+        if len(jogo) == n_bolas:
             jogos.append(sorted(jogo))
 
     print(f"📊 Total de sorteios analisados: {len(jogos)}\n")
