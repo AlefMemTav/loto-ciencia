@@ -119,6 +119,7 @@ def gerar_jogo_perfeito(
     if estrategia == "pura":
         # Estratégia pura: sem viés
         pesos_raw = [1.0] * config.n_numbers
+        pesos = pesos_raw
         peso_gap_usado = 0.0
     else:
         # Determina peso de gaps baseado em evidência empírica
@@ -171,6 +172,7 @@ def gerar_jogo_perfeito(
     # ============================================
     tentativas = 0
     melhor_jogo = None
+    pesos = None
     melhor_score = -1
 
     while tentativas < 10000:
@@ -314,7 +316,6 @@ def gerar_multiplos_jogos(
                 if comum > max_comum:
                     sobrepoe_muito = True
                     break
-
             if sobrepoe_muito:
                 continue
 

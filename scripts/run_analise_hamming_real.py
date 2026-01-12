@@ -60,13 +60,20 @@ def main():
     for _, row in df.iterrows():
         jogo = []
         for i in range(1, bet_size + 1):  # ← Usa bet_size!
-            col_name = f"bola{i}"
+            col_name = f"D{i}"
             if col_name in row and pd.notna(row[col_name]):
                 jogo.append(int(row[col_name]))
         if len(jogo) == bet_size:
             jogos.append(sorted(jogo))
 
     print(f"📊 Total de sorteios analisados: {len(jogos)}\n")
+
+    if len(jogos) == 0:
+        print(
+            "❌ ERRO: Nenhum sorteio histórico foi carregado. Verifique o arquivo de dados e o mapeamento de colunas."
+        )
+        print("⚠️ Encerrando análise. Nenhuma estatística será gerada.")
+        return
 
     if len(jogos) < 100:
         print(
@@ -301,7 +308,7 @@ def main():
     # Salva JSON
     output_dir = Path("backtest_results")
     output_dir.mkdir(exist_ok=True)
-    output_file = output_dir / f"{args.jogo}_hamming_analysis.json"
+    output_file = output_dir / f"v1_{data_str}_{args.jogo}_hamming_analysis.json"
 
     resultado_json = {
         "jogo": config.name,
