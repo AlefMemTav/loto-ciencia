@@ -2,7 +2,5 @@
 from app.ui.core.shell import init_page
 from app.ui.views.generator import render_generator
 
-ctx, svc = init_page(
-    title="Gerador Inteligente", require_auth=True, resource_usage="generator"
-)
+ctx, svc = init_page(title="Gerador Inteligente")
 render_generator(ctx, svc)

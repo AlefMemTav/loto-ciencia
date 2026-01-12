@@ -1,5 +1,5 @@
 # app/api/routers/auth.py
-from fastapi import APIRouter, HTTPException, Response, Request, Depends
+from fastapi import APIRouter, HTTPException, Query, Response, Request, Depends
 from datetime import datetime
 
 # Novos Imports
@@ -14,6 +14,13 @@ from app.core.security import (
 from app.services.auth_service import auth_service
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+SERVER_LIMITS = {
+    "validator": 3,
+    "generator": 1,
+    "closures": 0,
+    "bolao": 0,
+}
 
 
 # Dependency para pegar usuário do cookie
@@ -83,43 +90,71 @@ def get_profile(user: dict = Depends(get_current_user)):
     }
 
 
-@router.post("/check-rate-limit/{resource}", response_model=RateLimitCheck)
-def check_rate_limit(resource: str, user: dict = Depends(get_current_user)):
-    if resource not in ["validator", "generator"]:
+@router.get("/check_limit", response_model=RateLimitCheck)
+def check_rate_limit(
+    resource: str = Query(
+        ..., description="Recurso a verificar (validator, generator)"
+    ),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Verifica limites e retorna contagem atual.
+    Usado pela UI para mostrar 'X de Y usos restantes'.
+    """
+    if resource not in SERVER_LIMITS:
         raise HTTPException(400, "Recurso inválido")
 
+    # 1. Usuário PRO: Ilimitado
     if user["plan"] == "pro":
         return {
             "allowed": True,
             "message": "✅ PRO: Ilimitado",
-            "remaining_today": None,
+            "usage": 0,  # Uso não conta para Pro
         }
 
-    allowed = auth_service.check_usage(user["sub"], resource)
-    if allowed:
-        return {
-            "allowed": True,
-            "message": "✅ 1 uso disponível (Free)",
-            "remaining_today": 1,
-        }
+    # 2. Usuário Free
+    limit = SERVER_LIMITS[resource]
+
+    # Se limite é 0, é feature exclusiva Pro
+    if limit == 0:
+        return {"allowed": False, "message": "👑 Recurso exclusivo PRO", "usage": 0}
+
+    # Busca quantos usos ele já fez hoje
+    # (Precisamos adicionar esse método no AuthService, veja abaixo)
+    usage_count = auth_service.get_usage_count(user["sub"], resource)
+
+    is_allowed = usage_count < limit
 
     return {
-        "allowed": False,
-        "message": "⛔ Limite diário atingido",
-        "remaining_today": 0,
+        "allowed": is_allowed,
+        "message": "✅ Uso autorizado" if is_allowed else "⛔ Limite diário atingido",
+        "usage": usage_count,
+        "limit": limit,
     }
 
 
 @router.post("/use-resource/{resource}", response_model=RateLimitCheck)
 def use_resource(resource: str, user: dict = Depends(get_current_user)):
-    if resource not in ["validator", "generator"]:
+    if resource not in SERVER_LIMITS:
         raise HTTPException(400, "Recurso inválido")
 
+    # Se for PRO, retorna padrão
     if user["plan"] == "pro":
-        return {"allowed": True, "message": "✅ PRO: Ilimitado"}
+        return {"allowed": True, "message": "✅ PRO: Ilimitado", "usage": 0, "limit": 0}
 
+    # 1. Registra o uso no banco
     auth_service.register_usage(user["sub"], resource)
-    return {"allowed": True, "message": "✅ Uso registrado", "remaining_today": 0}
+
+    # 2. Busca os dados atualizados para retornar ao frontend
+    usage_count = auth_service.get_usage_count(user["sub"], resource)
+    limit = SERVER_LIMITS[resource]
+
+    return {
+        "allowed": True,
+        "message": "✅ Uso registrado",
+        "usage": usage_count,  # Retorna o valor novo (ex: 1)
+        "limit": limit,  # Retorna o limite (ex: 3)
+    }
 
 
 # Rota de Upgrade

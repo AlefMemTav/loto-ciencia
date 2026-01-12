@@ -10,6 +10,9 @@ DB_PATH.parent.mkdir(exist_ok=True)
 
 
 class AuthService:
+
+    LIMITS = {"validator": 3, "generator": 1}
+
     def _get_conn(self):
         conn = sqlite3.connect(str(DB_PATH))
         conn.row_factory = sqlite3.Row
@@ -104,52 +107,66 @@ class AuthService:
         if not user:
             return False
 
+        # Se for PRO, libera tudo
+        if user["plan"] == "pro":
+            return True
+
         today = datetime.now().date().isoformat()
         last_used = user.get(f"{resource}_last_used")
+        count_today = user.get(f"{resource}_count_today", 0)
 
-        # Se for Pro ou não usou hoje
-        return user["plan"] == "pro" or last_used != today
+        # Se a data for diferente de hoje, reseta mentalmente (liberado)
+        if last_used != today:
+            return True
+
+        # Se for hoje, verifica se o contador é menor que o limite
+        limit = self.LIMITS.get(resource, 1)
+        return count_today < limit
+
+    def get_usage_count(self, email: str, resource: str) -> int:
+        """Retorna quantas vezes o recurso foi usado hoje"""
+        conn = self._get_conn()
+        cursor = conn.cursor()
+        today = datetime.now().date().isoformat()
+
+        cursor.execute(
+            f"SELECT {resource}_last_used, {resource}_count_today FROM users WHERE email = ?",
+            (email,),
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        if row and row[0] == today:
+            return row[1]  # Retorna a contagem atual (ex: 1, 2...)
+
+        return 0  # Se data diferente ou null, uso é 0
 
     def register_usage(self, email: str, resource: str):
         conn = self._get_conn()
         cursor = conn.cursor()
-        today = datetime.now().date().isoformat()
+
+        # Busca estado atual para incrementar
         cursor.execute(
-            f"UPDATE users SET {resource}_last_used = ?, {resource}_count_today = 1 WHERE email = ?",
-            (today, email),
+            f"SELECT {resource}_last_used, {resource}_count_today FROM users WHERE email = ?",
+            (email,),
+        )
+        row = cursor.fetchone()
+
+        today = datetime.now().date().isoformat()
+
+        if row and row[0] == today:
+            # Já usou hoje: Incrementa +1
+            new_count = row[1] + 1
+        else:
+            # Primeiro uso do dia: Reseta para 1
+            new_count = 1
+
+        cursor.execute(
+            f"UPDATE users SET {resource}_last_used = ?, {resource}_count_today = ? WHERE email = ?",
+            (today, new_count, email),
         )
         conn.commit()
         conn.close()
-
-    # --- Guest Logic ---
-    def check_guest_usage(self, browser_id: str, resource: str) -> bool:
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        today = datetime.now().date().isoformat()
-        cursor.execute(
-            "SELECT * FROM guest_usage WHERE browser_id = ? AND resource = ? AND used_date = ?",
-            (browser_id, resource, today),
-        )
-        exists = cursor.fetchone()
-        conn.close()
-        return exists is None  # Se não existe, pode usar
-
-    def register_guest_usage(self, browser_id: str, resource: str) -> bool:
-        conn = self._get_conn()
-        cursor = conn.cursor()
-        today = datetime.now().date().isoformat()
-        try:
-            cursor.execute(
-                "INSERT INTO guest_usage (browser_id, resource, used_date) VALUES (?, ?, ?)",
-                (browser_id, resource, today),
-            )
-            conn.commit()
-            rows = cursor.rowcount
-            conn.close()
-            return rows > 0
-        except:
-            conn.close()
-            return False
 
 
 # Singleton

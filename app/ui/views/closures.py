@@ -1,6 +1,7 @@
 # app/ui/closures.py
 import streamlit as st
 from app.core.logger import logger
+from app.ui.services.auth_client import AUTHClient
 
 
 def render_closures(ctx, svc):
@@ -30,8 +31,13 @@ def render_closures(ctx, svc):
         "Seus números base:",
         placeholder=f"Ex: {placeholder_ex} ...",
     )
-
-    if st.button("⚙️ Calcular Fechamento", use_container_width=True):
+    can_use = AUTHClient.check_and_render_access("closures", "Fechamentos Matemáticos")
+    if st.button(
+        "⚙️ Calcular Fechamento",
+        use_container_width=True,
+        type="primary",
+        disabled=not can_use,
+    ):
         try:
             base = sorted(
                 list(

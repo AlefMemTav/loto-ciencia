@@ -7,12 +7,7 @@ from app.ui.core.styles import apply_custom_css
 def render_landing_page():
     """Landing page educacional com foco em conversão orgânica."""
     apply_custom_css()
-    st.markdown(
-        "<div style='padding-top:15px; font-weight:800; font-size:1.4rem; color:#0f172a;'>LotoScience</div>",
-        unsafe_allow_html=True,
-    )
 
-    st.markdown("---")
     # ========================================
     # HERO SECTION
     # ========================================

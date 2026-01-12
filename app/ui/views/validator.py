@@ -3,6 +3,7 @@ from datetime import date
 import streamlit as st
 import pandas as pd
 from app.core.logger import logger
+from app.services import auth_service
 from app.ui.views.board import render_volante_marcado
 from app.ui.services.auth_client import AUTHClient
 
@@ -23,19 +24,36 @@ def render_validator(ctx, svc):
     qtd_aposta = config.bet_size
     nums_exemplo = " ".join([f"{n:02d}" for n in range(4, 4 + qtd_aposta)])
 
+    # Input dos números
     entrada = st.text_input(
         f"Seus {qtd_aposta} números:",
         placeholder=f"Ex: {nums_exemplo}",
         help="Separe por espaço, vírgula ou traço.",
     )
 
-    if st.button("🔬 Analisar Qualidade", type="primary", use_container_width=True):
+    # Limpa o resultado anterior se o usuário mudar o texto
+    current_input_hash = hash(entrada)
+    if st.session_state.get("last_validator_input") != current_input_hash:
+        st.session_state.validator_result = None
+        st.session_state.last_validator_input = current_input_hash
+
+    # Verifica acesso e desenha o contador de limite
+    can_use = AUTHClient.check_and_render_access("validator", "Validador")
+
+    # Botão de Ação
+    if st.button(
+        "🔬 Analisar Qualidade",
+        type="primary",
+        use_container_width=True,
+        disabled=not can_use,
+    ):
         try:
             texto = entrada.replace(",", " ").replace("-", " ")
             nums = sorted(
                 list(set([int(n) for n in texto.split() if n.strip().isdigit()]))
             )
 
+            # Validações de Input
             if len(nums) != qtd_aposta:
                 st.warning(
                     f"⚠️ Precisamos de **exatamente {qtd_aposta} números** únicos (entre 1 e {config.n_numbers})."
@@ -50,140 +68,161 @@ def render_validator(ctx, svc):
 
             logger.info(f"[{config.name}] Validação manual solicitada para: {nums}")
 
+            # 1. Gera o relatório (Lógica Pesada)
             relatorio = svc.validate(slug, nums)
 
+            # 2. Marca o uso na API (se for Free)
             if AUTHClient.get_plan() != "pro":
-                today = date.today().isoformat()
-                if st.session_state.get("validator_marked_date") != today:
-                    success, msg = AUTHClient.mark_resource_used("validator")
-                    if success:
-                        st.session_state.validator_marked_date = today
-                        logger.info(
-                            f"✅ Validação marcada para {AUTHClient.get_plan()}"
-                        )
+                # Marca o uso e limpa o cache para o contador atualizar no rerun
+                AUTHClient.mark_resource_used("validator")
+                logger.info(f"✅ Validação marcada para {AUTHClient.get_plan()}")
 
-            logger.info(
-                f"[{config.name}] Resultado validação: Score {relatorio['score']} | Status: {relatorio['status']}"
-            )
+            # 3. Salva no Estado (Persistência)
+            st.session_state.validator_result = {
+                "relatorio": relatorio,
+                "nums": nums,
+                "config": config,  # Salva config para garantir consistência
+                "new": True,
+            }
 
-            # Cards de resultado
-            st.markdown("<br>", unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            score = relatorio["score"]
-            score_original = relatorio.get("score_original", 0)
-            ja_saiu = relatorio.get("ja_saiu", False)
-
-            if ja_saiu:
-                display_score = "0/100"
-                delta_msg = f"Score Técnico: {score_original}/100"
-                classe_css_delta = "status-off"
-                logger.warning(
-                    f"[{config.name}] Usuário validou um jogo que JÁ SAIU: {nums}"
-                )
-            else:
-                display_score = f"{score}/100"
-                if score >= 80:
-                    score_icon = "💎"
-                elif score >= 50:
-                    score_icon = "⚠️"
-                else:
-                    score_icon = "🗑️"
-                delta_msg = f"{score_icon} {relatorio['status']}"
-                classe_css_delta = "status-good" if score >= 80 else "status-warn"
-
-            with c1:
-                st.markdown(
-                    f"""
-                <div class="custom-metric-card">
-                    <div class="metric-label">Qualidade Técnica</div>
-                    <div class="metric-value">{display_score}</div>
-                    <div class="metric-delta {classe_css_delta}">
-                        {delta_msg}
-                    </div>
-                </div>
-                """,
-                    unsafe_allow_html=True,
-                )
-
-            risco = relatorio.get("risco_divisao", "Desconhecido")
-            risco_class = "status-good" if "Baixo" in risco else "status-bad"
-
-            with c2:
-                st.markdown(
-                    f"""
-                <div class="custom-metric-card">
-                    <div class="metric-label">Risco de Divisão</div>
-                    <div class="metric-value">{risco.split(' ')[0]}</div>
-                    <div class="metric-delta {risco_class}">{"Blindado" if "Baixo" in risco else "Risco Financeiro"}</div>
-                </div>
-                """,
-                    unsafe_allow_html=True,
-                )
-
-            st.markdown("<br>", unsafe_allow_html=True)
-
-            # Backtesting
-            _render_backtesting(config, nums, svc)
-
-            # Métricas
-            st.markdown("##### 📊 Métricas Técnicas")
-
-            metricas = relatorio.get("metricas", {})
-
-            # Renderiza métricas geométricas com nova estrutura
-            _render_geometric_metrics(metricas)
-
-            # Renderiza métricas avançadas (Hamming, Quadrantes)
-            _render_advanced_metrics(metricas)
-
-            col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
-
-            col_m1.metric("Soma", metricas.get("soma", 0))
-            col_m2.metric("Entropia", f"{metricas.get('entropia', 0):.2f}")
-            col_m3.metric("Gini", f"{metricas.get('gini', 0):.3f}")
-            col_m4.metric("Pares", metricas.get("pares", 0))
-            col_m5.metric("Sequências", metricas.get("sequencias", 0))
-
-            # Mensagens
-            st.markdown("##### 📝 Relatório do Analista")
-            for msg in relatorio["msgs"]:
-                if "❌" in msg:
-                    st.markdown(
-                        f"<span style='color:#ef4444; font-weight:600;'>{msg}</span>",
-                        unsafe_allow_html=True,
-                    )
-                elif "✅" in msg:
-                    st.caption(f"{msg}")
-                else:
-                    st.markdown(
-                        f"<span style='color:#f59e0b;'>{msg}</span>",
-                        unsafe_allow_html=True,
-                    )
-
-            # Volante visual
-            st.markdown("---")
-
-            col_volante, col_info = st.columns([1, 1])
-            with col_volante:
-                st.caption("Visualização Geométrica:")
-                render_volante_marcado(nums, config)
-            with col_info:
-                st.markdown("##### 💡 Dicas")
-                if score >= 80:
-                    st.success("✅ Jogo de alta qualidade estatística!")
-                elif score >= 60:
-                    st.info("ℹ️ Jogo aceitável, mas pode melhorar.")
-                else:
-                    st.warning("⚠️ Considere gerar um novo jogo.")
-
-                if "ALTO" in risco:
-                    st.error(
-                        "💸 Padrão muito popular. Se saísse, o prêmio seria dividido com muitos ganhadores."
-                    )
+            # 4. MICRO-REFRESH: Atualiza a tela imediatamente
+            st.rerun()
 
         except Exception as e:
             logger.error(f"Erro na validação manual: {e}", exc_info=True)
             st.error(f"Não entendi esses números. Tente digitar assim: {nums_exemplo}")
+
+    # --- RENDERIZAÇÃO DO RESULTADO (FORA DO BOTÃO) ---
+    # Verifica se há um resultado salvo na sessão e o exibe
+    if st.session_state.get("validator_result"):
+        res = st.session_state.validator_result
+        # Mostra mensagem de sucesso apenas se for novo
+        if res.get("new"):
+            st.success(
+                f"✅ Validação concluída! Seu jogo obteve score {res['relatorio']['score']}/100."
+            )
+            res["new"] = False
+        _render_validator_results(res["relatorio"], res["nums"], ctx, svc)
+
+
+def _render_validator_results(relatorio, nums, ctx, svc):
+    """Função auxiliar que desenha os resultados salvos no estado."""
+    config = ctx.config  # Usa config do contexto atual
+
+    logger.info(f"[{config.name}] Exibindo resultado: Score {relatorio['score']}")
+
+    # Cards de resultado
+    st.markdown("<br>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    score = relatorio["score"]
+    score_original = relatorio.get("score_original", 0)
+    ja_saiu = relatorio.get("ja_saiu", False)
+
+    if ja_saiu:
+        display_score = "0/100"
+        delta_msg = f"Score Técnico: {score_original}/100"
+        classe_css_delta = "status-off"
+        logger.warning(f"[{config.name}] Usuário validou um jogo que JÁ SAIU: {nums}")
+    else:
+        display_score = f"{score}/100"
+        if score >= 80:
+            score_icon = "💎"
+        elif score >= 50:
+            score_icon = "⚠️"
+        else:
+            score_icon = "🗑️"
+        delta_msg = f"{score_icon} {relatorio['status']}"
+        classe_css_delta = "status-good" if score >= 80 else "status-warn"
+
+    with c1:
+        st.markdown(
+            f"""
+        <div class="custom-metric-card">
+            <div class="metric-label">Qualidade Técnica</div>
+            <div class="metric-value">{display_score}</div>
+            <div class="metric-delta {classe_css_delta}">
+                {delta_msg}
+            </div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    risco = relatorio.get("risco_divisao", "Desconhecido")
+    risco_class = "status-good" if "Baixo" in risco else "status-bad"
+
+    with c2:
+        st.markdown(
+            f"""
+        <div class="custom-metric-card">
+            <div class="metric-label">Risco de Divisão</div>
+            <div class="metric-value">{risco.split(' ')[0]}</div>
+            <div class="metric-delta {risco_class}">{"Blindado" if "Baixo" in risco else "Risco Financeiro"}</div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Backtesting
+    _render_backtesting(config, nums, svc)
+
+    # Métricas
+    st.markdown("##### 📊 Métricas Técnicas")
+
+    metricas = relatorio.get("metricas", {})
+
+    # Renderiza métricas geométricas
+    _render_geometric_metrics(metricas)
+
+    # Renderiza métricas avançadas
+    _render_advanced_metrics(metricas)
+
+    col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
+
+    col_m1.metric("Soma", metricas.get("soma", 0))
+    col_m2.metric("Entropia", f"{metricas.get('entropia', 0):.2f}")
+    col_m3.metric("Gini", f"{metricas.get('gini', 0):.3f}")
+    col_m4.metric("Pares", metricas.get("pares", 0))
+    col_m5.metric("Sequências", metricas.get("sequencias", 0))
+
+    # Mensagens
+    st.markdown("##### 📝 Relatório do Analista")
+    for msg in relatorio["msgs"]:
+        if "❌" in msg:
+            st.markdown(
+                f"<span style='color:#ef4444; font-weight:600;'>{msg}</span>",
+                unsafe_allow_html=True,
+            )
+        elif "✅" in msg:
+            st.caption(f"{msg}")
+        else:
+            st.markdown(
+                f"<span style='color:#f59e0b;'>{msg}</span>",
+                unsafe_allow_html=True,
+            )
+
+    # Volante visual
+    st.markdown("---")
+
+    col_volante, col_info = st.columns([1, 1])
+    with col_volante:
+        st.caption("Visualização Geométrica:")
+        render_volante_marcado(nums, config)
+    with col_info:
+        st.markdown("##### 💡 Dicas")
+        if score >= 80:
+            st.success("✅ Jogo de alta qualidade estatística!")
+        elif score >= 60:
+            st.info("ℹ️ Jogo aceitável, mas pode melhorar.")
+        else:
+            st.warning("⚠️ Considere gerar um novo jogo.")
+
+        if "ALTO" in risco:
+            st.error(
+                "💸 Padrão muito popular. Se saísse, o prêmio seria dividido com muitos ganhadores."
+            )
 
 
 def _render_backtesting(config, nums, svc):

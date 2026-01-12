@@ -2,6 +2,6 @@
 from app.ui.core.shell import init_page
 from app.ui.views.bolao import render_bolao
 
-ctx, svc = init_page(title="Gerenciador de Bolão", require_pro=True)
+ctx, svc = init_page(title="Gerenciador de Bolão")
 
 render_bolao(ctx, svc)

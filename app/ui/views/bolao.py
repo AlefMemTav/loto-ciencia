@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from app.core.logger import logger
 from app.core.lottery import GameConfig
+from app.ui.services.auth_client import AUTHClient
 
 
 def render_bolao(ctx, svc):
@@ -38,8 +39,13 @@ def render_bolao(ctx, svc):
         placeholder=f"{nums_exemplo1}\n{nums_exemplo2}\n...",
         height=200,
     )
-
-    if st.button("🔍 Auditar Bolão", type="primary", use_container_width=True):
+    can_use = AUTHClient.check_and_render_access("bolao", "Análise de Bolão")
+    if st.button(
+        "🔍 Auditar Bolão",
+        type="primary",
+        use_container_width=True,
+        disabled=not can_use,
+    ):
         # 1. Processamento dos Dados
         jogos_validos, jogos_invalidos, todos_numeros = _processar_input_jogos(
             texto_bolao, config

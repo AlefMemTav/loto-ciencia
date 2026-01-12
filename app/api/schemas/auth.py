@@ -22,4 +22,4 @@ class UserResponse(BaseModel):
 class RateLimitCheck(BaseModel):
     allowed: bool
     message: str
-    remaining_today: Optional[int] = None
+    usage: int
