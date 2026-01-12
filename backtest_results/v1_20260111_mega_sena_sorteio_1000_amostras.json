@@ -1,0 +1,145 @@
+{
+  "jogo": "mega_sena_sorteio",
+  "amostras": 1000,
+  "validacao_scoring": {
+    "validacao_passou": "False",
+    "n_amostras": 1000,
+    "correlacoes": {
+      "hamming": {
+        "rho": 0.007,
+        "p_value": 0.8313
+      },
+      "n_alertas": {
+        "rho": -0.926,
+        "p_value": 0.0
+      },
+      "distancia_ic": {
+        "rho": -0.46,
+        "p_value": 0.0
+      }
+    },
+    "buckets": {
+      "0-40": {
+        "n_jogos": 48,
+        "score_medio": 23.583333333333332,
+        "hamming_medio": 6.375,
+        "hamming_std": 1.1415741278435239,
+        "dentro_ic80_pct": 20.833333333333336,
+        "distancia_ic_media": 1.8567708333333333,
+        "n_alertas_medio": 5.916666666666667,
+        "risco_alto_pct": 18.75,
+        "ja_saiu_pct": 0.0
+      },
+      "40-60": {
+        "n_jogos": 95,
+        "score_medio": 50.873684210526314,
+        "hamming_medio": 6.5473684210526315,
+        "hamming_std": 1.1463950996598322,
+        "dentro_ic80_pct": 48.421052631578945,
+        "distancia_ic_media": 1.283421052631579,
+        "n_alertas_medio": 4.368421052631579,
+        "risco_alto_pct": 7.368421052631578,
+        "ja_saiu_pct": 0.0
+      },
+      "60-80": {
+        "n_jogos": 268,
+        "score_medio": 70.43656716417911,
+        "hamming_medio": 6.552238805970149,
+        "hamming_std": 1.0779864999474627,
+        "dentro_ic80_pct": 66.7910447761194,
+        "distancia_ic_media": 0.911473880597015,
+        "n_alertas_medio": 3.003731343283582,
+        "risco_alto_pct": 0.3731343283582089,
+        "ja_saiu_pct": 0.0
+      },
+      "80-100": {
+        "n_jogos": 459,
+        "score_medio": 88.4640522875817,
+        "hamming_medio": 6.596949891067538,
+        "hamming_std": 1.0982675220024305,
+        "dentro_ic80_pct": 94.11764705882352,
+        "distancia_ic_media": 0.6330827886710237,
+        "n_alertas_medio": 1.4291938997821352,
+        "risco_alto_pct": 0.0,
+        "ja_saiu_pct": 0.0
+      }
+    },
+    "interpretacao": [
+      "✅ Scores altos têm menos alertas detectados"
+    ],
+    "config": {
+      "jogo": "Mega-Sena",
+      "n_numbers": 60,
+      "k": 6,
+      "densidade": 0.1
+    }
+  },
+  "comparacao_estrategias": {
+    "resultados": {
+      "conservadora": {
+        "score_medio": 93.34,
+        "score_mediana": 95.0,
+        "score_std": 7.016010262250192,
+        "score_min": "70",
+        "score_max": "100",
+        "pct_excelente": 91.0,
+        "pct_bom": 100.0
+      },
+      "balanceada": {
+        "score_medio": 92.48,
+        "score_mediana": 95.0,
+        "score_std": 7.778791679946186,
+        "score_min": "70",
+        "score_max": "100",
+        "pct_excelente": 87.0,
+        "pct_bom": 100.0
+      },
+      "agressiva": {
+        "score_medio": 92.59,
+        "score_mediana": 95.0,
+        "score_std": 7.197353680346686,
+        "score_min": "70",
+        "score_max": "100",
+        "pct_excelente": 87.0,
+        "pct_bom": 100.0
+      },
+      "pura": {
+        "score_medio": 92.99,
+        "score_mediana": 95.0,
+        "score_std": 7.486648115144722,
+        "score_min": "70",
+        "score_max": "100",
+        "pct_excelente": 87.0,
+        "pct_bom": 100.0
+      }
+    },
+    "melhor_estrategia": "conservadora",
+    "config": "Mega-Sena"
+  },
+  "validacao_regressao": {
+    "resultados": {
+      "janela_50": {
+        "correlacao": 0.146,
+        "p_value": 0.266,
+        "taxa_retorno": 1.0,
+        "interpretacao": "Regressão fraca"
+      },
+      "janela_100": {
+        "correlacao": -0.018,
+        "p_value": 0.8893,
+        "taxa_retorno": 1.0,
+        "interpretacao": "Sem evidência clara"
+      },
+      "janela_200": {
+        "correlacao": -0.012,
+        "p_value": 0.9257,
+        "taxa_retorno": 1.0,
+        "interpretacao": "Sem evidência clara"
+      }
+    },
+    "media_correlacao": 0.039,
+    "min_p_value": 0.266,
+    "conclusao": "⚠️ Regressão fraca ou inexistente",
+    "recomendacao": "Preferir estratégias 'balanceadas' ou 'conservadoras'"
+  }
+}
