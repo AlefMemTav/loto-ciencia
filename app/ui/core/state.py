@@ -28,7 +28,10 @@ def init_game_state():
 
 def sync_widget_to_global():
     """Callback: Sincroniza o seletor visual com a variável global"""
-    novo_jogo = st.session_state[WIDGET_KEY]
+    jogos = list(GAMES.keys())
+    novo_jogo = st.session_state.get(WIDGET_KEY)
+    if novo_jogo not in jogos:
+        novo_jogo = jogos[0]
     if novo_jogo != st.session_state.get(GLOBAL_KEY):
         logger.info(f"Troca de contexto: Usuário mudou para {novo_jogo}")
         st.session_state[GLOBAL_KEY] = novo_jogo

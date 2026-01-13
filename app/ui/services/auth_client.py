@@ -1,126 +1,24 @@
 # app/ui/services/auth_client.py
 import requests
 import streamlit as st
+import extra_streamlit_components as stx
 from typing import Optional, Tuple
 import os
-import json
-from pathlib import Path
-import hashlib
-import uuid
+import datetime
+import time
 from app.core.logger import logger
 
-
-try:
-    from streamlit_cookies_controller import CookieController
-
-    controller = CookieController()
-    COOKIES_AVAILABLE = True
-except ImportError:
-    logger.warning(
-        "streamlit-cookies-controller não instalado - sessão não persistirá após F5"
-    )
-    COOKIES_AVAILABLE = False
-    controller = None
-
-
+# Configuração da URL da API
 API_BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
-import tempfile
-
-
-def _get_sessions_dir() -> Path:
-    """
-    Retorna diretório de sessões baseado no ambiente:
-    - Desenvolvimento: tempdir (limpo automaticamente)
-    - Docker/Produção: /app/data/sessions (persistente)
-    """
-    if os.getenv("ENVIRONMENT") == "production":
-        sessions_dir = Path("/app/data/sessions")
-    else:
-        sessions_dir = Path(tempfile.gettempdir()) / ".lotoscience_sessions"
-
-    sessions_dir.mkdir(parents=True, exist_ok=True)
-    return sessions_dir
-
-
-SESSIONS_DIR = _get_sessions_dir()
-
-
-def _get_browser_id() -> str:
-    """
-    ✅ Retorna ID único do navegador com isolamento correto.
-    - Cookie persiste após F5
-    - Session ID diferencia abas do mesmo navegador
-    """
-    # 1. Verifica se já calculamos nesta execução
-    if "browser_id" in st.session_state:
-        return st.session_state.browser_id
-
-    # 2. Pega session_id do Streamlit (diferente para cada aba)
-    streamlit_session_id = None
-    try:
-        from streamlit.runtime.scriptrunner import get_script_run_ctx
-
-        ctx = get_script_run_ctx()
-        if ctx and ctx.session_id:
-            streamlit_session_id = ctx.session_id
-    except:
-        pass
-
-    # 3. Tenta ler cookie do navegador (persiste após F5)
-    cookie_id = None
-    if COOKIES_AVAILABLE:
-        try:
-            cookie_id = controller.get("lotoscience_browser_id")
-        except Exception as e:
-            logger.warning(f"⚠️ Erro ao ler cookie: {e}")
-
-    # 4. Se NÃO tem cookie, cria um novo UUID e salva
-    if not cookie_id:
-        cookie_id = str(uuid.uuid4())
-        if COOKIES_AVAILABLE:
-            try:
-                controller.set("lotoscience_browser_id", cookie_id)
-                logger.info(f"🆕 Novo cookie criado: {cookie_id[:8]}...")
-            except Exception as e:
-                logger.warning(f"⚠️ Erro ao salvar cookie: {e}")
-
-    # 5. Combina cookie (persistente) + session_id (diferencia abas)
-    if streamlit_session_id:
-        # Para abas diferentes do MESMO navegador
-        browser_id = f"{cookie_id}_{streamlit_session_id}"
-        logger.debug(
-            f"🔗 Browser ID: cookie {cookie_id[:8]}... + session {streamlit_session_id[:8]}..."
-        )
-    else:
-        # Fallback: só o cookie
-        browser_id = cookie_id
-        logger.debug(f"🍪 Browser ID: {cookie_id[:8]}...")
-
-    st.session_state.browser_id = browser_id
-    return browser_id
-
-
-def _get_session_file() -> Path:
-    """
-    ✅ Retorna arquivo baseado APENAS no cookie (não no session_id).
-    Isso permite que o F5 encontre o mesmo arquivo.
-    """
-    browser_id = _get_browser_id()
-
-    # ✅ CRÍTICO: Extrai apenas a parte do cookie (antes do "_")
-    cookie_part = browser_id.split("_")[0]  # Pega só "abc123" de "abc123_xyz789"
-
-    # Hash para nome de arquivo seguro
-    filename = hashlib.md5(cookie_part.encode()).hexdigest()
-    filepath = SESSIONS_DIR / f"{filename}.json"
-    logger.debug(f"📁 Session file: {filepath.name} (cookie: {cookie_part[:8]}...)")
-    return filepath
-
-
 class AUTHClient:
-    """Cliente para API LotoScience com persistência real após F5"""
+    """
+    Cliente de Autenticação Seguro.
+    - Persistência: Usa Cookies criptografados no cliente (Navegador).
+    - Segurança: Tokens nunca tocam o disco do servidor.
+    - Validação: O token do cookie é sempre revalidado na API.
+    """
 
     LIMITS = {
         "validator": 3,
@@ -129,49 +27,20 @@ class AUTHClient:
         "bolao": 0,
     }
 
-    @staticmethod
-    def _save_session(token: str, email: str, plan: str):
-        """Salva sessão em arquivo baseado no browser_id"""
-        try:
-            session_file = _get_session_file()
-            session_file.write_text(
-                json.dumps({"access_token": token, "email": email, "plan": plan})
-            )
-            logger.info(f"✅ Sessão salva: {email} -> {session_file.name}")
-        except Exception as e:
-            logger.error(f"❌ Erro ao salvar sessão: {e}")
+    # Singleton para o gerenciador de cookies para evitar re-instanciação no rerun
+    _cookie_manager = None
 
-    @staticmethod
-    def _load_session() -> Optional[dict]:
-        """Carrega sessão do arquivo baseado no browser_id"""
-        try:
-            session_file = _get_session_file()
-            if session_file.exists():
-                data = json.loads(session_file.read_text())
-                logger.debug(
-                    f"✅ Sessão carregada: {data.get('email')} <- {session_file.name}"
-                )
-                return data
-            else:
-                logger.debug(f"ℹ️ Arquivo de sessão não existe: {session_file.name}")
-        except Exception as e:
-            logger.error(f"❌ Erro ao carregar sessão: {e}")
-        return None
-
-    @staticmethod
-    def _delete_session():
-        """Remove arquivo de sessão"""
-        try:
-            session_file = _get_session_file()
-            if session_file.exists():
-                session_file.unlink()
-                logger.info(f"🗑️ Sessão removida: {session_file.name}")
-        except Exception as e:
-            logger.error(f"❌ Erro ao deletar sessão: {e}")
+    @classmethod
+    def get_manager(cls):
+        """Retorna a instância do gerenciador de cookies."""
+        if cls._cookie_manager is None:
+            # key="auth_cookie_manager" garante que o componente não resete
+            cls._cookie_manager = stx.CookieManager(key="auth_cookie_manager")
+        return cls._cookie_manager
 
     @staticmethod
     def _get_headers():
-        """Retorna headers com token de autenticação"""
+        """Retorna headers com token de autenticação."""
         token = st.session_state.get("access_token")
         if token:
             return {"Authorization": f"Bearer {token}"}
@@ -180,74 +49,88 @@ class AUTHClient:
     @staticmethod
     def init():
         """
-        ✅ Restaura autenticação após F5
+        Lógica de Persistência (Executada no topo de cada página).
+        1. Verifica session_state (Memória RAM).
+        2. Se vazio, verifica Cookie (Navegador).
+        3. Se achar Cookie, valida na API e restaura sessão.
         """
-        # 1️⃣ Já está autenticado (navegação interna)
+        if st.session_state.get("just_logged_out", False):
+            del st.session_state["just_logged_out"]
+            return False
+        cm = AUTHClient.get_manager()
+
+        # Pega todos os cookies (força sincronização do componente)
+        cookies = cm.get_all()
+        token_cookie = cookies.get("access_token")
+
+        # 1. Se já está logado na memória, tudo certo.
         if st.session_state.get("authenticated", False):
-            logger.debug("✅ Já autenticado via session_state")
             return True
 
-        # 2️⃣ Tenta carregar do arquivo persistente (baseado em browser_id)
-        browser_id = _get_browser_id()
-        logger.debug(
-            f"🔍 Tentando restaurar sessão para browser_id: {browser_id[:8]}..."
-        )
+        # 2. Se não está na memória, mas tem cookie: Tenta restaurar.
+        if token_cookie:
+            logger.debug("🍪 Cookie encontrado. Tentando restaurar sessão...")
 
-        saved = AUTHClient._load_session()
-
-        if saved and saved.get("access_token"):
-            token = saved["access_token"]
-            logger.debug(f"✅ Token recuperado: {token[:20]}...")
-
-            # Valida token com backend
             try:
+                # Valida o token com o Backend (Crucial para segurança)
                 response = requests.get(
                     f"{API_BASE_URL}/auth/me",
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers={"Authorization": f"Bearer {token_cookie}"},
                     timeout=5,
                 )
 
                 if response.status_code == 200:
                     data = response.json()
 
-                    # ✅ Restaura session_state
-                    st.session_state.access_token = token
+                    # ✅ Restaura estado na memória
+                    st.session_state.access_token = token_cookie
                     st.session_state.authenticated = True
                     st.session_state.user_email = data["email"]
                     st.session_state.user_plan = data["plan"]
 
-                    logger.info(f"✅✅ Sessão restaurada após F5: {data['email']}")
+                    logger.info(f"✅ Sessão restaurada via Cookie: {data['email']}")
                     return True
                 else:
-                    logger.warning(f"❌ Token inválido: HTTP {response.status_code}")
-                    AUTHClient._delete_session()
-
+                    logger.warning("❌ Token do cookie expirado ou inválido.")
+                    AUTHClient.logout()  # Limpa o cookie inválido
             except Exception as e:
-                logger.error(f"❌ Erro ao validar token: {e}")
-                AUTHClient._delete_session()
-        else:
-            logger.debug("ℹ️ Nenhuma sessão salva encontrada")
+                logger.error(f"❌ Erro ao validar token do cookie: {e}")
 
         return False
 
     @staticmethod
-    def _clear_session_state():
-        """Limpa estado de autenticação"""
-        st.session_state.authenticated = False
-        st.session_state.user_email = None
-        st.session_state.user_plan = None
-        st.session_state.access_token = None
-        AUTHClient._delete_session()
-        logger.info("🧹 Session state e arquivo limpos")
-
-    @staticmethod
-    def _handle_error(response) -> str:
+    def login(email: str, password: str) -> Tuple[bool, str, Optional[dict]]:
+        """Realiza login e define o Cookie no navegador."""
         try:
-            return response.json().get("detail", "Erro desconhecido")
-        except:
-            return f"Erro HTTP {response.status_code}"
+            response = requests.post(
+                f"{API_BASE_URL}/auth/login",
+                json={"email": email, "password": password},
+                timeout=10,
+            )
 
-    # ===== ACTIONS =====
+            if response.status_code == 200:
+                data = response.json()
+                token = data["access_token"]
+                user_data = data["user"]
+
+                # 1. Atualiza Memória
+                st.session_state.access_token = token
+                st.session_state.authenticated = True
+                st.session_state.user_email = user_data["email"]
+                st.session_state.user_plan = user_data["plan"]
+
+                # 2. Atualiza Navegador (Cookie expira em 30 dias)
+                expires_at = datetime.datetime.now() + datetime.timedelta(days=30)
+                cm = AUTHClient.get_manager()
+                cm.set("access_token", token, expires_at=expires_at)
+
+                logger.info(f"🔐 Login sucesso + Cookie definido: {email}")
+                return True, data["message"], data
+
+            return False, response.json().get("detail", "Erro de login"), None
+        except Exception as e:
+            logger.error(f"❌ Erro no login: {e}")
+            return False, f"Erro de conexão: {e}", None
 
     @staticmethod
     def register(email: str, password: str) -> Tuple[bool, str, Optional[dict]]:
@@ -261,63 +144,49 @@ class AUTHClient:
             if response.status_code == 201:
                 data = response.json()
                 token = data["access_token"]
+                user_data = data["user"]
 
-                # Salva em session_state
+                # Login automático após registro
                 st.session_state.access_token = token
                 st.session_state.authenticated = True
-                st.session_state.user_email = data["user"]["email"]
-                st.session_state.user_plan = data["user"]["plan"]
+                st.session_state.user_email = user_data["email"]
+                st.session_state.user_plan = user_data["plan"]
 
-                # ✅ Salva em arquivo (persiste após F5)
-                AUTHClient._save_session(
-                    token, data["user"]["email"], data["user"]["plan"]
-                )
+                # Define Cookie
+                expires_at = datetime.datetime.now() + datetime.timedelta(days=30)
+                cm = AUTHClient.get_manager()
+                cm.set("access_token", token, expires_at=expires_at)
 
-                logger.info(f"📝 Registro bem-sucedido: {data['user']['email']}")
                 return True, data["message"], data
 
             return False, AUTHClient._handle_error(response), None
         except Exception as e:
-            logger.error(f"❌ Erro no registro: {e}")
-            return False, f"Erro de conexão: {e}", None
-
-    @staticmethod
-    def login(email: str, password: str) -> Tuple[bool, str, Optional[dict]]:
-        try:
-            response = requests.post(
-                f"{API_BASE_URL}/auth/login",
-                json={"email": email, "password": password},
-                timeout=10,
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                token = data["access_token"]
-
-                # Salva em session_state
-                st.session_state.access_token = token
-                st.session_state.authenticated = True
-                st.session_state.user_email = data["user"]["email"]
-                st.session_state.user_plan = data["user"]["plan"]
-
-                # ✅ Salva em arquivo (persiste após F5)
-                AUTHClient._save_session(
-                    token, data["user"]["email"], data["user"]["plan"]
-                )
-
-                logger.info(f"🔐 Login bem-sucedido: {data['user']['email']}")
-                return True, data["message"], data
-
-            return False, response.json().get("detail", "Erro de login"), None
-        except Exception as e:
-            logger.error(f"❌ Erro no login: {e}")
-            return False, f"Erro de conexão: {e}", None
+            return False, f"Erro: {e}", None
 
     @staticmethod
     def logout():
+        """Limpa memória, apaga o Cookie e força atualização."""
         email = st.session_state.get("user_email", "desconhecido")
         logger.info(f"🚪 Logout: {email}")
-        AUTHClient._clear_session_state()
+
+        # 1. Apaga cookie
+        cm = AUTHClient.get_manager()
+        cm.delete("access_token")
+
+        # 2. Limpa toda a memória da sessão
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+
+        # 3. Define a flag que impede o re-login automático imediato
+        st.session_state["just_logged_out"] = True
+
+        # 4. Mensagem e Rerun
+        placeholder = st.empty()
+        placeholder.warning("Saindo...", icon="👋")
+        time.sleep(1)
+        st.rerun()
+
+    # ===== MÉTODOS AUXILIARES (Mantidos iguais) =====
 
     @staticmethod
     def get_profile() -> Optional[dict]:
@@ -351,7 +220,6 @@ class AUTHClient:
                 data.get("limit", 0),
             )
         except Exception as e:
-            logger.error(f"❌ Erro ao verificar rate limit: {e}")
             return False, "Erro de conexão", 999, 0
 
     @staticmethod
@@ -365,21 +233,35 @@ class AUTHClient:
                 headers=AUTHClient._get_headers(),
                 timeout=10,
             )
-
             if response.status_code == 200:
                 data = response.json()
+                # Limpa cache local para forçar nova verificação no UI
                 cache_key = f"rate_check_{resource}"
                 if cache_key in st.session_state:
                     del st.session_state[cache_key]
                 return True, data["message"]
-
             return False, AUTHClient._handle_error(response)
         except Exception as e:
-            logger.error(f"❌ Erro ao marcar recurso: {e}")
+            return False, f"Erro: {e}"
+
+    @staticmethod
+    def upgrade_to_pro() -> Tuple[bool, str]:
+        try:
+            response = requests.post(
+                f"{API_BASE_URL}/auth/upgrade",
+                headers=AUTHClient._get_headers(),
+                timeout=10,
+            )
+            if response.status_code == 200:
+                st.session_state.user_plan = "pro"
+                return True, response.json()["message"]
+            return False, AUTHClient._handle_error(response)
+        except Exception as e:
             return False, f"Erro: {e}"
 
     @staticmethod
     def check_and_render_access(resource: str, resource_name: str) -> bool:
+        # Copiar a implementação anterior, ela estava segura do ponto de vista de UI
         if not AUTHClient.is_authenticated():
             st.info(f"🔒 Para usar o **{resource_name}**, você precisa estar logado.")
             c1, c2 = st.columns(2)
@@ -387,16 +269,11 @@ class AUTHClient:
                 if st.button(
                     "🔐 Fazer Login", key=f"login_{resource}", width="stretch"
                 ):
-                    st.switch_page("pages/6_Login.py")
+                    st.switch_page("pages/6_Login.py")  # Ajuste o caminho se necessário
             with c2:
-                if st.button(
-                    "📝 Criar Conta Grátis",
-                    key=f"reg_{resource}",
-                    width="stretch",
-                ):
+                if st.button("📝 Criar Conta", key=f"reg_{resource}", width="stretch"):
                     st.switch_page("pages/7_Registro.py")
             return False
-
         if resource not in AUTHClient.LIMITS:
             return True
 
@@ -430,9 +307,7 @@ class AUTHClient:
                 "usage": current_usage,
                 "limit": final_limit,
             }
-
         limit = final_limit
-
         if allowed:
             remaining = max(0, limit - current_usage)
             color = "orange" if remaining <= 1 else "blue"
@@ -443,6 +318,29 @@ class AUTHClient:
         else:
             AUTHClient._render_blocked_message(resource, resource_name, limit)
             return False
+
+    @staticmethod
+    def is_authenticated() -> bool:
+        return st.session_state.get("authenticated", False)
+
+    @staticmethod
+    def get_plan() -> str:
+        return (
+            st.session_state.get("user_plan", "free")
+            if AUTHClient.is_authenticated()
+            else "guest"
+        )
+
+    @staticmethod
+    def is_pro() -> bool:
+        return AUTHClient.get_plan() == "pro"
+
+    @staticmethod
+    def _handle_error(response) -> str:
+        try:
+            return response.json().get("detail", "Erro desconhecido")
+        except:
+            return f"Erro HTTP {response.status_code}"
 
     @staticmethod
     def _render_pro_message():

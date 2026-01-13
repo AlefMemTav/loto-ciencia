@@ -77,9 +77,8 @@ def _render_auth_badge():
                     st.divider()
 
                 if st.button("🚪 Sair", width="stretch"):
-                    AUTHClient.logout()
-                    st.rerun()
-
+                    with st.spinner("Desconectando..."):
+                        AUTHClient.logout()
     else:
         # Não autenticado - links minimalistas
         st.markdown(

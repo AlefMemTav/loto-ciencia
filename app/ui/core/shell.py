@@ -4,7 +4,7 @@ from app.ui.core.styles import apply_custom_css
 from app.ui.components.header import render_app_header
 from app.ui.components.nav import top_nav
 from app.ui.core.state import load_context, init_game_state
-from app.ui.components.sidebar import render_game_selector, render_auth_status
+from app.ui.components.sidebar import render_game_selector
 from app.ui.services.auth_client import AUTHClient
 
 
@@ -15,54 +15,50 @@ def init_page(
     require_pro: bool = False,
     resource_usage: str = None,  # Ex: "generator", "validator"
 ):
-    """
-    Inicializa o 'Shell' da aplicação:
-    Configura CSS, Auth, Sidebar, Header, Nav e Carrega Contexto.
-
-    Retorna:
-        ctx: O contexto do jogo (dados, config)
-        svc: O serviço de loteria instanciado
-    """
-    # 1. Configuração Básica e Estilos
-    st.set_page_config(
-        page_title=f"{title} | LotoScience", layout="wide", page_icon=icon
-    )
-    apply_custom_css()
-
-    # 2. Inicialização de Estado e Auth
-    init_game_state()
+    # 1. MIDDLEWARE DE AUTH (Crucial: Deve ser a primeira linha lógica)
+    # Tenta restaurar a sessão via Cookie antes de qualquer verificação
     AUTHClient.init()
 
-    # 3. Renderiza a Sidebar (Status de Auth)
-    render_auth_status()
+    # 2. Configuração da Página
+    st.set_page_config(
+        page_title=f"{title} | LotoScience",
+        layout="wide",
+        page_icon=icon,
+        initial_sidebar_state="collapsed",
+    )
+    apply_custom_css()
+    init_game_state()
 
     # 4. Barreira de Autenticação (Login Wall)
     if require_auth and not AUTHClient.is_authenticated():
         _render_lock_screen(title)
-        st.stop()
+        st.stop()  # Interrompe a execução aqui. A View não será carregada.
 
     # 5. Barreira de Plano (Paywall - Pro Only)
     if require_pro and not AUTHClient.is_pro():
         _render_paywall_screen()
         st.stop()
 
-    # 6. Verificação de Rate Limit (Uso Diário para Free)
+    # 6. Verificação de Rate Limit (Para usuários Free)
     if resource_usage:
-        can_use, message = AUTHClient.check_rate_limit(resource_usage)
-        if message and "🔒" not in message:  # Ignora msg de login se já passou
-            st.info(message)
+        # A lógica de check_rate_limit no cliente já verifica se é PRO
+        can_use, message, _, _ = AUTHClient.check_rate_limit(resource_usage)
 
+        # Mostra aviso se estiver bloqueado
         if not can_use:
             _render_rate_limit_screen()
             st.stop()
 
-    # 7. Se passou por tudo, carrega os dados
+        # Opcional: Mostrar aviso de quantos usos restam
+        # (Isso pode ser feito dentro da view ou aqui, depende do design)
+
+    # 7. Carrega contexto (Pesado - só carrega se passou pelas barreiras)
     ctx, svc = load_context()
 
-    # 8. Renderiza Elementos Comuns de UI
+    # 8. Renderiza Header e Nav
     render_app_header(ctx.config, ctx.df)
     top_nav()
-    render_game_selector()
+    render_game_selector()  # Movemos para cá para garantir que apareça mesmo se bloqueado (opcional)
 
     return ctx, svc
 
