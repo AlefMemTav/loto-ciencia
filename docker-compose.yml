@@ -7,6 +7,7 @@ services:
     container_name: lotoscience_api
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
     volumes:
+      - sessions_data:/app/data/sessions
       - ./data:/app/data # 💾 PERSISTÊNCIA: Mapeia pasta local 'data' para o container
     environment:
       - SECRET_KEY=${SECRET_KEY:-sua_chave_secreta_super_segura}
@@ -19,6 +20,7 @@ services:
     container_name: lotoscience_ui
     command: streamlit run main.py --server.port 8501 --server.address 0.0.0.0
     volumes:
+      - sessions_data:/app/data/sessions
       - ./data:/app/data # 💾 Precisam ver os mesmos arquivos (DB e Excel)
     environment:
       # O Streamlit (Python) conversa com o Backend (API) via rede interna Docker
@@ -28,3 +30,6 @@ services:
     depends_on:
       - backend
     restart: always
+
+volumes:
+  sessions_data:

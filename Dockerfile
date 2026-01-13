@@ -4,6 +4,9 @@ FROM python:3.11-slim
 # Define diretório de trabalho
 WORKDIR /app
 
+# Cria diretório persistente com permissões
+RUN mkdir -p /app/data/sessions && chmod 777 /app/data/session
+
 # Instala dependências do sistema (necessário para alguns pacotes Python)
 RUN apt-get update && apt-get install -y \
     build-essential \
@@ -21,6 +24,8 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 
 # Copia todo o código do projeto
 COPY . .
+
+ENV ENVIRONMENT=production
 
 # Exposição de portas (Documentação apenas, o Compose que define)
 EXPOSE 8000

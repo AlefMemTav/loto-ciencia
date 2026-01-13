@@ -8,10 +8,10 @@ from app.ui.core.state import init_game_state, load_context
 from app.ui.views.dashboard import render_dashboard
 from app.ui.services.auth_client import AUTHClient
 
+AUTHClient.init()
+
 apply_page_config()
 apply_custom_css()
-
-AUTHClient.init()
 
 init_game_state()
 

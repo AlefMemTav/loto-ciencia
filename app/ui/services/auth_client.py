@@ -5,16 +5,122 @@ from typing import Optional, Tuple
 import os
 import json
 from pathlib import Path
+import hashlib
+import uuid
 from app.core.logger import logger
+
+
+try:
+    from streamlit_cookies_controller import CookieController
+
+    controller = CookieController()
+    COOKIES_AVAILABLE = True
+except ImportError:
+    logger.warning(
+        "streamlit-cookies-controller não instalado - sessão não persistirá após F5"
+    )
+    COOKIES_AVAILABLE = False
+    controller = None
+
 
 API_BASE_URL = os.getenv("API_URL", "http://localhost:8000")
 
-TOKEN_FILE = Path.home() / ".lotoscience" / "session.json"
-TOKEN_FILE.parent.mkdir(exist_ok=True)
+
+import tempfile
+
+
+def _get_sessions_dir() -> Path:
+    """
+    Retorna diretório de sessões baseado no ambiente:
+    - Desenvolvimento: tempdir (limpo automaticamente)
+    - Docker/Produção: /app/data/sessions (persistente)
+    """
+    if os.getenv("ENVIRONMENT") == "production":
+        sessions_dir = Path("/app/data/sessions")
+    else:
+        sessions_dir = Path(tempfile.gettempdir()) / ".lotoscience_sessions"
+
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    return sessions_dir
+
+
+SESSIONS_DIR = _get_sessions_dir()
+
+
+def _get_browser_id() -> str:
+    """
+    ✅ Retorna ID único do navegador com isolamento correto.
+    - Cookie persiste após F5
+    - Session ID diferencia abas do mesmo navegador
+    """
+    # 1. Verifica se já calculamos nesta execução
+    if "browser_id" in st.session_state:
+        return st.session_state.browser_id
+
+    # 2. Pega session_id do Streamlit (diferente para cada aba)
+    streamlit_session_id = None
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+        ctx = get_script_run_ctx()
+        if ctx and ctx.session_id:
+            streamlit_session_id = ctx.session_id
+    except:
+        pass
+
+    # 3. Tenta ler cookie do navegador (persiste após F5)
+    cookie_id = None
+    if COOKIES_AVAILABLE:
+        try:
+            cookie_id = controller.get("lotoscience_browser_id")
+        except Exception as e:
+            logger.warning(f"⚠️ Erro ao ler cookie: {e}")
+
+    # 4. Se NÃO tem cookie, cria um novo UUID e salva
+    if not cookie_id:
+        cookie_id = str(uuid.uuid4())
+        if COOKIES_AVAILABLE:
+            try:
+                controller.set("lotoscience_browser_id", cookie_id)
+                logger.info(f"🆕 Novo cookie criado: {cookie_id[:8]}...")
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao salvar cookie: {e}")
+
+    # 5. Combina cookie (persistente) + session_id (diferencia abas)
+    if streamlit_session_id:
+        # Para abas diferentes do MESMO navegador
+        browser_id = f"{cookie_id}_{streamlit_session_id}"
+        logger.debug(
+            f"🔗 Browser ID: cookie {cookie_id[:8]}... + session {streamlit_session_id[:8]}..."
+        )
+    else:
+        # Fallback: só o cookie
+        browser_id = cookie_id
+        logger.debug(f"🍪 Browser ID: {cookie_id[:8]}...")
+
+    st.session_state.browser_id = browser_id
+    return browser_id
+
+
+def _get_session_file() -> Path:
+    """
+    ✅ Retorna arquivo baseado APENAS no cookie (não no session_id).
+    Isso permite que o F5 encontre o mesmo arquivo.
+    """
+    browser_id = _get_browser_id()
+
+    # ✅ CRÍTICO: Extrai apenas a parte do cookie (antes do "_")
+    cookie_part = browser_id.split("_")[0]  # Pega só "abc123" de "abc123_xyz789"
+
+    # Hash para nome de arquivo seguro
+    filename = hashlib.md5(cookie_part.encode()).hexdigest()
+    filepath = SESSIONS_DIR / f"{filename}.json"
+    logger.debug(f"📁 Session file: {filepath.name} (cookie: {cookie_part[:8]}...)")
+    return filepath
 
 
 class AUTHClient:
-    """Cliente para API LotoScience com persistência via arquivo local"""
+    """Cliente para API LotoScience com persistência real após F5"""
 
     LIMITS = {
         "validator": 3,
@@ -25,36 +131,43 @@ class AUTHClient:
 
     @staticmethod
     def _save_session(token: str, email: str, plan: str):
-        """Salva sessão em arquivo local (substitui cookies)"""
+        """Salva sessão em arquivo baseado no browser_id"""
         try:
-            TOKEN_FILE.write_text(
+            session_file = _get_session_file()
+            session_file.write_text(
                 json.dumps({"access_token": token, "email": email, "plan": plan})
             )
-            logger.info(f"Sessão salva para {email}")
+            logger.info(f"✅ Sessão salva: {email} -> {session_file.name}")
         except Exception as e:
-            logger.error(f"Erro ao salvar sessão: {e}")
+            logger.error(f"❌ Erro ao salvar sessão: {e}")
 
     @staticmethod
     def _load_session() -> Optional[dict]:
-        """Carrega sessão do arquivo local"""
+        """Carrega sessão do arquivo baseado no browser_id"""
         try:
-            if TOKEN_FILE.exists():
-                data = json.loads(TOKEN_FILE.read_text())
-                logger.debug(f"Sessão carregada do arquivo: {data.get('email')}")
+            session_file = _get_session_file()
+            if session_file.exists():
+                data = json.loads(session_file.read_text())
+                logger.debug(
+                    f"✅ Sessão carregada: {data.get('email')} <- {session_file.name}"
+                )
                 return data
+            else:
+                logger.debug(f"ℹ️ Arquivo de sessão não existe: {session_file.name}")
         except Exception as e:
-            logger.error(f"Erro ao carregar sessão: {e}")
+            logger.error(f"❌ Erro ao carregar sessão: {e}")
         return None
 
     @staticmethod
     def _delete_session():
         """Remove arquivo de sessão"""
         try:
-            if TOKEN_FILE.exists():
-                TOKEN_FILE.unlink()
-                logger.info("Arquivo de sessão removido")
+            session_file = _get_session_file()
+            if session_file.exists():
+                session_file.unlink()
+                logger.info(f"🗑️ Sessão removida: {session_file.name}")
         except Exception as e:
-            logger.error(f"Erro ao deletar sessão: {e}")
+            logger.error(f"❌ Erro ao deletar sessão: {e}")
 
     @staticmethod
     def _get_headers():
@@ -69,19 +182,17 @@ class AUTHClient:
         """
         ✅ Restaura autenticação após F5
         """
-        logger.debug("=" * 50)
-        logger.debug("🔄 AUTHClient.init() chamado")
-        logger.debug(
-            f"authenticated em session_state: {st.session_state.get('authenticated', False)}"
-        )
-
         # 1️⃣ Já está autenticado (navegação interna)
         if st.session_state.get("authenticated", False):
             logger.debug("✅ Já autenticado via session_state")
             return True
 
-        # 2️⃣ Tenta carregar do arquivo local
-        logger.debug("🔍 Tentando restaurar de arquivo local...")
+        # 2️⃣ Tenta carregar do arquivo persistente (baseado em browser_id)
+        browser_id = _get_browser_id()
+        logger.debug(
+            f"🔍 Tentando restaurar sessão para browser_id: {browser_id[:8]}..."
+        )
+
         saved = AUTHClient._load_session()
 
         if saved and saved.get("access_token"):
@@ -90,18 +201,14 @@ class AUTHClient:
 
             # Valida token com backend
             try:
-                logger.debug("🌐 Validando token com backend...")
                 response = requests.get(
                     f"{API_BASE_URL}/auth/me",
                     headers={"Authorization": f"Bearer {token}"},
                     timeout=5,
                 )
 
-                logger.debug(f"📡 Backend respondeu: HTTP {response.status_code}")
-
                 if response.status_code == 200:
                     data = response.json()
-                    logger.debug(f"✅ Backend validou: {data['email']}")
 
                     # ✅ Restaura session_state
                     st.session_state.access_token = token
@@ -109,22 +216,18 @@ class AUTHClient:
                     st.session_state.user_email = data["email"]
                     st.session_state.user_plan = data["plan"]
 
-                    logger.info(
-                        f"✅✅ Sessão restaurada com sucesso para {data['email']}"
-                    )
+                    logger.info(f"✅✅ Sessão restaurada após F5: {data['email']}")
                     return True
                 else:
-                    logger.warning(f"❌ Backend rejeitou token: {response.text[:100]}")
+                    logger.warning(f"❌ Token inválido: HTTP {response.status_code}")
                     AUTHClient._delete_session()
 
             except Exception as e:
-                logger.error(f"❌ ERRO ao validar token: {e}")
+                logger.error(f"❌ Erro ao validar token: {e}")
                 AUTHClient._delete_session()
         else:
-            logger.debug("❌ Nenhuma sessão salva encontrada")
+            logger.debug("ℹ️ Nenhuma sessão salva encontrada")
 
-        logger.debug("❌ init() falhou - usuário não autenticado")
-        logger.debug("=" * 50)
         return False
 
     @staticmethod
@@ -135,7 +238,7 @@ class AUTHClient:
         st.session_state.user_plan = None
         st.session_state.access_token = None
         AUTHClient._delete_session()
-        logger.info("Session state e arquivo de sessão limpos")
+        logger.info("🧹 Session state e arquivo limpos")
 
     @staticmethod
     def _handle_error(response) -> str:
@@ -165,16 +268,17 @@ class AUTHClient:
                 st.session_state.user_email = data["user"]["email"]
                 st.session_state.user_plan = data["user"]["plan"]
 
+                # ✅ Salva em arquivo (persiste após F5)
                 AUTHClient._save_session(
                     token, data["user"]["email"], data["user"]["plan"]
                 )
 
-                logger.info(f"Registro bem-sucedido: {data['user']['email']}")
+                logger.info(f"📝 Registro bem-sucedido: {data['user']['email']}")
                 return True, data["message"], data
 
             return False, AUTHClient._handle_error(response), None
         except Exception as e:
-            logger.error(f"Erro no registro: {e}")
+            logger.error(f"❌ Erro no registro: {e}")
             return False, f"Erro de conexão: {e}", None
 
     @staticmethod
@@ -196,21 +300,23 @@ class AUTHClient:
                 st.session_state.user_email = data["user"]["email"]
                 st.session_state.user_plan = data["user"]["plan"]
 
+                # ✅ Salva em arquivo (persiste após F5)
                 AUTHClient._save_session(
                     token, data["user"]["email"], data["user"]["plan"]
                 )
 
-                logger.info(f"Login bem-sucedido: {data['user']['email']}")
+                logger.info(f"🔐 Login bem-sucedido: {data['user']['email']}")
                 return True, data["message"], data
 
             return False, response.json().get("detail", "Erro de login"), None
         except Exception as e:
-            logger.error(f"Erro no login: {e}")
+            logger.error(f"❌ Erro no login: {e}")
             return False, f"Erro de conexão: {e}", None
 
     @staticmethod
     def logout():
-        logger.info(f"Logout: {st.session_state.get('user_email')}")
+        email = st.session_state.get("user_email", "desconhecido")
+        logger.info(f"🚪 Logout: {email}")
         AUTHClient._clear_session_state()
 
     @staticmethod
@@ -245,7 +351,7 @@ class AUTHClient:
                 data.get("limit", 0),
             )
         except Exception as e:
-            logger.error(f"Erro ao verificar rate limit: {e}")
+            logger.error(f"❌ Erro ao verificar rate limit: {e}")
             return False, "Erro de conexão", 999, 0
 
     @staticmethod
@@ -269,7 +375,7 @@ class AUTHClient:
 
             return False, AUTHClient._handle_error(response)
         except Exception as e:
-            logger.error(f"Erro ao marcar recurso: {e}")
+            logger.error(f"❌ Erro ao marcar recurso: {e}")
             return False, f"Erro: {e}"
 
     @staticmethod
@@ -340,7 +446,6 @@ class AUTHClient:
 
     @staticmethod
     def _render_pro_message():
-
         st.success("✅ **Você é PRO:** Acesso total liberado")
 
     @staticmethod
@@ -371,7 +476,6 @@ class AUTHClient:
 
     @staticmethod
     def _render_blocked_message(resource: str, resource_name: str, limit: int):
-
         st.warning(
             f"⚠️ **Limite diário atingido ({limit} usos/dia)**\n\n"
             f"Você já usou o {resource_name} hoje. "
@@ -405,12 +509,12 @@ class AUTHClient:
                 if token and email:
                     AUTHClient._save_session(token, email, "pro")
 
-                logger.info(f"Upgrade para PRO: {email}")
+                logger.info(f"⭐ Upgrade para PRO: {email}")
                 return True, response.json()["message"]
 
             return False, AUTHClient._handle_error(response)
         except Exception as e:
-            logger.error(f"Erro no upgrade: {e}")
+            logger.error(f"❌ Erro no upgrade: {e}")
             return False, f"Erro: {e}"
 
     @staticmethod

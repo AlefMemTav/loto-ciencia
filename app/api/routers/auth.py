@@ -11,7 +11,9 @@ from app.core.security import (
 )
 from app.services.auth_service import auth_service
 
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
 
 SERVER_LIMITS = {
     "validator": 3,
