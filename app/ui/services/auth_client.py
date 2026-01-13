@@ -301,9 +301,7 @@ class AUTHClient:
             return True
 
         if limit == 0:
-            st.warning(
-                f"👑 **{resource_name}** é exclusivo para assinantes PRO.", icon="🔒"
-            )
+            AUTHClient._render_exclusive_message(resource, resource_name)
             return False
 
         rerun = st.session_state.get("rerun_count", 0)
@@ -337,12 +335,57 @@ class AUTHClient:
             )
             return True
         else:
-            st.warning(
-                f"⚠️ **Limite diário atingido ({limit} usos/dia)**\n\n"
-                f"Você já usou o {resource_name} hoje. Volte amanhã ou faça upgrade.",
-                icon="🔒",
-            )
+            AUTHClient._render_blocked_message(resource, resource_name, limit)
             return False
+
+    @staticmethod
+    def _render_pro_message():
+
+        st.success("✅ **Você é PRO:** Acesso total liberado")
+
+    @staticmethod
+    def _render_exclusive_message(resource: str, resource_name: str):
+        """Renderiza bloqueio de recurso exclusivo PRO"""
+        st.warning(
+            f"👑 **{resource_name}** é exclusivo para assinantes PRO.",
+            icon="🔒",
+        )
+        st.markdown(
+            """
+<div style="background-color: #fefce8; padding: 15px; border-radius: 8px; border: 1px solid #fde047; margin-bottom: 15px;">
+    <p style="margin:0; color: #854d0e;">
+    Usuários gratuitos têm acesso ao Validador e Gerador básico.
+    Ferramentas avançadas exigem poder computacional extra.
+    </p>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button(
+            "🚀 Desbloquear Agora (R$ 19,90/mês)",
+            type="primary",
+            use_container_width=True,
+            key=f"excl_upg_{resource}",
+        ):
+            st.switch_page("pages/8_Planos.py")
+
+    @staticmethod
+    def _render_blocked_message(resource: str, resource_name: str, limit: int):
+
+        st.warning(
+            f"⚠️ **Limite diário atingido ({limit} usos/dia)**\n\n"
+            f"Você já usou o {resource_name} hoje. "
+            f"Volte amanhã ou faça upgrade.",
+            icon="🔒",
+        )
+
+        if st.button(
+            "🚀 Virar Ilimitado",
+            type="primary",
+            use_container_width=True,
+            key=f"limit_upg_{resource}",
+        ):
+            st.switch_page("pages/8_Planos.py")
 
     @staticmethod
     def upgrade_to_pro() -> Tuple[bool, str]:

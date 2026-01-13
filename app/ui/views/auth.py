@@ -37,6 +37,7 @@ def render_login_view():
                         st.success(message)
                         st.balloons()
                         time.sleep(1)
+                        st.switch_page("pages/1_Painel.py")
                     else:
                         st.error(f"❌ {message}")
 
