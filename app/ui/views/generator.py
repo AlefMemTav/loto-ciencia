@@ -37,7 +37,7 @@ def render_generator(ctx, svc):
     can_use = AUTHClient.check_and_render_access("generator", "Gerador")
 
     btn_gerar = st.button(
-        "✨ Gerar Agora", type="primary", use_container_width=True, disabled=not can_use
+        "✨ Gerar Agora", type="primary", width="stretch", disabled=not can_use
     )
 
     # --- LÓGICA DO BOTÃO ---
@@ -156,7 +156,7 @@ def _render_generated_games(jogos, estrategia, config, svc):
         "📥 Baixar Jogos (.txt)",
         txt_out,
         f"jogos_{slug}_{estrategia}.txt",
-        use_container_width=True,
+        width="stretch",
     )
 
     # Expander com detalhes

@@ -44,7 +44,7 @@ def render_validator(ctx, svc):
     if st.button(
         "🔬 Analisar Qualidade",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=not can_use,
     ):
         try:
@@ -302,7 +302,7 @@ def _render_geometric_metrics(metricas):
                 st.dataframe(
                     df_geom,
                     hide_index=True,
-                    use_container_width=True,
+                    width="stretch",
                     column_config={
                         "Grupo": st.column_config.TextColumn("Grupo"),
                         "No jogo": st.column_config.NumberColumn(
@@ -366,7 +366,7 @@ def _render_advanced_metrics(metricas):
 
             if linhas:
                 df_quad = pd.DataFrame(linhas)
-                st.dataframe(df_quad, hide_index=True, use_container_width=True)
+                st.dataframe(df_quad, hide_index=True, width="stretch")
 
     # 3. Regressão à Média (informativo)
     regressao = metricas.get("regressao", None)

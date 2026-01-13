@@ -18,11 +18,9 @@ def render_login_view():
 
         col1, col2 = st.columns(2)
         with col1:
-            submit = st.form_submit_button(
-                "Entrar", type="primary", use_container_width=True
-            )
+            submit = st.form_submit_button("Entrar", type="primary", width="stretch")
         with col2:
-            cancel = st.form_submit_button("Cancelar", use_container_width=True)
+            cancel = st.form_submit_button("Cancelar", width="stretch")
 
         if cancel:
             st.switch_page("pages/0_Inicio.py")
@@ -62,10 +60,10 @@ def render_register_view():
         col1, col2 = st.columns(2)
         with col1:
             submit = st.form_submit_button(
-                "Criar Conta", type="primary", use_container_width=True
+                "Criar Conta", type="primary", width="stretch"
             )
         with col2:
-            cancel = st.form_submit_button("Cancelar", use_container_width=True)
+            cancel = st.form_submit_button("Cancelar", width="stretch")
 
         if cancel:
             st.switch_page("pages/0_Inicio.py")
@@ -133,10 +131,10 @@ def render_plans_view():
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("🏠 Voltar ao Painel", use_container_width=True):
+            if st.button("🏠 Voltar ao Painel", width="stretch"):
                 st.switch_page("pages/1_Painel.py")
         with col2:
-            if st.button("❓ Precisa de ajuda?", use_container_width=True):
+            if st.button("❓ Precisa de ajuda?", width="stretch"):
                 st.info("📧 Suporte: contato@lotoscience.com")
         return
 
@@ -230,9 +228,7 @@ def render_plans_view():
         col_cta1, col_cta_central, col_cta2 = st.columns([1, 2, 1])
         with col_cta_central:
 
-            if st.button(
-                "🚀 Fazer Upgrade para PRO", type="primary", use_container_width=True
-            ):
+            if st.button("🚀 Fazer Upgrade para PRO", type="primary", width="stretch"):
                 with st.spinner("Conectando ao pagamento seguro..."):
                     # 1. Pega o email do usuário logado
                     user_email = st.session_state.get("user_email")
@@ -246,7 +242,7 @@ def render_plans_view():
                             "💳 Clique aqui para Pagar no Stripe",
                             checkout_url,
                             type="primary",
-                            use_container_width=True,
+                            width="stretch",
                         )
                         # Opcional: Redirecionamento automático via JS (mais fluido)
                         st.markdown(
@@ -268,9 +264,7 @@ def render_plans_view():
         # Usuário não logado → CTA para criar conta Free
         col_cta1, col_cta_central, col_cta2 = st.columns([1, 2, 1])
         with col_cta_central:
-            if st.button(
-                "🎉 Começar Grátis Agora", type="primary", use_container_width=True
-            ):
+            if st.button("🎉 Começar Grátis Agora", type="primary", width="stretch"):
                 st.switch_page("pages/7_Registro.py")
 
             st.markdown(
@@ -332,11 +326,11 @@ def _render_auth_footer(is_login=True):
     with col1:
         if is_login:
             st.markdown("**Não tem conta?**")
-            if st.button("📝 Criar Conta Grátis", use_container_width=True):
+            if st.button("📝 Criar Conta Grátis", width="stretch"):
                 st.switch_page("pages/7_Registro.py")
         else:
             st.markdown("**Já tem conta?**")
-            if st.button("🔐 Fazer Login", use_container_width=True):
+            if st.button("🔐 Fazer Login", width="stretch"):
                 st.switch_page("pages/6_Login.py")
 
     with col2:

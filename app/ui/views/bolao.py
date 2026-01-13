@@ -43,7 +43,7 @@ def render_bolao(ctx, svc):
     if st.button(
         "🔍 Auditar Bolão",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=not can_use,
     ):
         # 1. Processamento dos Dados

@@ -79,17 +79,17 @@ def _render_lock_screen(feature_name):
 
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("🔐 Fazer Login", use_container_width=True):
+        if st.button("🔐 Fazer Login", width="stretch"):
             st.switch_page("pages/6_Login.py")
     with c2:
-        if st.button("📝 Criar Conta", use_container_width=True):
+        if st.button("📝 Criar Conta", width="stretch"):
             st.switch_page("pages/7_Registro.py")
 
 
 def _render_paywall_screen():
     st.error("👑 Este recurso é exclusivo para assinantes PRO")
     st.markdown("Desbloqueie validações ilimitadas, fechamentos e muito mais.")
-    if st.button("🚀 Ver Planos e Upgrade", type="primary", use_container_width=True):
+    if st.button("🚀 Ver Planos e Upgrade", type="primary", width="stretch"):
         st.switch_page("pages/8_Planos.py")
 
 

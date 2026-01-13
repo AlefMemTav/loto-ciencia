@@ -55,13 +55,13 @@ def render_auth_status():
 
         col1, col2 = st.sidebar.columns(2)
         with col1:
-            if st.button("Entrar", key="sidebar_login", use_container_width=True):
+            if st.button("Entrar", key="sidebar_login", width="stretch"):
                 st.switch_page("pages/6_Login.py")
         with col2:
             if st.button(
                 "Cadastro",
                 key="sidebar_register",
-                use_container_width=True,
+                width="stretch",
                 type="primary",
             ):
                 st.switch_page("pages/7_Registro.py")

@@ -47,12 +47,12 @@ def render_landing_page():
             if st.button(
                 "🚀 Validar Meu Jogo Agora (Grátis)",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.switch_page("pages/1_Painel.py")
 
         with col_cta2:
-            if st.button("📖 Como Funciona?", use_container_width=True):
+            if st.button("📖 Como Funciona?", width="stretch"):
                 st.switch_page("pages/0_Como_funciona.py")
 
         # SOCIAL PROOF
@@ -69,7 +69,7 @@ def render_landing_page():
 
     with col_hero_right:
         try:
-            st.image("assets/mascote_sena_full.png", use_container_width=True)
+            st.image("assets/mascote_sena_full.png", width="stretch")
         except:
             st.info("🎲 Imagem do mascote aqui")
 
@@ -281,9 +281,7 @@ def render_landing_page():
     # CTA secundário centralizado
     col_cta1, col_cta_central, col_cta2 = st.columns([1, 2, 1])
     with col_cta_central:
-        if st.button(
-            "🚀 Começar Grátis Agora", type="primary", use_container_width=True
-        ):
+        if st.button("🚀 Começar Grátis Agora", type="primary", width="stretch"):
             st.switch_page("pages/1_Painel.py")
 
         st.markdown(

@@ -34,7 +34,7 @@ def render_closures(ctx, svc):
     can_use = AUTHClient.check_and_render_access("closures", "Fechamentos Matemáticos")
     if st.button(
         "⚙️ Calcular Fechamento",
-        use_container_width=True,
+        width="stretch",
         type="primary",
         disabled=not can_use,
     ):
@@ -111,7 +111,7 @@ def render_closures(ctx, svc):
                     "📥 Baixar Arquivo TXT",
                     txt,
                     f"fechamento_{config.slug}_{len(jogos)}_jogos.txt",
-                    use_container_width=True,
+                    width="stretch",
                 )
             else:
                 st.warning(

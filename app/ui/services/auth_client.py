@@ -385,14 +385,14 @@ class AUTHClient:
             c1, c2 = st.columns(2)
             with c1:
                 if st.button(
-                    "🔐 Fazer Login", key=f"login_{resource}", use_container_width=True
+                    "🔐 Fazer Login", key=f"login_{resource}", width="stretch"
                 ):
                     st.switch_page("pages/6_Login.py")
             with c2:
                 if st.button(
                     "📝 Criar Conta Grátis",
                     key=f"reg_{resource}",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.switch_page("pages/7_Registro.py")
             return False
@@ -469,7 +469,7 @@ class AUTHClient:
         if st.button(
             "🚀 Desbloquear Agora (R$ 19,90/mês)",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             key=f"excl_upg_{resource}",
         ):
             st.switch_page("pages/8_Planos.py")
@@ -486,7 +486,7 @@ class AUTHClient:
         if st.button(
             "🚀 Virar Ilimitado",
             type="primary",
-            use_container_width=True,
+            width="stretch",
             key=f"limit_upg_{resource}",
         ):
             st.switch_page("pages/8_Planos.py")

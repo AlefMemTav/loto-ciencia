@@ -72,13 +72,11 @@ def _render_auth_badge():
             # Menu minimalista com popover
             with st.popover("⚙️"):
                 if plan != "pro":
-                    if st.button(
-                        "👑 Upgrade PRO", use_container_width=True, type="primary"
-                    ):
+                    if st.button("👑 Upgrade PRO", width="stretch", type="primary"):
                         st.switch_page("pages/8_Planos.py")
                     st.divider()
 
-                if st.button("🚪 Sair", use_container_width=True):
+                if st.button("🚪 Sair", width="stretch"):
                     AUTHClient.logout()
                     st.rerun()
 
