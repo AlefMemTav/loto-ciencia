@@ -24,6 +24,18 @@ def _render_auth_badge():
     """Badge minimalista de autenticação no header"""
 
     if AUTHClient.is_authenticated():
+        query_params = st.query_params
+
+        if query_params.get("paid") == "true":
+            st.success("🎉 Pagamento confirmado! Seu plano PRO está sendo ativado...")
+
+            success, msg = AUTHClient.upgrade_to_pro()
+
+            if success:
+                st.balloons()
+                st.query_params.clear()
+                st.rerun()
+
         email = st.session_state.get("user_email", "Usuário")
         plan = st.session_state.get("user_plan", "free")
 

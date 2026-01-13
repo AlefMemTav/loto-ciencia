@@ -44,3 +44,6 @@ anyio==4.7.0
 
 # Email validation
 email-validator==2.2.0
+
+# Stripe API
+stripe==14.1.0

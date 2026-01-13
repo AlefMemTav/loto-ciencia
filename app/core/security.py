@@ -16,7 +16,6 @@ COOKIE_SETTINGS = {
     "samesite": "lax",
     "max_age": 30 * 24 * 60 * 60,
     "path": "/",
-    "domain": None,
 }
 
 

@@ -1,6 +1,7 @@
 # app/ui/views/auth.py
 import streamlit as st
 import time
+from app.services.payment import get_checkout_url
 from app.ui.services.auth_client import AUTHClient
 
 
@@ -36,7 +37,6 @@ def render_login_view():
                         st.success(message)
                         st.balloons()
                         time.sleep(1)
-                        st.switch_page("pages/1_Painel.py")
                     else:
                         st.error(f"❌ {message}")
 
@@ -225,27 +225,41 @@ def render_plans_view():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # CTAs diferenciados por status de autenticação
     if AUTHClient.is_authenticated():
-        # Usuário logado → CTA direto para upgrade
         col_cta1, col_cta_central, col_cta2 = st.columns([1, 2, 1])
         with col_cta_central:
+
             if st.button(
                 "🚀 Fazer Upgrade para PRO", type="primary", use_container_width=True
             ):
-                with st.spinner("Processando upgrade..."):
-                    success, message = AUTHClient.upgrade_to_pro()
-                    if success:
-                        st.balloons()
-                        st.success(message)
-                        time.sleep(1)
-                        st.rerun()
+                with st.spinner("Conectando ao pagamento seguro..."):
+                    # 1. Pega o email do usuário logado
+                    user_email = st.session_state.get("user_email")
+
+                    # 2. Gera o link do Stripe
+                    checkout_url = get_checkout_url(user_email)
+
+                    # 3. Redireciona (Hack do Streamlit para abrir link externo)
+                    if checkout_url:
+                        st.link_button(
+                            "💳 Clique aqui para Pagar no Stripe",
+                            checkout_url,
+                            type="primary",
+                            use_container_width=True,
+                        )
+                        # Opcional: Redirecionamento automático via JS (mais fluido)
+                        st.markdown(
+                            f'<meta http-equiv="refresh" content="0;url={checkout_url}">',
+                            unsafe_allow_html=True,
+                        )
                     else:
-                        st.error(message)
+                        st.error(
+                            "Não foi possível conectar ao Stripe. Tente novamente."
+                        )
 
             st.markdown(
                 '<p style="text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 10px;">'
-                "Upgrade instantâneo • Cancele a qualquer momento"
+                "Ambiente seguro Stripe • Cancele a qualquer momento"
                 "</p>",
                 unsafe_allow_html=True,
             )
