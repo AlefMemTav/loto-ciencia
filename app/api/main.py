@@ -6,6 +6,8 @@ Serve APIs de autenticação, rate limiting e dados.
 import os
 from dotenv import load_dotenv
 
+from app.api.routers import webhook
+
 load_dotenv()
 
 from fastapi import FastAPI, Request
@@ -55,6 +57,7 @@ async def log_requests(request: Request, call_next):
 
 # ===== ROTAS =====
 app.include_router(auth_router)
+app.include_router(webhook.router, tags=["Webhook"])
 
 
 @app.get("/")
