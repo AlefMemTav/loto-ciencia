@@ -1,10 +1,14 @@
 # app/services/payment.py
+import os
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
 import logging
 import stripe
 import streamlit as st
-import os
 
-# Logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

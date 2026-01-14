@@ -1,4 +1,4 @@
-# Usa Python 3.12 Slim (Leve e estável)
+# Usa Python 3.13 Slim (Leve e estável)
 FROM python:3.13-slim
 
 # Evita arquivos .pyc e logs presos no buffer
