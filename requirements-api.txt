@@ -18,10 +18,7 @@ pydantic-settings==2.7.0
 python-jose[cryptography]==3.3.0
 PyJWT==2.10.1
 passlib[bcrypt]==1.7.4
-
-# Banco de dados
-psycopg2-binary==2.9.10  # PostgreSQL (produção)
-# sqlite3 incluído no Python 3.13
+bcrypt==4.0.1
 
 # Análise de dados (para endpoints de estatísticas)
 pandas==2.2.3
