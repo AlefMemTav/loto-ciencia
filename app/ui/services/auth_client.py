@@ -9,7 +9,7 @@ import time
 from app.core.logger import logger
 
 # Configuração da URL da API
-API_BASE_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
 class AUTHClient:
@@ -74,7 +74,7 @@ class AUTHClient:
             try:
                 # Valida o token com o Backend (Crucial para segurança)
                 response = requests.get(
-                    f"{API_BASE_URL}/auth/me",
+                    f"{API_URL}/auth/me",
                     headers={"Authorization": f"Bearer {token_cookie}"},
                     timeout=5,
                 )
@@ -103,7 +103,7 @@ class AUTHClient:
         """Realiza login e define o Cookie no navegador."""
         try:
             response = requests.post(
-                f"{API_BASE_URL}/auth/login",
+                f"{API_URL}/auth/login",
                 json={"email": email, "password": password},
                 timeout=10,
             )
@@ -136,7 +136,7 @@ class AUTHClient:
     def register(email: str, password: str) -> Tuple[bool, str, Optional[dict]]:
         try:
             response = requests.post(
-                f"{API_BASE_URL}/auth/register",
+                f"{API_URL}/auth/register",
                 json={"email": email, "password": password},
                 timeout=10,
             )
@@ -192,7 +192,7 @@ class AUTHClient:
     def get_profile() -> Optional[dict]:
         try:
             response = requests.get(
-                f"{API_BASE_URL}/auth/me",
+                f"{API_URL}/auth/me",
                 headers=AUTHClient._get_headers(),
                 timeout=10,
             )
@@ -207,7 +207,7 @@ class AUTHClient:
 
         try:
             response = requests.get(
-                f"{API_BASE_URL}/auth/check_limit",
+                f"{API_URL}/auth/check_limit",
                 headers=AUTHClient._get_headers(),
                 params={"resource": resource},
                 timeout=2,
@@ -229,7 +229,7 @@ class AUTHClient:
 
         try:
             response = requests.post(
-                f"{API_BASE_URL}/auth/use-resource/{resource}",
+                f"{API_URL}/auth/use-resource/{resource}",
                 headers=AUTHClient._get_headers(),
                 timeout=10,
             )
@@ -248,7 +248,7 @@ class AUTHClient:
     def upgrade_to_pro() -> Tuple[bool, str]:
         try:
             response = requests.post(
-                f"{API_BASE_URL}/auth/upgrade",
+                f"{API_URL}/auth/upgrade",
                 headers=AUTHClient._get_headers(),
                 timeout=10,
             )
@@ -393,7 +393,7 @@ class AUTHClient:
     def upgrade_to_pro() -> Tuple[bool, str]:
         try:
             response = requests.post(
-                f"{API_BASE_URL}/auth/upgrade",
+                f"{API_URL}/auth/upgrade",
                 headers=AUTHClient._get_headers(),
                 timeout=10,
             )
@@ -404,8 +404,6 @@ class AUTHClient:
                 # ✅ Atualiza arquivo local
                 token = st.session_state.get("access_token")
                 email = st.session_state.user_email
-                if token and email:
-                    AUTHClient._save_session(token, email, "pro")
 
                 logger.info(f"⭐ Upgrade para PRO: {email}")
                 return True, response.json()["message"]

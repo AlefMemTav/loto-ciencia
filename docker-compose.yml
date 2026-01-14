@@ -4,32 +4,28 @@ services:
   # --- Serviço Backend (API) ---
   backend:
     build: .
-    container_name: lotoscience_api
+    container_name: lotoscience_backend
     command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
     volumes:
-      - sessions_data:/app/data/sessions
-      - ./data:/app/data # 💾 PERSISTÊNCIA: Mapeia pasta local 'data' para o container
-    environment:
-      - SECRET_KEY=${SECRET_KEY:-sua_chave_secreta_super_segura}
-      - API_URL=http://localhost:8000
+      - ./data:/app/data # Mapeia pasta local 'data' para o container
+    env_file:
+      - .env
     restart: always
 
   # --- Serviço Frontend (Streamlit) ---
   frontend:
     build: .
-    container_name: lotoscience_ui
+    container_name: lotoscience_frontend
     command: streamlit run main.py --server.port 8501 --server.address 0.0.0.0
     volumes:
-      - sessions_data:/app/data/sessions
-      - ./data:/app/data # 💾 Precisam ver os mesmos arquivos (DB e Excel)
+      - ./data:/app/data # Precisam ver os mesmos arquivos (DB e Excel)
+    env_file:
+      - .env
     environment:
-      # O Streamlit (Python) conversa com o Backend (API) via rede interna Docker
       - API_URL=http://backend:8000
+      - ENVIRONMENT=production
     ports:
       - "8501:8501" # Abre a porta 8501 para o mundo
     depends_on:
       - backend
     restart: always
-
-volumes:
-  sessions_data:

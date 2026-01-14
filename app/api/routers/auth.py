@@ -7,7 +7,6 @@ from app.core.security import (
     verify_password,
     create_access_token,
     decode_token,
-    COOKIE_SETTINGS,
 )
 from app.services.auth_service import auth_service
 

@@ -1,11 +1,12 @@
-# Usa Python 3.11 Slim (Leve e estável)
-FROM python:3.11-slim
+# Usa Python 3.12 Slim (Leve e estável)
+FROM python:3.13-slim
+
+# Evita arquivos .pyc e logs presos no buffer
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Define diretório de trabalho
 WORKDIR /app
-
-# Cria diretório persistente com permissões
-RUN mkdir -p /app/data/sessions && chmod 777 /app/data/session
 
 # Instala dependências do sistema (necessário para alguns pacotes Python)
 RUN apt-get update && apt-get install -y \
@@ -24,8 +25,6 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 
 # Copia todo o código do projeto
 COPY . .
-
-ENV ENVIRONMENT=production
 
 # Exposição de portas (Documentação apenas, o Compose que define)
 EXPOSE 8000

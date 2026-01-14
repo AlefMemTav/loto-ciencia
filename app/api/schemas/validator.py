@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 
 
 class ValidateRequest(BaseModel):
-    numbers: conlist(int, min_length=1)
+    numbers: List[int]
 
 
 class ValidateResponse(BaseModel):

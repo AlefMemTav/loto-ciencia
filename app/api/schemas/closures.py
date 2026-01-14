@@ -10,4 +10,3 @@ class ClosuresRequest(BaseModel):
 
 class ClosuresResponse(BaseModel):
     games: List[List[int]]
-    # ou, se preferir, padronizar erro com HTTPException

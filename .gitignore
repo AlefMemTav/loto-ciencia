@@ -28,7 +28,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
-data/users.db
+data/lotoscience.db
 
 # IDEs
 .vscode/

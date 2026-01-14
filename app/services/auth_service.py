@@ -1,17 +1,23 @@
 # app/services/auth_service.py
 import sqlite3
-import hashlib
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
+from app.core.logger import logger
+from app.core.security import hash_password
 
-DB_PATH = Path("data/users.db")
+DB_PATH = Path("data/lotoscience.db")
 DB_PATH.parent.mkdir(exist_ok=True)
 
 
 class AuthService:
 
-    LIMITS = {"validator": 3, "generator": 1}
+    LIMITS = {
+        "validator": 3,
+        "generator": 1,
+        "closures": 0,
+        "bolao": 0,
+    }
 
     def _get_conn(self):
         conn = sqlite3.connect(str(DB_PATH))
@@ -32,36 +38,31 @@ class AuthService:
                 upgraded_at TIMESTAMP,
                 validator_last_used DATE,
                 generator_last_used DATE,
+                closures_last_used DATE,
+                bolao_last_used DATE,
                 validator_count_today INTEGER DEFAULT 0,
-                generator_count_today INTEGER DEFAULT 0
+                generator_count_today INTEGER DEFAULT 0,
+                closures_count_today INTEGER DEFAULT 0,
+                bolao_count_today INTEGER DEFAULT 0
             )
         """
         )
-
-        # Tabela Guest
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS guest_usage (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                browser_id TEXT NOT NULL,
-                resource TEXT NOT NULL,
-                used_date DATE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(browser_id, resource, used_date)
-            )
-        """
-        )
-
-        # Usuário Demo
         try:
-            demo_hash = hashlib.sha256("demo123".encode()).hexdigest()
-            cursor.execute(
-                "INSERT INTO users (email, password_hash, plan) VALUES (?, ?, ?)",
-                ("demo@lotoscience.com", demo_hash, "pro"),
-            )
-            conn.commit()
-        except:
-            pass
+            demo_email = "demo@lotoscience.com"
+            cursor.execute("SELECT id FROM users WHERE email = ?", (demo_email,))
+            if not cursor.fetchone():
+                demo_pass = hash_password("SenhaMuitoMuitoDifícil123!!!")
+                cursor.execute(
+                    "INSERT INTO users (email, password_hash, plan) VALUES (?, ?, ?)",
+                    (demo_email, demo_pass, "pro"),
+                )
+                conn.commit()
+                logger.info(
+                    "Usuário Demo criado: demo@lotoscience.com / SenhaMuitoMuitoDifícil123!!!"
+                )
+        except Exception as e:
+            logger.error(f"Erro ao criar demo user: {e}")
+
         conn.close()
 
     def get_user_by_email(self, email: str) -> Optional[dict]:

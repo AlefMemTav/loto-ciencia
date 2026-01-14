@@ -1,47 +1,46 @@
 # app/core/security.py
 import os
-import jwt
-import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import jwt  # PyJWT
+from passlib.context import CryptContext
 
-# Configurações
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production-12345")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 30
+SECRET_KEY = os.getenv("SECRET_KEY", "chave-padrao-apenas-para-evitar-crash")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 43200))
 
-COOKIE_SETTINGS = {
-    "httponly": True,
-    "secure": os.getenv("ENV", "development") == "production",
-    "samesite": "lax",
-    "max_age": 30 * 24 * 60 * 60,
-    "path": "/",
-}
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
-    """Hash SHA-256 da senha"""
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Gera um hash seguro (Bcrypt) da senha"""
+    return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return hash_password(plain_password) == hashed_password
+    """Verifica se a senha bate com o hash"""
+    return pwd_context.verify(plain_password, hashed_password)
 
 
 def create_access_token(data: dict) -> str:
-    """Cria JWT token com expiração"""
+    """Cria JWT token com expiração configurada"""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+
+    # Usa a variável de MINUTOS do .env
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+
     to_encode.update({"exp": expire})
-    token = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    if isinstance(token, bytes):
-        token = token.decode("utf-8")
-    return token
+
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
 
 def decode_token(token: str) -> Optional[dict]:
+    """Decodifica e valida o token JWT"""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
-    except (jwt.ExpiredSignatureError, jwt.JWTError):
-        return None
+    except jwt.ExpiredSignatureError:
+        return None  # Token expirado
+    except jwt.InvalidTokenError:
+        return None  # Token falso/adulterado

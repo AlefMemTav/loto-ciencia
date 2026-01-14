@@ -1,3 +1,9 @@
+# main.py
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from app.ui.views.landing import render_landing_page
 from app.ui.page_config import apply_page_config
 

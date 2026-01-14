@@ -6,6 +6,7 @@
 
 # Streamlit framework
 streamlit==1.52.2
+extra-streamlit-components==0.1.81
 
 # Análise de dados
 pandas==2.2.3
