@@ -26,15 +26,22 @@ def buscar_resultado_concurso(loteria, concurso):
         return None
 
 
-def buscar_ultimo_resultado(loteria):
-    """Busca o último resultado de uma loteria"""
-    try:
-        response = requests.get(f"{BASE_URL}/{loteria}/latest", timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Erro ao buscar {loteria}: {e}")
-        return None
+def buscar_ultimo_resultado(loteria, max_tentativas=3):
+    """Busca o último resultado com retry"""
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            response = requests.get(f"{BASE_URL}/{loteria}/latest", timeout=15)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"   ⚠️  Tentativa {tentativa}/{max_tentativas} falhou: {e}")
+            if tentativa < max_tentativas:
+                print(f"   ⏳ Aguardando 30s antes de tentar novamente...")
+                time.sleep(30)
+            else:
+                print(f"   ❌ Todas as tentativas falharam para {loteria}")
+                return None
+    return None
 
 
 def criar_linha_dados(dados_api, num_bolas):

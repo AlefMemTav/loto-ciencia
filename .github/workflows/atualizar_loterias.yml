@@ -1,0 +1,44 @@
+name: Atualizar Loterias Diariamente
+
+on:
+  schedule:
+    # Execução principal: 22h30 BRT (01h30 UTC)
+    - cron: "30 1 * * *"
+    # Backup: 12h BRT (15h UTC) - pega qualquer atraso da noite anterior
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repositório
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Instalar dependências
+        run: |
+          pip install requests pandas openpyxl
+
+      - name: Executar atualização com retry
+        run: python atualizar_loterias.py
+        continue-on-error: true # Não falha o workflow se der erro
+
+      - name: Commit e push
+        run: |
+          git config --local user.email "actions@github.com"
+          git config --local user.name "Bot Loterias"
+          git add data/*.xlsx
+          if git diff --staged --quiet; then
+            echo "✓ Nenhuma atualização necessária"
+          else
+            git commit -m "🎲 Resultados atualizados - $(date +'%d/%m/%Y %H:%M')"
+            git push
+          fi
