@@ -22,7 +22,7 @@ class AUTHClient:
 
     LIMITS = {
         "validator": 3,
-        "generator": 1,
+        "generator": 0,
         "closures": 0,
         "bolao": 0,
     }
@@ -357,7 +357,7 @@ class AUTHClient:
             """
 <div style="background-color: #fefce8; padding: 15px; border-radius: 8px; border: 1px solid #fde047; margin-bottom: 15px;">
     <p style="margin:0; color: #854d0e;">
-    Usuários gratuitos têm acesso ao Validador e Gerador básico.
+    Usuários gratuitos têm acesso ao Validador.
     Ferramentas avançadas exigem poder computacional extra.
     </p>
 </div>

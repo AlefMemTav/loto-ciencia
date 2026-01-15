@@ -1,7 +1,9 @@
 # app/services/lottery_service.py
 from dataclasses import dataclass
-from functools import lru_cache
-from typing import Any, Optional, List, Dict
+from datetime import timedelta
+import os
+import streamlit as st
+from typing import Any, Optional, List
 
 from app.core.logger import logger
 from app.core.lottery import GAMES, GameConfig
@@ -59,18 +61,22 @@ class LotteryService:
     def get_config(self, slug: str) -> GameConfig:
         return GAMES[slug]
 
-    @lru_cache(maxsize=32)
-    def get_context(self, slug: str) -> GameContext:
-        logger.info(f"🔄 [CACHE] get_context({slug}) - calculando contexto...")
-        config = self.get_config(slug)
+    def _get_file_hash(self, filepath: str) -> str:
+        """Hash do arquivo para detectar mudanças"""
+        if not os.path.exists(filepath):
+            return "missing"
+        mtime = os.path.getmtime(filepath)
+        return f"{filepath}:{mtime}"
 
-        # Carrega dados
+    @st.cache_data(ttl=timedelta(hours=6))
+    def _get_context_cached(_self, slug: str, _file_hash: str) -> GameContext:
+        logger.info(f"🔄 [CACHE] get_context({slug}) - calculando contexto...")
+        config = _self.get_config(slug)
         df = carregar_dados_loteria_excel(config, f"data/{slug}.xlsx")
 
-        # Contexto Vazio (Safety Check)
         if df is None or df.empty:
             logger.warning(f"⚠️ [CACHE] {slug}: DataFrame vazio!")
-            return self._build_empty_context(config, df)
+            return _self._build_empty_context(config, df)
 
         grupos_geometricos = config.get_geometric_groups()
 
@@ -115,6 +121,12 @@ class LotteryService:
             stats_quadrantes=quadrantes,
             taxa_regressao=taxa_regressao,
         )
+
+    def get_context(self, slug: str) -> GameContext:
+        """Wrapper público - detecta mudanças no arquivo"""
+        filepath = f"data/{slug}.xlsx"
+        file_hash = self._get_file_hash(filepath)
+        return self._get_context_cached(slug, file_hash)
 
     def _build_empty_context(self, config, df):
         return GameContext(

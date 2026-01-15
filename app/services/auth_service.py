@@ -14,7 +14,7 @@ class AuthService:
 
     LIMITS = {
         "validator": 3,
-        "generator": 1,
+        "generator": 0,
         "closures": 0,
         "bolao": 0,
     }

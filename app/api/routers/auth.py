@@ -16,7 +16,7 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 SERVER_LIMITS = {
     "validator": 3,
-    "generator": 1,
+    "generator": 0,
     "closures": 0,
     "bolao": 0,
 }
