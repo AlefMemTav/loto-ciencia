@@ -7,6 +7,9 @@ on:
     # Backup: 12h BRT (15h UTC) - pega qualquer atraso da noite anterior
     - cron: "0 15 * * *"
   workflow_dispatch:
+  
+permissions:
+  contents: write
 
 jobs:
   atualizar:
