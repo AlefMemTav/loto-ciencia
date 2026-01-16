@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from app.services.lottery_service import LotteryService
 from app.ui.core.styles import apply_custom_css
+from app.core.logger import logger
 
 # Configuração da página para parecer um portal de notícias de loteria
 st.set_page_config(
@@ -10,7 +11,7 @@ st.set_page_config(
 )
 
 
-@st.cache_data(ttl=3600)  # Cache de 1 hora para resultados
+@st.cache_data(ttl=86400)
 def validar_sorteio_cached(slug: str, concurso: int, numeros_tuple: tuple):
     """Valida o sorteio e retorna a análise técnica."""
     service = LotteryService()
@@ -73,7 +74,7 @@ def render_validador_em_acao():
         """
 <div style='text-align: center; margin-bottom: 2rem;'>
     <h1 style='font-size: 2.5rem; margin-bottom: 0;'>📢 Últimos Resultados</h1>
-    <p style='color: #666; font-size: 1.1rem;'>
+    <p style='color: #777; font-size: 1.1rem;'>
         Confira os números sorteados e veja a <strong>Análise da Inteligência Estatística</strong> sobre o resultado.
     </p>
 </div>
@@ -167,7 +168,7 @@ def render_validador_em_acao():
             st.markdown(
                 f"""
 <div style="background: white; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; text-align: center; height: 100%;">
-    <div style="font-size: 1rem; color: #666; margin-bottom: 10px;">Score Estatístico</div>
+    <div style="font-size: 1rem; color: #777; margin-bottom: 10px;">Score Estatístico</div>
     <div style="font-size: 3.5rem; font-weight: 800; color: {info_loteria['cor']}; line-height: 1;">
         {score}<span style="font-size: 1.5rem; color: #999;">/100</span>
     </div>
@@ -270,6 +271,5 @@ def render_validador_em_acao():
         )
 
     except Exception as e:
-        st.error(f"Erro ao carregar resultados: {e}")
-        # Em produção, logar o erro silenciosamente
-        # logger.error(e)
+        st.error(f"Erro ao carregar resultados")
+        logger.error(e)

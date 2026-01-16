@@ -357,7 +357,7 @@ def render_landing_page():
 
             **Exemplo real:**
             - Se você jogar 1-2-3-4-5-6 e ganhar, vai dividir com ~10.000 pessoas
-            - Prêmio de R$ 60 milhões ÷ 10.000 = **R$ 6.000 cada**
+            - Prêmio de 60 milhões de reais ÷ 10.000 = **6.000 reais cada**
 
             **Como calculamos:**
             - ✅ **Baixo:** Jogo único, sem padrões populares detectados
