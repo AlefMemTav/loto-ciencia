@@ -1,3 +1,7 @@
+[client]
+toolbarMode = "minimal"
+showErrorDetails = false
+
 [theme]
 primaryColor = "#16a34a"
 backgroundColor = "#FFFFFF"
@@ -11,5 +15,11 @@ address = "0.0.0.0"
 enableCORS = false
 enableXsrfProtection = false
 port = 8501
+enableStaticServing = true
+
+[runner]
+magicEnabled = true
+fastReruns = true
 
 [browser]
+gatherUsageStats = false

@@ -12,7 +12,7 @@ def render_app_header(config, df):
         st.markdown("### 🧪 **LotoScience**")
 
     with col2:
-        st.caption(f"📊 {config.name} • {len(df)} concursos analisados")
+        st.caption(f"{config.name} • {len(df)} concursos analisados")
 
     with col3:
         _render_auth_badge()

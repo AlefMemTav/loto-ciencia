@@ -176,7 +176,36 @@ def apply_custom_css():
             box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Sombra leve */
             text-align: center;      /* Centraliza o texto */
         }
-
+        .stStatusWidget {
+            display: none !important;
+        }
+        
+        /* Esconde o container do spinner */
+        div[data-testid="stStatusWidget"] {
+            display: none !important;
+        }
+        
+        /* Esconde especificamente o emoji/icon */
+        div[data-testid="stStatusWidget"] svg,
+        div[data-testid="stStatusWidget"] .stSpinner {
+            display: none !important;
+        }
+        
+        /* Esconde o elemento "Running..." */
+        .stAlert[data-baseweb="notification"] {
+            display: none !important;
+        }
+        
+        /* Esconde qualquer spinner do Streamlit */
+        .streamlit-spinner {
+            display: none !important;
+        }
+        
+        /* Esconde o texto "Running" no canto */
+        section[data-testid="stSidebar"] .stSpinner,
+        section[data-testid="stSidebar"] .stAlert {
+            display: none !important;
+        }
         /* Metric Cards */
         .custom-metric-card {
             background: white;

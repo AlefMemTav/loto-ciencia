@@ -1,313 +1,275 @@
 # app/pages/validador_em_acao.py
 import streamlit as st
-from datetime import datetime
+import pandas as pd
 from app.services.lottery_service import LotteryService
 from app.ui.core.styles import apply_custom_css
 
+# Configuração da página para parecer um portal de notícias de loteria
+st.set_page_config(
+    page_title="Últimos Resultados e Análise", page_icon="🎱", layout="wide"
+)
 
-@st.cache_data(ttl=86400)
+
+@st.cache_data(ttl=3600)  # Cache de 1 hora para resultados
 def validar_sorteio_cached(slug: str, concurso: int, numeros_tuple: tuple):
-    """Valida um sorteio e cacheia o resultado por 1 dia (86400 segundos)"""
+    """Valida o sorteio e retorna a análise técnica."""
     service = LotteryService()
     numeros = list(numeros_tuple)
     return service.validate(slug, numeros)
 
 
-def get_personality_message(score_tecnico: int, risco: str) -> dict:
-    """Retorna mensagem do robô baseada no SCORE TÉCNICO (antes de zerar por já ter saído)"""
+def render_result_balls(numeros, color="#667eea"):
+    """Renderiza as bolas do sorteio estilo TV/Caixa"""
+    html = f"""
+    <div style="display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 20px;">
+    """
+    for n in sorted(numeros):
+        html += f"""
+<div style="
+    width: 50px; height: 50px; 
+    background: radial-gradient(circle at 30% 30%, {color}, #2d3748);
+    color: white; border-radius: 50%; display: flex; 
+    align-items: center; justify-content: center; 
+    font-weight: bold; font-size: 1.2rem;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+    border: 2px solid white;
+">
+            {n:02d}
+        </div>
+        """
+    html += "</div>"
+    st.markdown(html, unsafe_allow_html=True)
 
-    if score_tecnico >= 85:
-        return {
-            "emoji": "😎",
-            "titulo": "MANDEI BEM!",
-            "mensagem": "Olha só esse resultado! O sorteio oficial teve <b>score técnico altíssimo</b>. Estatisticamente, foi um jogo de excelente qualidade!",
-            "cor": "#00C853",
-            "nivel": "EXCELENTE",
-        }
-    elif score_tecnico >= 70:
-        return {
-            "emoji": "👍",
-            "titulo": "Tá vendo? Funciona!",
-            "mensagem": "Score sólido! O sorteio oficial passou nos nossos filtros com boa nota. A ciência por trás do validador está provada na prática.",
-            "cor": "#43A047",
-            "nivel": "BOM",
-        }
-    elif score_tecnico >= 55:
-        return {
-            "emoji": "🤔",
-            "titulo": "Score mediano...",
-            "mensagem": "O sorteio oficial ficou na média. Nem todos os sorteios reais são estatisticamente perfeitos - e é isso que torna a análise importante!",
-            "cor": "#FB8C00",
-            "nivel": "MÉDIO",
-        }
-    else:
-        return {
-            "emoji": "😬",
-            "titulo": "Esse foi... peculiar",
-            "mensagem": f"Score técnico baixo! Esse sorteio teve padrões estatisticamente incomuns. Nosso validador conseguiu detectar essas anomalias - é exatamente isso que ele faz com seus jogos!",
-            "cor": "#E53935",
-            "nivel": "BAIXO",
-        }
+
+def render_stats_summary(numeros, metricas):
+    """Mostra o que o apostador técnico quer ver: Pares, Soma, Primos"""
+    st.markdown("##### 🕵️ Detalhes que todo apostador olha:")
+    c1, c2, c3, c4 = st.columns(4)
+
+    n = len(numeros)
+    pares = sum(1 for x in numeros if x % 2 == 0)
+    impares = n - pares
+    soma = sum(numeros)
+
+    # Tenta pegar primos das métricas ou calcula simples
+    primos_count = metricas.get("primos_count", "N/A")
+
+    with c1:
+        st.metric("Soma Total", soma)
+    with c2:
+        st.metric("Pares / Ímpares", f"{pares} / {impares}")
+    with c3:
+        st.metric("Primos", primos_count)
+    with c4:
+        repetidos = metricas.get("repetidos_concurso_anterior", "N/A")
+        st.metric("Repetidos", repetidos, help="Do concurso anterior")
 
 
 def render_validador_em_acao():
-    """Página que valida os últimos sorteios reais e mostra o score"""
     apply_custom_css()
-    if st.button("← Ir para Validador", key="back_button"):
-        st.switch_page("pages/2_Validador.py")
-    # Header
+
+    # --- HEADER DE PORTAL DE NOTÍCIAS ---
     st.markdown(
         """
-        <div style='text-align: center; padding: 2rem 0;'>
-            <h1 style='font-size: 3rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                       font-weight: 800; margin-bottom: 0.5rem;'>
-                🏆 Validador em Ação
-            </h1>
-            <p style='font-size: 1.3rem; color: #777; margin-top: 0;'>
-                Veja como o <strong>LotoScience</strong> analisa os sorteios <strong>reais</strong> que acabaram de sair
-            </p>
-        </div>
-    """,
+<div style='text-align: center; margin-bottom: 2rem;'>
+    <h1 style='font-size: 2.5rem; margin-bottom: 0;'>📢 Últimos Resultados</h1>
+    <p style='color: #666; font-size: 1.1rem;'>
+        Confira os números sorteados e veja a <strong>Análise da Inteligência Estatística</strong> sobre o resultado.
+    </p>
+</div>
+        """,
         unsafe_allow_html=True,
     )
 
-    st.divider()
+    # Menu de Navegação Rápida
+    col_nav1, col_nav2 = st.columns([1, 4])
+    with col_nav1:
+        if st.button("← Voltar", width="stretch"):
+            st.switch_page("pages/2_Painel.py")
 
-    # Intro
-    st.markdown(
-        """
-        ### 🔬 Transparência Total
-        
-        Não acredite só na nossa palavra. Aqui você vê **em tempo real** como o validador
-        analisa os sorteios oficiais da Caixa que acabaram de acontecer.
-        
-        **Como funciona:**
-        - Pegamos o **último sorteio oficial** de cada loteria
-        - Rodamos no **mesmo validador** que você usa
-        - Mostramos o **score técnico** (qualidade estatística do jogo)
-        
-        ⚠️ *O score final seria 0 (jogo já saiu), mas mostramos o score técnico para você ver a qualidade estatística!*
-    """
-    )
+    # Seletor de Loteria (Estilo Abas)
+    loteria_map = {
+        "loto_facil_sorteio": {"nome": "Lotofácil", "cor": "#9333ea"},  # Roxo
+        "mega_sena_sorteio": {"nome": "Mega-Sena", "cor": "#16a34a"},  # Verde
+        "quina_sorteio": {"nome": "Quina", "cor": "#2563eb"},  # Azul
+        "loto_mania_sorteio": {"nome": "Lotomania", "cor": "#f97316"},  # Laranja
+    }
 
-    st.divider()
-
-    # Seletor de loteria
-    col1, col2, col3 = st.columns([1, 2, 1])
-
-    with col2:
-        loteria = st.selectbox(
-            "Escolha a loteria:",
-            [
-                "mega_sena_sorteio",
-                "loto_facil_sorteio",
-                "quina_sorteio",
-                "loto_mania_sorteio",
-            ],
-            format_func=lambda x: {
-                "mega_sena_sorteio": "🎰 Mega-Sena",
-                "loto_facil_sorteio": "🍀 Lotofácil",
-                "quina_sorteio": "🎲 Quina",
-                "loto_mania_sorteio": "⭐ Lotomania",
-            }[x],
+    col_sel, _ = st.columns([2, 2])
+    with col_sel:
+        slug_selecionado = st.selectbox(
+            "Selecione o Sorteio:",
+            list(loteria_map.keys()),
+            format_func=lambda x: f"{loteria_map[x]['nome']}",
         )
 
-    st.divider()
+    info_loteria = loteria_map[slug_selecionado]
 
-    # Carrega último sorteio
-    with st.spinner("🔍 Buscando último sorteio e validando..."):
-        service = LotteryService()
+    # --- LÓGICA DE CARREGAMENTO ---
+    service = LotteryService()
+    try:
+        ctx = service.get_context(slug_selecionado)
+        if ctx.df is None or ctx.df.empty:
+            st.error("⚠️ Atualizando base de dados... Tente novamente em instantes.")
+            return
 
-        try:
-            ctx = service.get_context(loteria)
-            config = ctx.config
-            if ctx.df is None or ctx.df.empty:
-                st.error("❌ Dados não disponíveis para essa loteria")
-                return
+        # Pega o último sorteio (Concurso mais recente)
+        ultimo_sorteio = ctx.df.iloc[-1]
+        concurso = ultimo_sorteio.name
 
-            # Último sorteio = última linha (maior concurso)
-            ultimo_sorteio = ctx.df.iloc[-1]
-            concurso = ultimo_sorteio.name  # índice = concurso
-            numeros = ultimo_sorteio.tolist()
+        # Tenta pegar a data se existir no DF
+        data_sorteio = ultimo_sorteio.get("Data", "Data não inf.")
+        if hasattr(data_sorteio, "strftime"):
+            data_sorteio = data_sorteio.strftime("%d/%m/%Y")
 
-            # Valida com cache! (converte lista para tupla para ser hashable)
-            resultado = validar_sorteio_cached(loteria, concurso, tuple(numeros))
+        numeros = sorted(ultimo_sorteio.tolist())
 
-            # SEMPRE usa score_original (técnico) pois são sorteios reais
-            score_tecnico = resultado.get(
-                "score_original", resultado.get("score_final", 0)
-            )
-            risco = resultado.get("risco_divisao", "DESCONHECIDO")
-
-            # Personalidade do robô baseada no score TÉCNICO
-            personality = get_personality_message(score_tecnico, risco)
-
-            # ========== DISPLAY DOS RESULTADOS ==========
-
-            # Card do robô
-            st.markdown(
-                f"""
-                <div style='background: linear-gradient(135deg, {personality['cor']}22 0%, {personality['cor']}11 100%);
-                            border-left: 5px solid {personality['cor']};
-                            padding: 2rem;
-                            border-radius: 15px;
-                            margin: 2rem 0;'>
-                    <div style='display: flex; align-items: center; gap: 1.5rem;'>
-                        <div style='font-size: 5rem;'>{personality['emoji']}</div>
-                        <div style='flex: 1;'>
-                            <h2 style='margin: 0; color: {personality['cor']};'>{personality['titulo']}</h2>
-                            <p style='font-size: 1.1rem; margin: 0.5rem 0 0 0; color: #333;'>
-                                {personality['mensagem']}
-                            </p>
-                        </div>
-                    </div>
-                </div>
+        # --- ÁREA DO RESULTADO (VISUAL DE TV) ---
+        st.markdown(
+            f"""
+<div style="
+    background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+    border: 1px solid #cbd5e1;
+    border-radius: 15px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    margin-bottom: 30px;
+">
+    <h2 style="color: #334155; margin:0;">{info_loteria['nome']} - Concurso {concurso}</h2>
+    <p style="color: #64748b; font-size: 0.9rem; margin-top: 5px;">Sorteio realizado em: {data_sorteio}</p>
+    <hr style="margin: 15px 0; border-color: #cbd5e1;">
             """,
-                unsafe_allow_html=True,
+            unsafe_allow_html=True,
+        )
+
+        # Renderiza as bolas coloridas
+        render_result_balls(numeros, color=info_loteria["cor"])
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # --- ANÁLISE TÉCNICA (O DIFERENCIAL) ---
+        st.subheader("🤖 O que a Inteligência Estatística achou desse resultado?")
+
+        # Roda a validação
+        with st.spinner("Calculando estatísticas do sorteio..."):
+            resultado = validar_sorteio_cached(
+                slug_selecionado, concurso, tuple(numeros)
             )
+            score = resultado.get("score_original", 0)
+            metricas = resultado.get("metricas", {})
+            risco = resultado.get("risco_divisao", "N/A")
 
-            # Info do sorteio
-            col_left, col_right = st.columns(2)
+        # Layout de 2 colunas para análise
+        c_score, c_stats = st.columns([1.5, 2.5])
 
-            with col_left:
-                st.markdown(
-                    f"""
-                    ### 📊 Dados do Sorteio {config.name}
-                    
-                    - **Concurso:** {concurso}
-                    - **Números:** {' - '.join(map(str, numeros))}
-                    - **Status:** 🎯 Sorteio oficial da Caixa
-                """
-                )
-
-            with col_right:
-                st.markdown(
-                    f"""
-                    ### 🎯 Análise Estatística
-                    
-                    - **Score Técnico:** {score_tecnico}/100 ({personality['nivel']})
-                    - **Risco de Divisão:** {risco}
-                    - **Qualidade:** {'✅ Alta' if score_tecnico >= 70 else '⚠️ Média' if score_tecnico >= 55 else '❌ Baixa'}
-                """
-                )
-
-            st.divider()
-
-            # Score visual
-            st.markdown("### 📈 Score Técnico (Qualidade Estatística)")
-
-            progress_color = personality["cor"]
-
+        with c_score:
+            # Gauge do Score
             st.markdown(
                 f"""
-<div style='background: #f0f0f0; border-radius: 25px; height: 50px; overflow: hidden; position: relative;'>
-    <div style='background: linear-gradient(90deg, {progress_color}, {progress_color}88);
-                width: {score_tecnico}%; height: 100%; display: flex; align-items: center;
-                justify-content: center; font-weight: bold; color: white; font-size: 1.3rem;
-                transition: width 1s ease;'>
-        {score_tecnico}/100
+<div style="background: white; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; text-align: center; height: 100%;">
+    <div style="font-size: 1rem; color: #666; margin-bottom: 10px;">Score Estatístico</div>
+    <div style="font-size: 3.5rem; font-weight: 800; color: {info_loteria['cor']}; line-height: 1;">
+        {score}<span style="font-size: 1.5rem; color: #999;">/100</span>
+    </div>
+    <div style="margin-top: 10px; font-weight: bold; color: #444;">
+        {"✅ Padrão Normal" if score > 60 else "⚠️ Resultado Atípico (Zebra)"}
     </div>
 </div>
-            """,
+                """,
                 unsafe_allow_html=True,
             )
 
-            st.caption(
-                "💡 Este é o score de **qualidade técnica** do jogo. Como já foi sorteado oficialmente, estamos mostrando apenas a análise estatística."
-            )
+        with c_stats:
+            # Card de Detalhes
+            with st.container(border=True):
+                render_stats_summary(numeros, metricas)
 
-            st.divider()
+                # Feedback humano
+                if score > 75:
+                    msg = "Este resultado seguiu perfeitamente as leis da probabilidade. Quem jogou baseado em estatística teve mais chances."
+                elif score > 50:
+                    msg = "Um resultado mediano. Alguns padrões saíram do comum, mas nada impossível."
+                else:
+                    msg = "🦓 ZEBRA! Este sorteio foi matematicamente improvável (muitos números seguidos ou fora de padrão). Difícil de acertar."
 
-            # Call to Action
-            st.markdown(
-                f"""
-<div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 3rem;
-            border-radius: 20px;
-            text-align: center;
-            color: white;
-            margin: 3rem 0;'>
-    <h2 style='margin: 0 0 1rem 0; font-size: 2.2rem;'>
-        Esse é o mesmo validador que você pode usar AGORA!
-    </h2>
-    <p style='font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.95;'>
-        Analise seus próprios jogos com a mesma tecnologia que analisou o concurso <strong>{concurso}</strong>
+                st.info(f"💡 **Análise do Robô:** {msg}")
+
+        # --- CALL TO ACTION (VENDA) ---
+        st.markdown("---")
+        st.markdown(
+            """
+<div style="
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    padding: 30px;
+    border-radius: 15px;
+    text-align: center;
+    color: white;
+    margin-top: 20px;
+">
+    <h2 style="color: white; margin-bottom: 10px;">Quer jogar com essa inteligência?</h2>
+    <p style="color: #cbd5e1; max-width: 600px; margin: 0 auto 20px auto;">
+        Nosso sistema não só analisa resultados passados, ele ajuda você a criar jogos futuros 
+        com <strong>Score Alto</strong> para parar de perder dinheiro com zebras.
     </p>
-    <a href="/Validador" target="_self" style='background: white; color: #667eea;
-        padding: 1rem 3rem; border-radius: 50px; text-decoration: none;
-        font-weight: bold; font-size: 1.2rem; display: inline-block;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
-        🚀 Validar Meu Jogo Agora
+    <a href="/Validador" target="_self">
+        <button style="
+            background-color: #22c55e; border: none; color: white; 
+            padding: 12px 30px; border-radius: 25px; 
+            font-weight: bold; font-size: 1.1rem; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(34, 197, 94, 0.4);
+        ">
+            🚀 Validar Meus Próximos Jogos
+        </button>
     </a>
 </div>
             """,
-                unsafe_allow_html=True,
+            unsafe_allow_html=True,
+        )
+
+        # --- HISTÓRICO RECENTE (SEO E RETENÇÃO) ---
+        st.markdown("### 📅 Histórico Recente")
+
+        # Tabela simplificada
+        ultimos = ctx.df.tail(10).sort_index(ascending=False)
+
+        # Prepara dados para tabela limpa
+        dados_tabela = []
+        for idx, row in ultimos.iterrows():
+            # Recalcula score rápido (com cache)
+            res_hist = validar_sorteio_cached(
+                slug_selecionado, idx, tuple(row.tolist())
+            )
+            sc = res_hist.get("score_original", 0)
+
+            nums_fmt = " - ".join([f"{n:02d}" for n in sorted(row.tolist())])
+            dados_tabela.append(
+                {
+                    "Concurso": idx,
+                    "Números Sorteados": nums_fmt,
+                    "Score Inteligência Estatística": sc,
+                    "Qualidade": (
+                        "🟢 Ótimo" if sc > 70 else "🟡 Médio" if sc > 50 else "🔴 Zebra"
+                    ),
+                }
             )
 
-            # Histórico (últimos 5 sorteios)
-            st.markdown("### 📜 Histórico dos Últimos Sorteios")
-            st.caption("Veja a qualidade estatística dos últimos 5 concursos oficiais")
+        df_display = pd.DataFrame(dados_tabela)
+        st.dataframe(
+            df_display,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Score da nossa Inteligência Estatística": st.column_config.ProgressColumn(
+                    "Score Inteligência Estatística",
+                    help="Qualidade estatística do resultado",
+                    format="%d",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+        )
 
-            historico_scores = []
-            ultimos_5 = ctx.df.tail(5)
-
-            for concurso_hist, row in ultimos_5.iterrows():
-                numeros_hist = row.tolist()
-
-                # Valida com cache!
-                resultado_hist = validar_sorteio_cached(
-                    loteria, concurso_hist, tuple(numeros_hist)
-                )
-
-                # Sempre usa score técnico
-                score_tecnico_hist = resultado_hist.get(
-                    "score_original", resultado_hist.get("score_final", 0)
-                )
-
-                historico_scores.append(
-                    {
-                        "Concurso": int(concurso_hist),
-                        "Score Técnico": f"{score_tecnico_hist}/100",
-                        "Risco": resultado_hist.get("risco_divisao", "N/A"),
-                        "Qualidade": (
-                            "✅ Alta"
-                            if score_tecnico_hist >= 70
-                            else "⚠️ Média" if score_tecnico_hist >= 55 else "❌ Baixa"
-                        ),
-                    }
-                )
-
-            import pandas as pd
-
-            df_historico = pd.DataFrame(historico_scores)
-            df_historico = df_historico.sort_values("Concurso", ascending=False)
-
-            st.dataframe(df_historico, use_container_width=True, hide_index=True)
-
-            # Média dos scores técnicos
-            scores_numericos = [
-                resultado_hist.get(
-                    "score_original", resultado_hist.get("score_final", 0)
-                )
-                for resultado_hist in [
-                    validar_sorteio_cached(loteria, concurso_hist, tuple(row.tolist()))
-                    for concurso_hist, row in ultimos_5.iterrows()
-                ]
-            ]
-
-            media_scores = (
-                sum(scores_numericos) / len(scores_numericos) if scores_numericos else 0
-            )
-
-            st.metric(
-                "📊 Score técnico médio dos últimos 5 sorteios",
-                f"{media_scores:.1f}/100",
-                delta=f"{score_tecnico - media_scores:+.1f} vs média",
-            )
-
-        except Exception as e:
-            st.error(f"❌ Erro ao processar: {str(e)}")
-            import traceback
-
-            st.code(traceback.format_exc())
+    except Exception as e:
+        st.error(f"Erro ao carregar resultados: {e}")
+        # Em produção, logar o erro silenciosamente
+        # logger.error(e)

@@ -1,4 +1,4 @@
-# pages/1_Painel.py
+# pages/2_Painel.py
 from app.ui.components.header import render_app_header
 from app.ui.components.nav import top_nav
 from app.ui.page_config import apply_page_config

@@ -1,6 +1,6 @@
-# pages/3_Gerador.py
+# pages/5_Gerador.py
 from app.ui.core.shell import init_page
 from app.ui.views.generator import render_generator
 
-ctx, svc = init_page(title="Gerador Inteligente")
+ctx, svc = init_page(title="Gerador de Palpites e Jogos (IA)")
 render_generator(ctx, svc)

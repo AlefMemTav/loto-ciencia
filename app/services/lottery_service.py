@@ -68,7 +68,7 @@ class LotteryService:
         mtime = os.path.getmtime(filepath)
         return f"{filepath}:{mtime}"
 
-    @st.cache_data(ttl=timedelta(hours=6))
+    @st.cache_resource(ttl=timedelta(hours=6))
     def _get_context_cached(_self, slug: str, _file_hash: str) -> GameContext:
         logger.info(f"🔄 [CACHE] get_context({slug}) - calculando contexto...")
         config = _self.get_config(slug)

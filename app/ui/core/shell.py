@@ -76,10 +76,10 @@ def _render_lock_screen(feature_name):
     c1, c2 = st.columns(2)
     with c1:
         if st.button("🔐 Fazer Login", width="stretch"):
-            st.switch_page("pages/6_Login.py")
+            st.switch_page("pages/9_Login.py")
     with c2:
         if st.button("📝 Criar Conta", width="stretch"):
-            st.switch_page("pages/7_Registro.py")
+            st.switch_page("pages/10_Registro.py")
 
 
 def _render_paywall_screen():

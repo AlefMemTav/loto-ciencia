@@ -8,7 +8,7 @@ from app.ui.services.auth_client import AUTHClient
 def render_login_view():
     # Botão voltar no topo
     if st.button("← Voltar para Painel"):
-        st.switch_page("pages/1_Painel.py")
+        st.switch_page("pages/2_Painel.py")
     st.title("🔐 Login")
     st.markdown("Entre na sua conta para acessar todas as funcionalidades.")
 
@@ -35,7 +35,7 @@ def render_login_view():
                         st.success(message)
                         st.balloons()
                         time.sleep(1)
-                        st.switch_page("pages/1_Painel.py")
+                        st.switch_page("pages/2_Painel.py")
                     else:
                         st.error(f"❌ {message}")
 
@@ -46,8 +46,8 @@ def render_login_view():
 def render_register_view():
     # Botão voltar no topo
     if st.button("← Voltar para Painel"):
-        st.switch_page("pages/1_Painel.py")
-    st.title("📝 Criar Conta Grátis")
+        st.switch_page("pages/2_Painel.py")
+    st.title("Criar Conta Grátis")
     st.markdown("Cadastre-se para ter acesso completo ao sistema.")
 
     with st.form("register_form"):
@@ -85,7 +85,7 @@ def render_register_view():
                         st.balloons()
                         st.info("🎉 Conta criada! Você já está logado.")
                         time.sleep(1)
-                        st.switch_page("pages/1_Painel.py")
+                        st.switch_page("pages/2_Painel.py")
                     else:
                         st.error(f"❌ {message}")
 
@@ -96,7 +96,7 @@ def render_register_view():
 def render_plans_view():
     # Botão voltar no topo
     if st.button("← Voltar para Painel"):
-        st.switch_page("pages/1_Painel.py")
+        st.switch_page("pages/2_Painel.py")
 
     st.markdown("<br>", unsafe_allow_html=True)
     """Página de planos otimizada: Free (3 usos/dia) + Pro (R$ 19,90)"""
@@ -132,7 +132,7 @@ def render_plans_view():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🏠 Voltar ao Painel", width="stretch"):
-                st.switch_page("pages/1_Painel.py")
+                st.switch_page("pages/2_Painel.py")
         with col2:
             if st.button("❓ Precisa de ajuda?", width="stretch"):
                 st.info("📧 Suporte: contato@lotoscience.com")
@@ -265,7 +265,7 @@ def render_plans_view():
         col_cta1, col_cta_central, col_cta2 = st.columns([1, 2, 1])
         with col_cta_central:
             if st.button("🎉 Começar Grátis Agora", type="primary", width="stretch"):
-                st.switch_page("pages/7_Registro.py")
+                st.switch_page("pages/10_Registro.py")
 
             st.markdown(
                 '<p style="text-align: center; color: #94a3b8; font-size: 0.85rem; margin-top: 10px;">'
@@ -326,12 +326,12 @@ def _render_auth_footer(is_login=True):
     with col1:
         if is_login:
             st.markdown("**Não tem conta?**")
-            if st.button("📝 Criar Conta Grátis", width="stretch"):
-                st.switch_page("pages/7_Registro.py")
+            if st.button("Criar Conta Grátis", width="stretch"):
+                st.switch_page("pages/10_Registro.py")
         else:
             st.markdown("**Já tem conta?**")
             if st.button("🔐 Fazer Login", width="stretch"):
-                st.switch_page("pages/6_Login.py")
+                st.switch_page("pages/9_Login.py")
 
     with col2:
         st.markdown("**Ajuda?**")

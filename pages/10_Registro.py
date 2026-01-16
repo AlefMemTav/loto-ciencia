@@ -1,4 +1,4 @@
-# pages/7_Registro.py
+# pages/10_Registro.py
 import streamlit as st
 from app.ui.services.auth_client import AUTHClient
 from app.ui.core.styles import apply_custom_css
@@ -9,6 +9,6 @@ apply_custom_css()
 AUTHClient.init()
 
 if AUTHClient.is_authenticated():
-    st.switch_page("pages/1_Painel.py")
+    st.switch_page("pages/2_Painel.py")
 
 render_register_view()

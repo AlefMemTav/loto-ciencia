@@ -269,10 +269,10 @@ class AUTHClient:
                 if st.button(
                     "🔐 Fazer Login", key=f"login_{resource}", width="stretch"
                 ):
-                    st.switch_page("pages/6_Login.py")  # Ajuste o caminho se necessário
+                    st.switch_page("pages/9_Login.py")  # Ajuste o caminho se necessário
             with c2:
                 if st.button("📝 Criar Conta", key=f"reg_{resource}", width="stretch"):
-                    st.switch_page("pages/7_Registro.py")
+                    st.switch_page("pages/10_Registro.py")
             return False
         if resource not in AUTHClient.LIMITS:
             return True
