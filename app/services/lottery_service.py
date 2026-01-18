@@ -4,7 +4,7 @@ from datetime import timedelta
 import os
 import streamlit as st
 from typing import Any, Optional, List
-
+import pandas as pd
 from app.core.logger import logger
 from app.core.lottery import GAMES, GameConfig
 from app.services.data_loader import carregar_dados_loteria_excel
@@ -66,44 +66,65 @@ class LotteryService:
         if not os.path.exists(filepath):
             return "missing"
         mtime = os.path.getmtime(filepath)
+        # Retorna caminho + data de modificação. Se o arquivo mudar, isso muda.
         return f"{filepath}:{mtime}"
 
-    @st.cache_resource(ttl=timedelta(hours=6))
-    def _get_context_cached(_self, slug: str, _file_hash: str) -> GameContext:
-        logger.info(f"🔄 [CACHE] get_context({slug}) - calculando contexto...")
-        config = _self.get_config(slug)
-        df = carregar_dados_loteria_excel(config, f"data/{slug}.xlsx")
+    @staticmethod
+    @st.cache_resource(ttl=timedelta(hours=12), show_spinner="Carregando dados...")
+    def _build_context_static(
+        slug: str, file_hash: str, config: GameConfig
+    ) -> GameContext:
+        """
+        Método estático puro.
+        A chave do cache será composta por: (slug, file_hash, config).
+        """
+        logger.info(
+            f"🔄 [CACHE] get_context({slug}) - hash {file_hash} - Calculando..."
+        )
+
+        # Como não tem 'self', usamos o 'config' passado como argumento
+        # Ajuste o caminho conforme sua estrutura, ou passe o path no config
+        filepath = f"data/{slug}.xlsx"
+        df = carregar_dados_loteria_excel(config, filepath)
 
         if df is None or df.empty:
-            logger.warning(f"⚠️ [CACHE] {slug}: DataFrame vazio!")
-            return _self._build_empty_context(config, df)
+            logger.warning(f"⚠️ [CACHE] {slug}: DataFrame vazio ou não encontrado!")
+            # Retornamos um contexto "zerado" manualmente para não quebrar o sistema
+            return GameContext(
+                config=config,
+                df=pd.DataFrame(),
+                freq={},
+                poisson_finais={},
+                tabela=pd.DataFrame(),
+                historico_set=set(),
+                ic_info={},
+                atrasos=pd.Series(),
+                chi2={},
+                coef_variacao={},
+                reis_sequencia={},
+                distribuicoes_geometricas={},
+                stats_quadrantes={},
+                taxa_regressao=None,
+            )
 
         grupos_geometricos = config.get_geometric_groups()
-
         distribuicoes = calcular_distribuicoes_geometricas(
             df, grupos_geometricos, config
         )
         quadrantes = calcular_distribuicao_quadrantes(df, config)
 
-        # Estatísticas básicas
         freq = get_numeros_quentes_frios(df, config)
         poisson_finais = analise_poisson(df, config, 0.05)
-
-        # Para gerador/validador
         tabela = get_tabela_inteligencia(df, config)
         historico_set = get_historico_jogos(df, config)
         ic_info = analise_intervalo_confianca(df, config)
-
-        # Para painel
         atrasos = calcular_atrasos(df, config)
         chi2 = calcular_chi_quadrado(df, config)
         coef_variacao = calcular_coeficiente_variacao(df, config)
         reis_sequencia = get_reis_da_sequencia(df, config)
-
-        # Adicionado: taxa de regressão padrão (janela=100)
         taxa_regressao = calcular_taxa_regressao(df, config, janela=100)
 
-        logger.info(f"✅ [CACHE] {slug}: contexto carregado ({len(df)} sorteios)")
+        logger.info(f"✅ [CACHE] {slug}: Contexto pronto e cacheado.")
 
         return GameContext(
             config=config,
@@ -123,10 +144,18 @@ class LotteryService:
         )
 
     def get_context(self, slug: str) -> GameContext:
-        """Wrapper público - detecta mudanças no arquivo"""
+        """Wrapper público"""
         filepath = f"data/{slug}.xlsx"
-        file_hash = self._get_file_hash(filepath)
-        return self._get_context_cached(slug, file_hash)
+
+        # 1. Calcula o Hash atual
+        current_hash = self._get_file_hash(filepath)
+
+        # 2. Pega a config (necessária para o método estático)
+        config = self.get_config(slug)
+
+        # 3. Chama o estático
+        # Se 'current_hash' for igual ao da última vez, o Streamlit retorna o cache instantaneamente.
+        return self._build_context_static(slug, current_hash, config)
 
     def _build_empty_context(self, config, df):
         return GameContext(
