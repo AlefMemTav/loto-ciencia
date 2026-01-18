@@ -2,6 +2,7 @@
 import math
 import random
 import time
+import pandas as pd
 from math import comb
 from itertools import combinations
 from app.core.statistics import (
@@ -28,6 +29,143 @@ _performance_stats = {
     "fallback_count": 0,
     "tempo_total_ms": 0,
 }
+
+
+def _calcular_pesos_dinamicos(tabela, estrategia, taxa_regressao=None):
+    """
+    Calcula os pesos de probabilidade para cada número baseado na estratégia escolhida.
+    Retorna uma Series pandas com os pesos indexados pelos números.
+    """
+    if estrategia == "pura":
+        # Peso 1.0 para todos (sem viés)
+        return pd.Series(1.0, index=tabela.index)
+
+    # Lógica de Regressão (Define o quanto vamos respeitar o atraso)
+    peso_gap = 0.50  # Default (Balanceada sem regressão)
+
+    # 1. Analisa a Regressão (Se houver dados)
+    tem_regressao_forte = (
+        taxa_regressao
+        and taxa_regressao["correlacao"] > 0.3
+        and taxa_regressao["p_value"] < 0.05
+    )
+    tem_regressao_moderada = taxa_regressao and taxa_regressao["correlacao"] > 0.1
+
+    if tem_regressao_forte:
+        # Se o atraso importa matematicamente
+        if estrategia == "agressiva":
+            peso_gap = 0.80
+        elif estrategia == "conservadora":
+            peso_gap = 0.50
+        else:
+            peso_gap = 0.65
+
+    elif tem_regressao_moderada:
+        if estrategia == "agressiva":
+            peso_gap = 0.60
+        elif estrategia == "conservadora":
+            peso_gap = 0.40
+        else:
+            peso_gap = 0.50
+
+    else:
+        # Sem evidência de que atraso importa (Falácia do Apostador)
+        if estrategia == "agressiva":
+            peso_gap = 0.30
+        elif estrategia == "conservadora":
+            peso_gap = 0.70
+        else:
+            peso_gap = 0.20
+
+    # 2. Aplica a Fórmula: Score = Frequência vs Atraso
+    # Normaliza Z-Scores para garantir valores positivos
+    z_freq = tabela["Z_Freq"]
+    z_gap = tabela["Z_Gap"]
+
+    # Fórmula de Combinação Linear
+    pesos_raw = z_freq * (1 - peso_gap) + z_gap * peso_gap
+
+    # Normalização final (Remove negativos e garante mínimo de 0.01)
+    pesos = pesos_raw - pesos_raw.min() + 0.01
+
+    return pesos
+
+
+def _minerar_jogo_core(
+    finais_poisson,
+    pool_numeros,
+    pesos_pool,
+    numeros_fixos,
+    qtd_a_preencher,
+    contexto_validacao,
+    estrategia,
+    target_score=85,
+    max_tentativas=5000,
+):
+    """
+    Motor genérico que minera combinações até achar uma boa.
+    Funciona tanto para jogos livres quanto restritos.
+    """
+    tentativas = 0
+    melhor_jogo = None
+    melhor_score = -1
+
+    # Extrai contexto para performance
+    config = contexto_validacao["config"]
+
+    while tentativas < max_tentativas:
+        tentativas += 1
+
+        # Seleção Inteligente do Complemento
+        complemento_set = set()
+
+        # Otimização: Random Choices é rápido, mas pode repetir.
+        # Loopamos até preencher a quantidade necessária.
+        while len(complemento_set) < qtd_a_preencher:
+            falta = qtd_a_preencher - len(complemento_set)
+            # Pesos devem bater com o pool. Python < 3.9 exige lista, não Series.
+            candidatos = random.choices(pool_numeros, weights=pesos_pool, k=falta)
+            complemento_set.update(candidatos)
+
+        # Monta candidato
+        jogo = sorted(numeros_fixos + list(complemento_set))
+
+        # Valida
+        val = validar_jogo(
+            jogo,
+            config,
+            historico_jogos=contexto_validacao["historico"],
+            ic_info=contexto_validacao["ic_info"],
+            df_historico=contexto_validacao["df"],
+            distribuicoes_geometricas=contexto_validacao["geom"],
+        )
+
+        # Ajuste de Score por Estratégia
+        score_base = val["score"]
+        score_geom = val.get("metricas", {}).get("score_geom", 70)
+
+        score_final = score_base
+        if estrategia == "pura":
+            score_final = score_base + (score_geom - 70) * 0.02
+        else:
+            score_final = score_base + (score_geom - 70) * 0.12
+
+        # Rastreia o melhor esforço
+        if score_final > melhor_score:
+            melhor_score = score_final
+            melhor_jogo = jogo[:]
+
+        # Early Stop (Sucesso)
+        if score_final >= target_score:
+            return jogo
+
+    # Fallback: Retorna o melhor que encontrou
+    if melhor_jogo:
+        return melhor_jogo
+
+    # Último caso: Aleatório puro (só acontece se o pool for minusculo e ruim)
+    complemento = random.sample(pool_numeros, qtd_a_preencher)
+    return sorted(numeros_fixos + complemento)
 
 
 def _registrar_performance(tentativas: int, tempo_ms: float, early_stop: bool):
@@ -61,259 +199,156 @@ def get_performance_stats() -> dict:
 
 
 def gerar_jogo_perfeito(
+    df, config: GameConfig, estrategia="balanceada", contexto_precomputado=None
+):
+    """Gera um jogo do zero (sem restrições). Wrapper para a engine."""
+    return gerar_com_restricoes(
+        df,
+        config,
+        finais_poisson=None,
+        numeros_fixos=[],
+        numeros_evitados=[],
+        estrategia=estrategia,
+        contexto_precomputado=contexto_precomputado,
+    )
+
+
+def gerar_com_restricoes(
     df,
     config: GameConfig,
     finais_poisson=None,
+    numeros_fixos=None,
+    numeros_evitados=None,
     estrategia="balanceada",
     contexto_precomputado=None,
 ):
-    """
-    Gerador genérico para qualquer jogo (MEGASENA, QUINA, LOTOFACIL, LOTOMANIA).
+    """Prepara os dados (pesos, pool) e chama a engine de mineração."""
 
-    Args:
-        df: DataFrame com histórico
-        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL, LOTOMANIA)
-        finais_poisson: Lista de dígitos finais atrasados (não usado)
-        estrategia: 'balanceada', 'conservadora', 'agressiva', 'pura'
-
-    Returns:
-        Lista com k números ordenados (6 para MEGASENA, 5 para QUINA, 15 para LOTOFACIL, 50 para LOTOMANIA)
-    """
-
-    start_time = time.time()
+    # 1. Carrega Contexto (Boilerplate padrão)
+    taxa_regressao = None
     if contexto_precomputado:
-        logger.debug(f"✅ [GENERATOR] Usando contexto pré-computado para {config.name}")
         tabela = contexto_precomputado["tabela"]
-        historico_jogos = contexto_precomputado["historico_jogos"]
-        ic_info = contexto_precomputado["ic_info"]
-        distribuicoes_geometricas = contexto_precomputado["distribuicoes_geometricas"]
+        # Tenta pegar regressão
         taxa_regressao = contexto_precomputado.get("taxa_regressao")
+        # Prepara objeto de validação unificado
+        ctx_val = {
+            "config": config,
+            "historico": contexto_precomputado["historico_jogos"],
+            "ic_info": contexto_precomputado["ic_info"],
+            "df": df,
+            "geom": contexto_precomputado["distribuicoes_geometricas"],
+        }
     else:
-        logger.warning(f"⚠️ [GENERATOR] Contexto não fornecido, recalculando (LENTO)")
+        # Recalcula se não vier pré-computado (Modo Lento)
         tabela = get_tabela_inteligencia(df, config)
-        historico_jogos = get_historico_jogos(df, config)
-        ic_info = analise_intervalo_confianca(df, config)
-
-        constants = config.as_constants_dict()
-        grupos_geometricos = config.get_geometric_groups()
-        distribuicoes_geometricas = calcular_distribuicoes_geometricas(
-            df, grupos_geometricos, config
-        )
-
-        # Calcula regressão se houver dados suficientes
-        taxa_regressao = None
         if len(df) >= 150:
             taxa_regressao = calcular_taxa_regressao(df, config, janela=100)
 
-    tamanho_aposta = config.bet_size
+        ctx_val = {
+            "config": config,
+            "historico": get_historico_jogos(df, config),
+            "ic_info": analise_intervalo_confianca(df, config),
+            "df": df,
+            "geom": calcular_distribuicoes_geometricas(
+                df, config.get_geometric_groups(), config
+            ),
+        }
 
     if tabela.empty:
-        logger.warning(f"Tentativa de gerar jogo para {config.name} com tabela vazia.")
-        return sorted(random.sample(range(1, config.n_numbers + 1), tamanho_aposta))
+        return None
 
-    numeros_disponiveis = tabela.index.tolist()  # [1, 2, ..., N]
+    # 2. Tratamento de Inputs
+    numeros_fixos = numeros_fixos or []
+    numeros_evitados = numeros_evitados or []
 
-    # ============================================
-    # Ajuste dinâmico de pesos baseado em regressão
-    # ============================================
-    if estrategia == "pura":
-        # Estratégia pura: sem viés
-        pesos_raw = [1.0] * config.n_numbers
-        pesos = pesos_raw
-        peso_gap_usado = 0.0
-    else:
-        # Determina peso de gaps baseado em evidência empírica
-        if (
-            taxa_regressao
-            and taxa_regressao["correlacao"] > 0.3
-            and taxa_regressao["p_value"] < 0.05
-        ):
-            # Regressão FORTE validada: atrasos importam
-            logger.debug(
-                f"✅ Regressão validada (ρ={taxa_regressao['correlacao']:.2f})"
-            )
+    # 3. Definição do Pool (Universo Disponível)
+    pool = [
+        n
+        for n in range(1, config.n_numbers + 1)
+        if n not in numeros_evitados and n not in numeros_fixos
+    ]
 
-            if estrategia == "agressiva":
-                peso_gap = 0.80
-            elif estrategia == "conservadora":
-                peso_gap = 0.50
-            else:  # balanceada
-                peso_gap = 0.65
+    qtd_a_preencher = config.bet_size - len(numeros_fixos)
 
-        elif taxa_regressao and taxa_regressao["correlacao"] > 0.1:
-            # Regressão MODERADA: reduz peso de gaps
-            logger.debug(f"⚠️ Regressão moderada (ρ={taxa_regressao['correlacao']:.2f})")
+    # Validações Físicas
+    if qtd_a_preencher < 0:
+        return {"erro": "Muitos números fixos"}
+    if len(pool) < qtd_a_preencher:
+        return {"erro": "Pool insuficiente"}
+    if qtd_a_preencher == 0:
+        return sorted(numeros_fixos)  # Jogo já veio pronto
 
-            if estrategia == "agressiva":
-                peso_gap = 0.60
-            elif estrategia == "conservadora":
-                peso_gap = 0.40
-            else:  # balanceada
-                peso_gap = 0.50
+    # 4. Cálculo de Pesos (Inteligência)
+    todos_pesos = _calcular_pesos_dinamicos(tabela, estrategia, taxa_regressao)
+    pesos_pool = todos_pesos.loc[pool].tolist()  # Filtra pesos só para o pool
 
-        else:
-            # SEM evidência de regressão: ignora atrasos (anti-falácia do apostador)
-            logger.debug(f"❌ Sem evidência de regressão, ignorando atrasos")
-
-            if estrategia == "agressiva":
-                peso_gap = 0.30  # Reduzido drasticamente
-            elif estrategia == "conservadora":
-                peso_gap = 0.70  # Inverte: prioriza frequência
-            else:  # balanceada
-                peso_gap = 0.20  # Quase ignora gaps
-
-        peso_gap_usado = peso_gap
-        pesos_raw = tabela["Z_Freq"] * (1 - peso_gap) + tabela["Z_Gap"] * peso_gap
-        pesos = pesos_raw - pesos_raw.min() + 0.01
-        pesos = pesos.tolist()
-
-    # ============================================
-    # Loop de geração
-    # ============================================
-    tentativas = 0
-    melhor_jogo = None
-    pesos = None
-    melhor_score = -1
-
-    while tentativas < 10000:
-        tentativas += 1
-
-        pre_jogo = set()
-        candidatos = random.choices(
-            numeros_disponiveis, weights=pesos, k=tamanho_aposta
-        )
-        pre_jogo.update(candidatos)
-
-        while len(pre_jogo) < tamanho_aposta:
-            novo = random.choices(numeros_disponiveis, weights=pesos, k=1)[0]
-            pre_jogo.add(novo)
-
-        jogo = sorted(list(pre_jogo))
-
-        # Validação
-        val = validar_jogo(
-            jogo,
-            config,
-            historico_jogos=historico_jogos,
-            ic_info=ic_info,
-            df_historico=df,
-            distribuicoes_geometricas=distribuicoes_geometricas,
-        )
-
-        score_base = val["score"]
-        score_geom = val.get("metricas", {}).get("score_geom", None)
-
-        score_final = score_base
-        if score_geom is not None:
-            if estrategia == "pura":
-                score_final = score_base + (score_geom - 70) * 0.02
-            else:
-                score_final = score_base + (score_geom - 70) * 0.12
-
-        if score_final > melhor_score:
-            melhor_score = score_final
-            melhor_jogo = jogo.copy()
-
-        # Early stopping com limites dinâmicos
-        score_geom_minimo = 50
-
-        if val["score"] >= config.target_score_excellent and (
-            score_geom is None or score_geom >= score_geom_minimo
-        ):
-            duration = (time.time() - start_time) * 1000
-            _registrar_performance(tentativas, duration, early_stop=True)
-
-            logger.info(
-                f"[{config.name}] Jogo encontrado em {tentativas} tentativas ({duration:.1f}ms). "
-                f"Score: {val['score']}, Geom: {score_geom}, Peso Gap: {peso_gap_usado:.2f}"
-            )
-            return jogo
-
-        # Fallback adaptativo
-        if tentativas == 5000 and melhor_score >= config.target_score_accept:
-            duration = (time.time() - start_time) * 1000
-            _registrar_performance(tentativas, duration, early_stop=False)
-
-            logger.info(
-                f"[{config.name}] Fallback acionado em 5000 tentativas. Melhor Score: {melhor_score:.1f}"
-            )
-            return melhor_jogo
-
-    duration = (time.time() - start_time) * 1000
-    _registrar_performance(tentativas, duration, early_stop=False)
-
-    logger.warning(
-        f"[{config.name}] Limite de 10k tentativas atingido. Retornando melhor esforço (Score {melhor_score})."
-    )
-
-    return (
-        melhor_jogo
-        if melhor_jogo
-        else sorted(random.sample(range(1, config.n_numbers + 1), tamanho_aposta))
+    # 5. Chama a Engine
+    return _minerar_jogo_core(
+        finais_poisson=finais_poisson,
+        pool_numeros=pool,
+        pesos_pool=pesos_pool,
+        numeros_fixos=numeros_fixos,
+        qtd_a_preencher=qtd_a_preencher,
+        contexto_validacao=ctx_val,
+        estrategia=estrategia,
+        target_score=85 if estrategia != "pura" else 75,
     )
 
 
 def gerar_multiplos_jogos(
     df,
     config: GameConfig,
+    finais_poisson=None,
     quantidade=10,
     estrategia="balanceada",
     garantir_diversidade=True,
-    finais_poisson=None,
+    numeros_fixos=None,
+    numeros_evitados=None,
     contexto_precomputado=None,
 ):
-    """
-    Gerador de múltiplos jogos genéricos com controle de diversidade.
+    """Gerador em lote que chama o gerador único."""
+    logger.info(f"Minerando lote: {quantidade} jogos de {config.name}")
 
-    Args:
-        df: DataFrame histórico
-        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
-        quantidade: Número de jogos a gerar
-        estrategia: Modo de geração (ver gerar_jogo_perfeito)
-        garantir_diversidade: Se True, evita jogos com mais de 4 números em comum
-        finais_poisson: (Não usado mais, mantido para compatibilidade)
-
-    Returns:
-        Lista de jogos
-    """
-    logger.info(
-        f"Iniciando geração em lote: {quantidade} jogos de {config.name} ({estrategia})"
-    )
     jogos_gerados = []
     jogos_set = set()
-
     tentativas = 0
-    max_tentativas = quantidade * 100
+    max_tentativas = quantidade * 50
 
-    # Se o universo for pequeno (LOTOFACIL) ou o jogo muito denso, aumentamos a tolerância
-    if config.n_numbers <= 25:  # LOTOFACIL
-        fator_diversidade = 0.85  # Permite até 12 números iguais (15 * 0.85 = 12.7)
-    else:
-        fator_diversidade = 0.70  # Padrão para Mega/Quina
+    # Configuração de diversidade
+    fator_div = 0.85 if config.n_numbers <= 25 else 0.70
+    max_comum = max(2, int(config.bet_size * fator_div))
 
-    max_comum = max(2, int(config.bet_size * fator_diversidade))
+    # Desativa diversidade se o jogo estiver muito "travado" por fixos
+    if numeros_fixos and len(numeros_fixos) > (config.bet_size / 2):
+        garantir_diversidade = False
 
     while len(jogos_gerados) < quantidade and tentativas < max_tentativas:
         tentativas += 1
 
-        jogo = gerar_jogo_perfeito(
+        jogo = gerar_com_restricoes(
             df,
             config,
-            estrategia=estrategia,
-            contexto_precomputado=contexto_precomputado,
+            finais_poisson,
+            numeros_fixos,
+            numeros_evitados,
+            estrategia,
+            contexto_precomputado,
         )
+
+        if not jogo or (isinstance(jogo, dict) and "erro" in jogo):
+            continue
+
         jogo_tuple = tuple(jogo)
 
-        # Verifica duplicata
+        # 1. Duplicata Exata
         if jogo_tuple in jogos_set:
             continue
 
-        # Verifica diversidade
+        # 2. Diversidade (Hamming)
         if garantir_diversidade and jogos_gerados:
             sobrepoe_muito = False
-            for jogo_anterior in jogos_gerados:
-                comum = len(set(jogo).intersection(set(jogo_anterior)))
-                if comum > max_comum:
+            for ant in jogos_gerados:
+                if len(set(jogo).intersection(set(ant))) > max_comum:
                     sobrepoe_muito = True
                     break
             if sobrepoe_muito:
@@ -322,112 +357,7 @@ def gerar_multiplos_jogos(
         jogos_gerados.append(jogo)
         jogos_set.add(jogo_tuple)
 
-    logger.info(f"Lote finalizado. {len(jogos_gerados)} jogos gerados.")
     return jogos_gerados
-
-
-def gerar_com_restricoes(
-    df,
-    config: GameConfig,
-    numeros_fixos=None,
-    numeros_evitados=None,
-    estrategia="balanceada",
-    contexto_precomputado=None,
-):
-    """
-    Gerador genérico com restrições personalizadas.
-
-    Args:
-        df: DataFrame histórico
-        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
-        numeros_fixos: Lista de números que DEVEM estar no jogo
-        numeros_evitados: Lista de números que NÃO podem estar no jogo
-        estrategia: Modo de geração
-        contexto_precomputado: dict com estatísticas pré-computadas (otimização)
-
-    Returns:
-        Lista com números ou dict com erro
-    """
-    if contexto_precomputado:
-        tabela = contexto_precomputado["tabela"]
-        historico = contexto_precomputado["historico_jogos"]
-        ic_info = contexto_precomputado["ic_info"]
-        distribuicoes_geometricas = contexto_precomputado["distribuicoes_geometricas"]
-    else:
-        tabela = get_tabela_inteligencia(df, config)
-        historico = get_historico_jogos(df, config)
-        ic_info = analise_intervalo_confianca(df, config)
-
-        constants = config.as_constants_dict()
-        grupos_geometricos = {
-            "Moldura (Borda)": constants["moldura"],
-            "Miolo (Centro)": constants["miolo"],
-            "Cruz": constants["cruz"],
-            "Xis (Diagonais)": constants["xis"],
-            "Cantos": constants["cantos"],
-        }
-        distribuicoes_geometricas = calcular_distribuicoes_geometricas(
-            df, grupos_geometricos, config
-        )
-
-    if tabela.empty:
-        return None
-
-    # Validações
-    numeros_fixos = numeros_fixos or []
-    numeros_evitados = numeros_evitados or []
-
-    tamanho_aposta = config.bet_size
-
-    if len(numeros_fixos) > tamanho_aposta:
-        return {"erro": f"Não pode ter mais de {tamanho_aposta} números fixos"}
-
-    if set(numeros_fixos).intersection(set(numeros_evitados)):
-        return {"erro": "Números fixos e evitados não podem se sobrepor"}
-
-    # Pool disponível
-    pool = [
-        n
-        for n in range(1, config.n_numbers + 1)
-        if n not in numeros_evitados and n not in numeros_fixos
-    ]
-
-    if len(pool) + len(numeros_fixos) < tamanho_aposta:
-        return {"erro": "Pool insuficiente para gerar jogo"}
-
-    # Pesos do pool
-    pesos_pool = tabela.loc[pool, "Peso_Geracao"].tolist()
-
-    # Gera complemento
-    tentativas = 0
-    while tentativas < 5000:
-        tentativas += 1
-
-        qtd_necessaria = tamanho_aposta - len(numeros_fixos)
-        complemento = []
-
-        while len(complemento) < qtd_necessaria:
-            novo = random.choices(pool, weights=pesos_pool, k=1)[0]
-            if novo not in complemento:
-                complemento.append(novo)
-
-        jogo = sorted(numeros_fixos + complemento)
-
-        val = validar_jogo(
-            jogo,
-            config,
-            historico_jogos=historico,
-            ic_info=ic_info,
-            df_historico=df,
-            distribuicoes_geometricas=distribuicoes_geometricas,
-        )
-
-        if val["score"] >= 75:
-            return jogo
-
-    # Fallback
-    complemento = random.sample(pool, tamanho_aposta - len(numeros_fixos))
-    return sorted(numeros_fixos + complemento)
 
 
 def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):

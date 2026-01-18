@@ -162,7 +162,7 @@ class LotteryService:
         ctx = self.get_context(slug)
 
         # Extrai parâmetros
-        qtd = payload.get("quantidade", 1)
+        qtd = int(payload.get("quantidade", 1))
         estrategia = payload.get("estrategia", "balanceada")
         fixos = payload.get("numeros_fixos")
         evitados = payload.get("numeros_evitados")
@@ -175,33 +175,19 @@ class LotteryService:
             "distribuicoes_geometricas": ctx.distribuicoes_geometricas,
         }
 
-        # Restrições
-        if fixos or evitados:
-            jogo = gerar_com_restricoes(
-                ctx.df, ctx.config, fixos, evitados, estrategia, contexto_dict
-            )
-            if isinstance(jogo, dict) and "erro" in jogo:
-                raise ValueError(jogo["erro"])
-            return [jogo]
+        # Validação Rápida antes de chamar o gerador (Fail Fast)
+        if fixos and len(fixos) > ctx.config.bet_size:
+            raise ValueError(f"Quantidade de fixos maior que o tamanho do jogo.")
 
-        # Geração Simples
-        if qtd == 1:
-            return [
-                gerar_jogo_perfeito(
-                    ctx.df,
-                    ctx.config,
-                    estrategia=estrategia,
-                    contexto_precomputado=contexto_dict,
-                )
-            ]
-
-        # Geração Múltipla
         return gerar_multiplos_jogos(
-            ctx.df,
-            ctx.config,
-            qtd,
-            estrategia,
-            garantir_div,
+            df=ctx.df,
+            config=ctx.config,
+            finais_poisson=ctx.poisson_finais,
+            quantidade=qtd,
+            estrategia=estrategia,
+            garantir_diversidade=garantir_div,
+            numeros_fixos=fixos,
+            numeros_evitados=evitados,
             contexto_precomputado=contexto_dict,
         )
 

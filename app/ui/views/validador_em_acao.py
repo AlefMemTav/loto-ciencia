@@ -53,14 +53,14 @@ def render_stats_summary(numeros, metricas):
     soma = sum(numeros)
 
     # Tenta pegar primos das métricas ou calcula simples
-    primos_count = metricas.get("primos_count", "N/A")
+    qtd_primos = metricas.get("qtd_primos", "N/A")
 
     with c1:
         st.metric("Soma Total", soma)
     with c2:
         st.metric("Pares / Ímpares", f"{pares} / {impares}")
     with c3:
-        st.metric("Primos", primos_count)
+        st.metric("Primos", qtd_primos)
     with c4:
         repetidos = metricas.get("repetidos_concurso_anterior", "N/A")
         st.metric("Repetidos", repetidos, help="Do concurso anterior")

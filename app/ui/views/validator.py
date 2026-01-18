@@ -1,4 +1,4 @@
-# app/ui/validator.py
+# app/ui/views/validator.py
 from datetime import date
 import streamlit as st
 import pandas as pd
@@ -15,21 +15,41 @@ def render_validator(ctx, svc):
     constants = config.as_constants_dict()
     color = constants.get("heat_color", "#ef4444")
 
+    # --- HEADER COM COPYWRITING ---
     st.markdown(
-        f"<h3>🧪 Laboratório de Validação da <span style='color: {color};'>{config.name}</span></h3>",
+        f"""
+        <div style="text-align: center; margin-bottom: 25px;">
+            <h2 style="margin:0;">🔬 Auditor de Jogos <span style='color: {color};'>{config.name}</span></h2>
+            <p style="color: #777; font-size: 1.1rem; margin-top: 5px;">
+                Não jogue no escuro. Descubra se seus números são <strong>"viciados"</strong> ou se têm potencial matemático real.
+            </p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-    st.write(f"Digite seus números da {config.name} para validação estatística.")
 
     qtd_aposta = config.bet_size
-    nums_exemplo = " ".join([f"{n:02d}" for n in range(4, 4 + qtd_aposta)])
+    nums_exemplo = " ".join([f"{n:02d}" for n in range(1, 1 + qtd_aposta)])
 
-    # Input dos números
-    entrada = st.text_input(
-        f"Seus {qtd_aposta} números:",
-        placeholder=f"Ex: {nums_exemplo}",
-        help="Separe por espaço, vírgula ou traço.",
-    )
+    # --- ÁREA DE INPUT ---
+    col_input, col_dica = st.columns([2, 1])
+
+    with col_input:
+        st.write(f"**Digite seus {qtd_aposta} números para o Raio-X:**")
+        entrada = st.text_area(
+            label="Números",
+            label_visibility="collapsed",
+            placeholder=f"Exemplo: {nums_exemplo} ...",
+            height=100,
+            help="Pode colar do Excel, WhatsApp ou digitar separado por espaço, vírgula ou traço.",
+        )
+
+    with col_dica:
+        st.info(
+            "💡 **Por que validar?**\n\n"
+            "Jogos com padrões visuais (linhas, colunas) ou datas de aniversário "
+            "costumam pagar **prêmios 90% menores** em caso de vitória."
+        )
 
     # Limpa o resultado anterior se o usuário mudar o texto
     current_input_hash = hash(entrada)
@@ -37,18 +57,18 @@ def render_validator(ctx, svc):
         st.session_state.validator_result = None
         st.session_state.last_validator_input = current_input_hash
 
-    # Verifica acesso e desenha o contador de limite
-    can_use = AUTHClient.check_and_render_access("validator", "Validador")
+    # Verifica acesso
+    can_use = AUTHClient.check_and_render_access("validator", "Validador Profissional")
 
     # Botão de Ação
     if st.button(
-        "🔬 Analisar Qualidade",
+        "🚀 Auditar Meu Jogo Agora",
         type="primary",
         width="stretch",
         disabled=not can_use,
     ):
         try:
-            texto = entrada.replace(",", " ").replace("-", " ")
+            texto = entrada.replace(",", " ").replace("-", " ").replace("\n", " ")
             nums = sorted(
                 list(set([int(n) for n in texto.split() if n.strip().isdigit()]))
             )
@@ -56,139 +76,192 @@ def render_validator(ctx, svc):
             # Validações de Input
             if len(nums) != qtd_aposta:
                 st.warning(
-                    f"⚠️ Precisamos de **exatamente {qtd_aposta} números** únicos (entre 1 e {config.n_numbers})."
+                    f"⚠️ Atenção: Você digitou **{len(nums)} números**. "
+                    f"Para a {config.name}, precisamos de **exatamente {qtd_aposta}**."
                 )
                 return
 
             if not all(1 <= n <= config.n_numbers for n in nums):
                 st.error(
-                    f"❌ Todos os números devem estar entre 1 e {config.n_numbers}."
+                    f"❌ Erro: Existem números fora do volante (1 a {config.n_numbers})."
                 )
                 return
 
-            logger.info(f"[{config.name}] Validação manual solicitada para: {nums}")
+            # Spinner com texto rico
+            with st.spinner("🤖 A IA está analisando vários filtros estatísticos..."):
+                logger.info(f"[{config.name}] Validação manual: {nums}")
 
-            # 1. Gera o relatório (Lógica Pesada)
-            relatorio = svc.validate(slug, nums)
+                # 1. Gera o relatório
+                relatorio = svc.validate(slug, nums)
 
-            # 2. Marca o uso na API (se for Free)
-            if AUTHClient.get_plan() != "pro":
-                # Marca o uso e limpa o cache para o contador atualizar no rerun
-                AUTHClient.mark_resource_used("validator")
-                logger.info(f"✅ Validação marcada para {AUTHClient.get_plan()}")
+                # 2. Marca o uso
+                if AUTHClient.get_plan() != "pro":
+                    AUTHClient.mark_resource_used("validator")
 
-            # 3. Salva no Estado (Persistência)
-            st.session_state.validator_result = {
-                "relatorio": relatorio,
-                "nums": nums,
-                "config": config,  # Salva config para garantir consistência
-                "new": True,
-            }
+                # 3. Salva no Estado
+                st.session_state.validator_result = {
+                    "relatorio": relatorio,
+                    "nums": nums,
+                    "config": config,
+                    "new": True,
+                }
 
-            # 4. MICRO-REFRESH: Atualiza a tela imediatamente
             st.rerun()
 
         except Exception as e:
-            logger.error(f"Erro na validação manual: {e}", exc_info=True)
-            st.error(f"Não entendi esses números. Tente digitar assim: {nums_exemplo}")
+            logger.error(f"Erro validação: {e}")
+            st.error("❌ Não consegui ler seus números. Verifique a digitação.")
 
-    # --- RENDERIZAÇÃO DO RESULTADO (FORA DO BOTÃO) ---
-    # Verifica se há um resultado salvo na sessão e o exibe
+    # --- RENDERIZAÇÃO DO RESULTADO ---
     if st.session_state.get("validator_result"):
         res = st.session_state.validator_result
-        # Mostra mensagem de sucesso apenas se for novo
         if res.get("new"):
-            st.success(
-                f"✅ Validação concluída! Seu jogo obteve score {res['relatorio']['score']}/100."
-            )
+            # Feedback visual imediato
+            score = res["relatorio"]["score"]
+            if score >= 80:
+                st.balloons()
             res["new"] = False
+
         _render_validator_results(res["relatorio"], res["nums"], ctx, svc)
 
 
 def _render_validator_results(relatorio, nums, ctx, svc):
-    """Função auxiliar que desenha os resultados salvos no estado."""
-    config = ctx.config  # Usa config do contexto atual
+    """Renderiza o relatório com foco em COPYWRITING e CLAREZA."""
+    config = ctx.config
 
-    logger.info(f"[{config.name}] Exibindo resultado: Score {relatorio['score']}")
-
-    # Cards de resultado
-    st.markdown("<br>", unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
+    # Dados principais
     score = relatorio["score"]
     score_original = relatorio.get("score_original", 0)
     ja_saiu = relatorio.get("ja_saiu", False)
+    risco = relatorio.get("risco_divisao", "Médio")
+
+    st.markdown("---")
+
+    # 1. VEREDITO FINAL (O que o usuário quer saber primeiro)
+    st.subheader("📋 Veredito do Analista")
 
     if ja_saiu:
-        display_score = "0/100"
-        delta_msg = f"Score Técnico: {score_original}/100"
-        classe_css_delta = "status-off"
-        logger.warning(f"[{config.name}] Usuário validou um jogo que JÁ SAIU: {nums}")
-    else:
-        display_score = f"{score}/100"
-        if score >= 80:
-            score_icon = "💎"
-        elif score >= 50:
-            score_icon = "⚠️"
+        st.error(
+            "🛑 **PARE AGORA!** Esse jogo **JÁ SAIU** na história da loteria. "
+            "A chance de repetir o mesmo resultado é astronômica. Não jogue dinheiro fora."
+        )
+        st.caption(f"Score Técnico Original: {score_original}/100")
+        return  # Interrompe a exibição detalhada se já saiu (regra de UX)
+
+    col_veredicto, col_score = st.columns([3, 1])
+
+    with col_veredicto:
+        if score >= 85:
+            st.success(
+                "💎 **JOGO DE ELITE!** Estatisticamente forte. "
+                "Este volante tem todas as características dos sorteios premiados. "
+            )
+        elif score >= 60:
+            st.info(
+                "👍 **JOGO SÓLIDO.** Passou na maioria dos testes, mas tem alguns padrões "
+                "comuns. É um jogo seguro, mas não extraordinário."
+            )
+        elif score >= 40:
+            st.warning(
+                "⚠️ **JOGO ARRISCADO.** Detectamos padrões viciados (ex: muitas sequências "
+                "ou desequilíbrio par/ímpar). A estatística joga contra você aqui."
+            )
         else:
-            score_icon = "🗑️"
-        delta_msg = f"{score_icon} {relatorio['status']}"
-        classe_css_delta = "status-good" if score >= 80 else "status-warn"
+            st.error(
+                "🗑️ **LIXO ESTATÍSTICO.** Esse jogo viola quase todas os nossos dados estatísticos. "
+                "Jogar isso é quase uma doação para a Caixa. Recomendamos usar o Gerador."
+            )
 
-    with c1:
+    with col_score:
+        # Mostrador de Score Visual
+        cor_score = (
+            "#22c55e" if score >= 70 else "#f59e0b" if score >= 50 else "#ef4444"
+        )
         st.markdown(
             f"""
-        <div class="custom-metric-card">
-            <div class="metric-label">Qualidade Técnica</div>
-            <div class="metric-value">{display_score}</div>
-            <div class="metric-delta {classe_css_delta}">
-                {delta_msg}
+            <div style="text-align: center; border: 2px solid {cor_score}; border-radius: 10px; padding: 10px;">
+                <span style="font-size: 0.9rem; color: #777;">SCORE TÉCNICO</span><br>
+                <span style="font-size: 2.5rem; font-weight: bold; color: {cor_score}; line-height: 1;">{score}</span>
+                <span style="font-size: 1rem; color: {cor_score};">/100</span>
             </div>
-        </div>
-        """,
+            """,
             unsafe_allow_html=True,
         )
 
-    risco = relatorio.get("risco_divisao", "Desconhecido")
-    risco_class = "status-good" if "Baixo" in risco else "status-bad"
-
-    with c2:
-        st.markdown(
-            f"""
-        <div class="custom-metric-card">
-            <div class="metric-label">Risco de Divisão</div>
-            <div class="metric-value">{risco.split(' ')[0]}</div>
-            <div class="metric-delta {risco_class}">{"Blindado" if "Baixo" in risco else "Risco Financeiro"}</div>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
+    # 2. RISCO FINANCEIRO
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Backtesting
+    risco_val = risco.split(" ")[0].upper()  # BAIXO, MÉDIO, ALTO
+
+    if "BAIXO" in risco_val:
+        msg_risco = "✅ <b>Seu prêmio está protegido.</b> Poucas pessoas jogam padrões como esse. Se ganhar, leva sozinho (ou divide com poucos)."
+        cor_box = "background-color: #f0fdf4; border-left: 5px solid #22c55e;"
+    elif "ALTO" in risco_val:
+        msg_risco = "🚨 <b>ALERTA DE DILUIÇÃO!</b> Você está jogando padrões virais (datas, sequências, desenhos). Se ganhar, vai dividir com milhares."
+        cor_box = "background-color: #fef2f2; border-left: 5px solid #ef4444;"
+    else:
+        msg_risco = "⚠️ <b>Atenção Moderada.</b> Jogo comum. Existe risco de divisão de prêmio, mas não é crítico."
+        cor_box = "background-color: #fffbeb; border-left: 5px solid #f59e0b;"
+
+    st.markdown(
+        f"""
+        <div style="{cor_box} padding: 15px; border-radius: 5px;">
+            <strong> Análise de Risco Financeiro:</strong><br>
+            {msg_risco}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # 3. VOLANTE VISUAL + MÉTRICAS CHAVE
+    st.markdown("### Raio-X dos Padrões")
+
+    c_volante, c_metricas = st.columns([1, 1.5])
+
+    with c_volante:
+        st.caption("Distribuição Espacial:")
+        render_volante_marcado(nums, config)
+
+    with c_metricas:
+        metricas = relatorio.get("metricas", {})
+
+        # Métricas "Humanas" (Traduzindo estatística)
+        st.markdown("**O que a IA viu:**")
+
+        # Par/Impar
+        pares = metricas.get("pares", 0)
+        st.write(f"- **Equilíbrio:** {pares} Pares / {config.bet_size - pares} Ímpares")
+
+        # Soma
+        soma = metricas.get("soma", 0)
+        st.write(f"- **Peso do Jogo (Soma):** {soma}")
+
+        # Entropia (Traduzida)
+        entropia = metricas.get("entropia", 0)
+        nivel_caos = "Alto (Bom)" if entropia > 3.5 else "Baixo (Previsível)"
+        st.write(f"- **Imprevisibilidade:** {nivel_caos}")
+
+        # Hamming
+        hamming = metricas.get("hamming_min", 0)
+        if hamming != "N/A":
+            st.write(
+                f"- **Originalidade:** Difere {hamming} números do sorteio mais parecido da história."
+            )
+
+    # 4. BACKTESTING (A Prova Real)
+    st.markdown("---")
     _render_backtesting(config, nums, svc)
 
-    # Métricas
-    st.markdown("##### 📊 Métricas Técnicas")
+    # 5. DETALHES TÉCNICOS (Accordion fechado para não assustar)
+    with st.expander("🔬 Ver Análise Técnica Profunda (Avançado)"):
+        st.markdown("##### Geometria e Quadrantes")
+        _render_geometric_metrics(metricas)
+        st.markdown("##### Análise de Similaridade")
+        _render_advanced_metrics(metricas)
 
-    metricas = relatorio.get("metricas", {})
-
-    # Renderiza métricas geométricas
-    _render_geometric_metrics(metricas)
-
-    # Renderiza métricas avançadas
-    _render_advanced_metrics(metricas)
-
-    col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
-
-    col_m1.metric("Soma", metricas.get("soma", 0))
-    col_m2.metric("Entropia", f"{metricas.get('entropia', 0):.2f}")
-    col_m3.metric("Gini", f"{metricas.get('gini', 0):.3f}")
-    col_m4.metric("Pares", metricas.get("pares", 0))
-    col_m5.metric("Sequências", metricas.get("sequencias", 0))
-
-    # Mensagens
-    st.markdown("##### 📝 Relatório do Analista")
+    # 6. MENSAGENS ESTRATÉGICAS
+    if relatorio["msgs"]:
+        st.markdown("##### 📝 Notas do Algoritmo:")
     for msg in relatorio["msgs"]:
         if "❌" in msg:
             st.markdown(
@@ -203,56 +276,40 @@ def _render_validator_results(relatorio, nums, ctx, svc):
                 unsafe_allow_html=True,
             )
 
-    # Volante visual
-    st.markdown("---")
-
-    col_volante, col_info = st.columns([1, 1])
-    with col_volante:
-        st.caption("Visualização Geométrica:")
-        render_volante_marcado(nums, config)
-    with col_info:
-        st.markdown("##### 💡 Dicas")
-        if score >= 80:
-            st.success("✅ Jogo de alta qualidade estatística!")
-        elif score >= 60:
-            st.info("ℹ️ Jogo aceitável, mas pode melhorar.")
-        else:
-            st.warning("⚠️ Considere gerar um novo jogo.")
-
-        if "ALTO" in risco:
-            st.error(
-                "💸 Padrão muito popular. Se saísse, o prêmio seria dividido com muitos ganhadores."
-            )
-
 
 def _render_backtesting(config, nums, svc):
-    """Mostra histórico de acertos (backtesting visual)."""
-    with st.expander("📊 Histórico (Backtesting)", expanded=False):
-        if config.slug == "loto_mania_sorteio":
-            alvos = [20, 19, 18, 0]
-        else:
-            alvos = [config.k, config.k - 1, config.k - 2]
+    """Mostra histórico de acertos."""
+    st.markdown("##### Máquina do Tempo (Backtest)")
+    st.caption(
+        f"Se você tivesse jogado esses números desde o concurso 1 da {config.name}, você teria ganho:"
+    )
 
-        res = svc.check_historical_matches(config.slug, nums, targets=alvos)
+    if config.slug == "loto_mania_sorteio":
+        alvos = [20, 19, 18, 0]
+    else:
+        alvos = [config.k, config.k - 1, config.k - 2]  # Ex: 15, 14, 13
 
-        cols = st.columns(len(alvos))
+    res = svc.check_historical_matches(config.slug, nums, targets=alvos)
 
-        for i, alvo in enumerate(alvos):
-            with cols[i]:
-                hits = alvo
-                achou = res.get(hits, [])
+    cols = st.columns(len(alvos))
 
-                if config.slug == "loto_mania_sorteio" and hits == 0:
-                    label = "Zero Acertos (🏆)"
-                elif hits == config.k:
-                    label = f"{hits} Acertos (Máx)"
-                else:
-                    label = f"{hits} Acertos"
+    for i, alvo in enumerate(alvos):
+        with cols[i]:
+            hits = alvo
+            achou = res.get(hits, [])
+            qtd = len(achou)
 
-                st.metric(label, len(achou))
+            # Formatação de Destaque
+            cor_metric = "normal" if qtd > 0 else "off"
 
-                if achou:
-                    st.caption(", ".join(achou[:5]) + ("..." if len(achou) > 5 else ""))
+            if config.slug == "loto_mania_sorteio" and hits == 0:
+                label = "Zero Acertos (🏆)"
+            elif hits == config.k:
+                label = f"🏆 {hits} Acertos (Máx)"
+            else:
+                label = f"{hits} Acertos"
+
+            st.metric(label, f"{qtd}x", delta_color=cor_metric)
 
 
 def _render_geometric_metrics(metricas):

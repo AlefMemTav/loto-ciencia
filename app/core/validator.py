@@ -346,7 +346,7 @@ def _analise_popularidade(report, numeros, config: GameConfig):
     else:
         if current_risk != "ALTO":
             report["risco_divisao"] = "Baixo"
-            report["msgs"].append("🛡️ Aposta Blindada: Padrão único.")
+            report["msgs"].append("✅ 🛡️ Aposta Blindada: Padrão único.")
 
 
 def _analise_numeros_sortudos(report, numeros, config: GameConfig):
@@ -662,7 +662,7 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
         penalidade = 15
         report["score"] -= penalidade
         report["msgs"].append(
-            f"🚨 Raridade conjunta extrema: {alertas_graves} padrões estruturais anômalos ({', '.join(detalhes)})"
+            f"❌ 🚨 Raridade conjunta extrema: {alertas_graves} padrões estruturais anômalos ({', '.join(detalhes)})"
         )
         report["risco_divisao"] = "ALTO"
     elif alertas_graves >= 2:

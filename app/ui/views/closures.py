@@ -15,7 +15,12 @@ def render_closures(ctx, svc):
     # --- Título com Apelo Científico ---
     st.markdown(
         f"""
-        <h3>🧬 Matrizes de Fechamento <span style='color: {color};'>{config.name}</span></h3>
+        <div style="text-align: center; margin-bottom: 25px;">
+            <h2 style="margin:0;">🧬 Matrizes de Fechamento <span style='color: {color};'>{config.name}</span></h2>
+            <p style="color: #777; font-size: 1.1rem; margin-top: 5px;">
+                Economize dinheiro usando Matrizes de Fechamentos avançadas.
+            </p>
+        </div>
         <div style="background-color: #f0fdf4; padding: 15px; border-left: 5px solid #22c55e; border-radius: 5px; margin-bottom: 20px;">
             <strong style="color: #15803d">O Segredo dos Bolões Profissionais:</strong> 
             Não jogue dinheiro fora com combinações completas. Use <em>Covering Designs</em> 
