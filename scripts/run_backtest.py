@@ -132,7 +132,8 @@ def main():
 
         # Salva relatório JSON
         data_hoje = datetime.now().strftime("%Y-%m-%d")
-        output_dir = Path("relatorios_backtest")
+        # output_dir = Path("relatorios_backtest")
+        output_dir = Path("/app/data/relatorios_backtest")
         output_dir.mkdir(exist_ok=True)
 
         nome_arquivo = f"backtest_{args.jogo}_{data_hoje}.json"

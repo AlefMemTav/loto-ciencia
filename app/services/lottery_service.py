@@ -9,7 +9,6 @@ from app.core.generator_fast import gerar_jogos_vetorizado
 from app.core.generator_genetic import gerar_jogos_geneticos
 from app.core.logger import logger
 from app.core.lottery import GAMES, GameConfig
-from app.core.statistics.advanced import calibrar_pesos_dinamicos
 from app.core.statistics.clustering import clusterizar_jogos_kmeans
 from app.services.data_loader import carregar_dados_loteria_excel
 
@@ -31,6 +30,9 @@ from app.core.statistics import (
     analise_temporal_somas,
     analise_temporal_repetidos,
     detectar_tendencia_frequencia,
+    matriz_coocorrencia_numeros,
+    calcular_matriz_transicao,
+    calibrar_pesos_dinamicos,
 )
 from app.core.matrices import gerar_fechamento
 from app.core.validator import validar_jogo
@@ -60,6 +62,8 @@ class GameContext:
     clusters_historicos: Optional[dict] = None
     tendencias: Optional[dict] = None
     pesos_dinamicos: Optional[dict] = None
+    matriz_coocorrencia: Optional[Any] = None
+    matriz_transicao: Optional[Any] = None
 
 
 class LotteryService:
@@ -117,6 +121,8 @@ class LotteryService:
                 clusters_historicos={},
                 tendencias={},
                 pesos_dinamicos={},
+                matriz_coocorrencia={},
+                matriz_transicao={},
             )
 
         # --- CÁLCULOS ---
@@ -140,6 +146,8 @@ class LotteryService:
         ciclo_atual = calcular_ciclo_atual(df, config)
         analise_somas = analise_temporal_somas(df, config, janela=30)
         analise_repetidos = analise_temporal_repetidos(df, config, janela=30)
+        matriz_cooc = matriz_coocorrencia_numeros(df, config)
+        matriz_transicao = calcular_matriz_transicao(df, config)
 
         todos_jogos = [sorted(row.tolist()) for row in df[config.draw_cols].values]
 
@@ -193,6 +201,8 @@ class LotteryService:
             clusters_historicos=clusters_historicos,
             tendencias=tendencias,
             pesos_dinamicos=pesos_dinamicos,
+            matriz_coocorrencia=matriz_cooc,
+            matriz_transicao=matriz_transicao,
         )
 
     def get_context(self, slug: str) -> GameContext:
@@ -229,6 +239,9 @@ class LotteryService:
             analise_somas={},
             analise_repetidos={},
             tendencias={},
+            pesos_dinamicos={},
+            matriz_coocorrencia={},
+            matriz_transicao={},
         )
 
     def validate(self, slug: str, numbers: List[int]) -> dict:

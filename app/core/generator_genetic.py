@@ -95,45 +95,85 @@ class GeneticMiner:
         self.z_freq_aligned[dest_indices] = vals_freq[mask_safe]
         self.z_gap_aligned[dest_indices] = vals_gap[mask_safe]
 
+        # [NOVO] Pré-cálculo de vetores Markov e Ciclo para performance
+        self.z_markov = np.zeros(self.n_numbers, dtype=np.float64)
+        self.z_ciclo = np.zeros(self.n_numbers, dtype=np.float64)
+
+        # Prepara Markov
+        if hasattr(ctx, "matriz_transicao") and ctx.matriz_transicao is not None:
+            last_draw = ctx.df.iloc[-1][self.config.draw_cols].values
+            for num_ant in last_draw:
+                if 1 <= num_ant <= self.n_numbers:
+                    self.z_markov += ctx.matriz_transicao[num_ant - 1]
+            if self.z_markov.max() > 0:
+                self.z_markov /= self.z_markov.max()  # Normaliza 0-1
+
+        # Prepara Ciclo
+        if hasattr(ctx, "ciclo_atual") and ctx.ciclo_atual:
+            faltam = ctx.ciclo_atual.get("faltam_sair", [])
+            if faltam:
+                peso = 2.0 if self.config.is_dense else 0.5
+                indices = np.array(faltam) - 1
+                validos = indices[(indices >= 0) & (indices < self.n_numbers)]
+                self.z_ciclo[validos] = peso
+
     def _fitness(self, populacao: np.ndarray) -> np.ndarray:
+        """
+        Fitness v2.0: Híbrido (Linear + Estrutural + Padrões)
+        """
+        # 1. Score Linear Base (Frequência e Gap) - O "arroz com feijão"
         indices = populacao - 1
-
-        somas = populacao.sum(axis=1)
-        n_pares = (populacao % 2 == 0).sum(axis=1)
-
         score_freq = self.z_freq_aligned[indices].sum(axis=1)
         score_gap = self.z_gap_aligned[indices].sum(axis=1)
 
-        if self.modo_pura:
-            # Use uniform weights, mas MANTENHA penalidades
-            raw_fitness = np.zeros(len(populacao))
+        linear_score = (score_freq * self.pesos["w_freq"]) + (
+            score_gap * self.pesos["w_gap"]
+        )
+        # [NOVO] Scores Temporais (Markov e Ciclo)
+        # Como pré-calculamos no __init__, aqui é só indexar e somar (muito rápido)
+        score_markov = self.z_markov[indices].sum(axis=1)
+        score_ciclo = self.z_ciclo[indices].sum(axis=1)
 
-            # Penalidades normais (preserva estrutura válida)
-            mask_bad_soma = (somas < self.ic_min) | (somas > self.ic_max)
-            raw_fitness[mask_bad_soma] -= 50
+        # Score Linear Combinado
+        linear_score = (
+            (score_freq * self.pesos["w_freq"])
+            + (score_gap * self.pesos["w_gap"])
+            + (score_markov * 0.3)  # Peso do Markov
+            + score_ciclo  # Peso do Ciclo já está embutido no vetor
+        )
+        # 2. Score Estrutural (Co-ocorrência) - O "Molho Secreto"
+        # Recompensa jogos cujos números costumam sair juntos (Clusterização natural)
+        cooc_score = np.zeros(len(populacao))
 
-            mask_bad_parity = (n_pares < self.bet_k * 0.3) | (
-                n_pares > self.bet_k * 0.7
-            )
-            raw_fitness[mask_bad_parity] -= 30
+        if hasattr(self.ctx, "matriz_coocorrencia"):
+            matriz = self.ctx.matriz_coocorrencia
+            for i, jogo in enumerate(indices):
+                # Soma a força de conexão entre todos os pares do jogo
+                # Pega a submatriz apenas dos números do jogo e soma a metade superior
+                sub_matriz = matriz[np.ix_(jogo, jogo)]
+                # A matriz é normalizada em 1.0. Valores > 1.0 são bons.
+                # Subtraímos 1.0 para penalizar combinações que se repelem (<1.0)
+                cooc_score[i] = np.sum(np.triu(sub_matriz, k=1))
 
-            # Calcula entropia de cada jogo
-            for i, jogo in enumerate(populacao):
-                gaps = np.diff(np.sort(jogo))
-                entropia = stats.entropy(np.bincount(gaps))
-                raw_fitness[i] += entropia * 5
-        else:
-            raw_fitness = (score_freq * self.pesos["w_freq"]) + (
-                score_gap * self.pesos["w_gap"]
-            )
+        # 3. Penalidades de Validação (Soma e Paridade)
+        somas = populacao.sum(axis=1)
+        n_pares = (populacao % 2 == 0).sum(axis=1)
 
-        penalidade_fator = 0.2 if self.modo_pura else 1.0
+        penalties = np.zeros(len(populacao))
 
+        # Penalidade Soma (Suave)
         mask_bad_soma = (somas < self.ic_min) | (somas > self.ic_max)
-        raw_fitness[mask_bad_soma] -= 50 * penalidade_fator
+        penalties[mask_bad_soma] += 20.0
 
+        # Penalidade Paridade
         mask_bad_parity = (n_pares < self.bet_k * 0.3) | (n_pares > self.bet_k * 0.7)
-        raw_fitness[mask_bad_parity] -= 30 * penalidade_fator
+        penalties[mask_bad_parity] += 15.0
+
+        # --- FÓRMULA FINAL ---
+        # Equilibramos o peso linear com o peso estrutural.
+        # Jogos com alta co-ocorrência têm maior probabilidade estatística real.
+
+        raw_fitness = (linear_score * 0.4) + (cooc_score * 0.6) - penalties
 
         return raw_fitness
 
