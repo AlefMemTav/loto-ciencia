@@ -5,8 +5,12 @@ import os
 import streamlit as st
 from typing import Any, Optional, List
 import pandas as pd
+from app.core.generator_fast import gerar_jogos_vetorizado
+from app.core.generator_genetic import gerar_jogos_geneticos
 from app.core.logger import logger
 from app.core.lottery import GAMES, GameConfig
+from app.core.statistics.advanced import calibrar_pesos_dinamicos
+from app.core.statistics.clustering import clusterizar_jogos_kmeans
 from app.services.data_loader import carregar_dados_loteria_excel
 
 from app.core.statistics import (
@@ -23,13 +27,12 @@ from app.core.statistics import (
     calcular_coeficiente_variacao,
     get_reis_da_sequencia,
     verificar_historico,
+    calcular_ciclo_atual,
+    analise_temporal_somas,
+    analise_temporal_repetidos,
+    detectar_tendencia_frequencia,
 )
-from app.core.generator import (
-    gerar_jogo_perfeito,
-    gerar_multiplos_jogos,
-    gerar_com_restricoes,
-    gerar_fechamento,
-)
+from app.core.matrices import gerar_fechamento
 from app.core.validator import validar_jogo
 
 
@@ -51,6 +54,12 @@ class GameContext:
     distribuicoes_geometricas: Any
     stats_quadrantes: Any
     taxa_regressao: Optional[dict] = None
+    ciclo_atual: Optional[dict] = None
+    analise_somas: Optional[dict] = None
+    analise_repetidos: Optional[dict] = None
+    clusters_historicos: Optional[dict] = None
+    tendencias: Optional[dict] = None
+    pesos_dinamicos: Optional[dict] = None
 
 
 class LotteryService:
@@ -82,14 +91,11 @@ class LotteryService:
             f"🔄 [CACHE] get_context({slug}) - hash {file_hash} - Calculando..."
         )
 
-        # Como não tem 'self', usamos o 'config' passado como argumento
-        # Ajuste o caminho conforme sua estrutura, ou passe o path no config
         filepath = f"data/{slug}.xlsx"
         df = carregar_dados_loteria_excel(config, filepath)
 
         if df is None or df.empty:
             logger.warning(f"⚠️ [CACHE] {slug}: DataFrame vazio ou não encontrado!")
-            # Retornamos um contexto "zerado" manualmente para não quebrar o sistema
             return GameContext(
                 config=config,
                 df=pd.DataFrame(),
@@ -105,8 +111,15 @@ class LotteryService:
                 distribuicoes_geometricas={},
                 stats_quadrantes={},
                 taxa_regressao=None,
+                ciclo_atual={},
+                analise_somas={},
+                analise_repetidos={},
+                clusters_historicos={},
+                tendencias={},
+                pesos_dinamicos={},
             )
 
+        # --- CÁLCULOS ---
         grupos_geometricos = config.get_geometric_groups()
         distribuicoes = calcular_distribuicoes_geometricas(
             df, grupos_geometricos, config
@@ -116,6 +129,7 @@ class LotteryService:
         freq = get_numeros_quentes_frios(df, config)
         poisson_finais = analise_poisson(df, config, 0.05)
         tabela = get_tabela_inteligencia(df, config)
+        pesos_dinamicos = calibrar_pesos_dinamicos(df, config)
         historico_set = get_historico_jogos(df, config)
         ic_info = analise_intervalo_confianca(df, config)
         atrasos = calcular_atrasos(df, config)
@@ -123,7 +137,39 @@ class LotteryService:
         coef_variacao = calcular_coeficiente_variacao(df, config)
         reis_sequencia = get_reis_da_sequencia(df, config)
         taxa_regressao = calcular_taxa_regressao(df, config, janela=100)
+        ciclo_atual = calcular_ciclo_atual(df, config)
+        analise_somas = analise_temporal_somas(df, config, janela=30)
+        analise_repetidos = analise_temporal_repetidos(df, config, janela=30)
 
+        todos_jogos = [sorted(row.tolist()) for row in df[config.draw_cols].values]
+
+        # Executa o K-Means
+        clusters_historicos = clusterizar_jogos_kmeans(
+            todos_jogos, config, n_clusters=3, random_state=42
+        )
+        lista_tendencias = []
+        for n in range(1, config.n_numbers + 1):
+            # Janela de 30 a 50 concursos é ideal para tendência de curto prazo
+            res = detectar_tendencia_frequencia(df, config, numero=n, janela=30)
+            if (
+                res and res["p_value"] < 0.10
+            ):  # Filtra apenas tendências com alguma relevância
+                lista_tendencias.append(res)
+
+        # Separa em Alta e Baixa
+        em_alta = sorted(
+            [t for t in lista_tendencias if t["slope"] > 0],
+            key=lambda x: x["slope"],
+            reverse=True,
+        )
+        em_baixa = sorted(
+            [t for t in lista_tendencias if t["slope"] < 0], key=lambda x: x["slope"]
+        )  # Menor slope (mais negativo) primeiro
+
+        tendencias = {
+            "alta": em_alta[:5],  # Top 5 subindo
+            "baixa": em_baixa[:5],  # Top 5 descendo
+        }
         logger.info(f"✅ [CACHE] {slug}: Contexto pronto e cacheado.")
 
         return GameContext(
@@ -141,6 +187,12 @@ class LotteryService:
             distribuicoes_geometricas=distribuicoes,
             stats_quadrantes=quadrantes,
             taxa_regressao=taxa_regressao,
+            ciclo_atual=ciclo_atual,
+            analise_somas=analise_somas,
+            analise_repetidos=analise_repetidos,
+            clusters_historicos=clusters_historicos,
+            tendencias=tendencias,
+            pesos_dinamicos=pesos_dinamicos,
         )
 
     def get_context(self, slug: str) -> GameContext:
@@ -173,6 +225,10 @@ class LotteryService:
             distribuicoes_geometricas={},
             stats_quadrantes={},
             taxa_regressao=None,
+            ciclo_atual={},
+            analise_somas={},
+            analise_repetidos={},
+            tendencias={},
         )
 
     def validate(self, slug: str, numbers: List[int]) -> dict:
@@ -195,30 +251,134 @@ class LotteryService:
         estrategia = payload.get("estrategia", "balanceada")
         fixos = payload.get("numeros_fixos")
         evitados = payload.get("numeros_evitados")
-        garantir_div = payload.get("garantir_diversidade", True)
-
-        contexto_dict = {
-            "tabela": ctx.tabela,
-            "historico_jogos": ctx.historico_set,
-            "ic_info": ctx.ic_info,
-            "distribuicoes_geometricas": ctx.distribuicoes_geometricas,
-        }
 
         # Validação Rápida antes de chamar o gerador (Fail Fast)
         if fixos and len(fixos) > ctx.config.bet_size:
             raise ValueError(f"Quantidade de fixos maior que o tamanho do jogo.")
 
-        return gerar_multiplos_jogos(
-            df=ctx.df,
-            config=ctx.config,
-            finais_poisson=ctx.poisson_finais,
-            quantidade=qtd,
+        fator_excesso = 5
+        qtd_bruta = qtd * fator_excesso
+
+        # Limite de segurança para não travar em pedidos gigantes
+        qtd_bruta = min(qtd_bruta, 1000)
+
+        candidatos = gerar_jogos_vetorizado(
+            ctx=ctx,
+            quantidade=qtd_bruta,
             estrategia=estrategia,
-            garantir_diversidade=garantir_div,
             numeros_fixos=fixos,
             numeros_evitados=evitados,
-            contexto_precomputado=contexto_dict,
         )
+
+        jogos_avaliados = []
+
+        for jogo in candidatos:
+            # Validamos cada candidato.
+            report = validar_jogo(
+                jogo,
+                ctx.config,
+                historico_jogos=ctx.historico_set,
+                ic_info=ctx.ic_info,
+                df_historico=ctx.df,
+                distribuicoes_geometricas=ctx.distribuicoes_geometricas,
+                stats_quadrantes=ctx.stats_quadrantes,
+            )
+            score = report["score"]
+
+            # Critério de corte básico (opcional): rejeitar lixo total
+            if score > 20:
+                jogos_avaliados.append((score, jogo))
+
+        # 5. Seleção dos Melhores (Ranking)
+        # Ordena pelo Score (decrescente)
+        jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
+
+        # Pega apenas a quantidade que o usuário pediu
+        melhores_jogos = [j[1] for j in jogos_avaliados[:qtd]]
+
+        # Fallback: Se o validador rejeitou tudo (muito raro), devolve os brutos
+        if not melhores_jogos:
+            logger.warning(
+                f"Validador rejeitou todos os {len(candidatos)} candidatos. Usando brutos."
+            )
+            return candidatos[:qtd]
+
+        return melhores_jogos
+
+    def generate_genetic(self, slug: str, payload: dict) -> List[List[int]]:
+        """
+        Fachada para o Motor Evolutivo com Validação Final.
+
+        Fluxo:
+        1. Pede ao GA para evoluir 3x mais jogos do que o necessário.
+        2. Passa os sobreviventes pelo Validador Oficial (juiz severo).
+        3. Retorna apenas a Elite da Elite.
+        """
+        logger.info(f"🧬 Iniciando Mineração Genética para {slug}")
+
+        ctx = self.get_context(slug)
+
+        # Parâmetros
+        qtd_alvo = int(payload.get("quantidade", 1))
+        fixos = payload.get("numeros_fixos")
+        estrategia = payload.get("estrategia", "balanceada")
+        # Tática de Over-provisioning:
+        # Pedimos o triplo de jogos para poder descartar os que tiverem Score baixo
+        qtd_bruta = qtd_alvo * 3
+        # Trava de segurança para não explodir o tempo de processamento
+        qtd_bruta = min(qtd_bruta, 50)
+
+        try:
+            # 1. Mineração Evolutiva (Otimiza matemática interna)
+            candidatos = gerar_jogos_geneticos(
+                ctx=ctx, quantidade=qtd_bruta, estrategia=estrategia, fixos=fixos
+            )
+
+            # 2. Refinamento pelo Validador (Alinha com a expectativa visual do usuário)
+            jogos_avaliados = []
+
+            for jogo in candidatos:
+                # O validador aplica critérios que o GA talvez não veja (ex: Simetria Visual)
+                report = validar_jogo(
+                    jogo,
+                    ctx.config,
+                    historico_jogos=ctx.historico_set,
+                    ic_info=ctx.ic_info,
+                    df_historico=ctx.df,
+                    distribuicoes_geometricas=ctx.distribuicoes_geometricas,
+                    stats_quadrantes=ctx.stats_quadrantes,
+                )
+                score = report["score"]
+
+                # Aceitamos apenas jogos decentes
+                if score >= 50:
+                    jogos_avaliados.append((score, jogo))
+
+            # 3. Ordenação (Ranking)
+            # Queremos os maiores scores primeiro
+            jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
+
+            logger.info(
+                f"🧬 Evolução: {len(candidatos)} candidatos -> {len(jogos_avaliados)} aprovados."
+            )
+
+            # Retorna apenas a quantidade solicitada
+            melhores = [j[1] for j in jogos_avaliados[:qtd_alvo]]
+
+            # Se o filtro genético + validador foi muito rigoroso e sobrou pouco,
+            # completa com os candidatos brutos do genético (melhor que falhar)
+            if len(melhores) < qtd_alvo:
+                faltam = qtd_alvo - len(melhores)
+                extras = [j for j in candidatos if j not in melhores][:faltam]
+                melhores.extend(extras)
+
+            return melhores
+
+        except Exception as e:
+            logger.error(f"Erro no Algoritmo Genético: {e}")
+            logger.warning("Usando fallback vetorial.")
+            # Fallback para o método padrão se o genético falhar
+            return self.generate(slug, payload)
 
     def closures(
         self, slug: str, base: List[int], max_combinacoes: int = 1000

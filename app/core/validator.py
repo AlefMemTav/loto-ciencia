@@ -1026,7 +1026,6 @@ def validar_jogo(
     Validador genérico para qualquer jogo.
     Usa análises estatísticas avançadas com correção de Bonferroni.
 
-    Versão 2.0 - Melhorias:
     - Correção de Bonferroni (α = 0.0033)
     - Ajustes por densidade em todas as análises
     - Detecção de PA genérica (qualquer razão)

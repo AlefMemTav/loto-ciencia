@@ -33,7 +33,7 @@ def sync_widget_to_global():
     if novo_jogo not in jogos:
         novo_jogo = jogos[0]
     if novo_jogo != st.session_state.get(GLOBAL_KEY):
-        logger.info(f"Troca de contexto: Usuário mudou para {novo_jogo}")
+        logger.debug(f"Troca de contexto: Usuário mudou para {novo_jogo}")
         st.session_state[GLOBAL_KEY] = novo_jogo
 
 

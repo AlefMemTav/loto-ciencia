@@ -42,12 +42,13 @@ def render_generator(ctx, svc):
     slug = config.slug
     constants = config.as_constants_dict()
     main_color = constants.get("heat_color", "#ef4444")
+
     if "generator_result" in st.session_state:
         saved_slug = st.session_state.generator_result.get("slug")
         # Se o slug salvo for diferente do atual, apaga tudo
         if saved_slug != config.slug:
             del st.session_state["generator_result"]
-    # --- HEADER COM COPYWRITING ---
+
     st.markdown(
         f"""
         <div style="background: linear-gradient(90deg, #f8fafc 0%, #e2e8f0 100%); padding: 20px; border-radius: 10px; border-left: 5px solid {main_color}; margin-bottom: 25px;">
@@ -97,16 +98,29 @@ def render_generator(ctx, svc):
         }
         st.info(f"💡 **Lógica:** {info_strats[strat_key]}")
 
-        # Checkbox melhorado
-        diversidade = st.toggle(
-            "🛡️ Evitar Jogos Parecidos (Diversidade)",
-            value=True,
-            help=f"Ativa o filtro de Distância de Hamming para garantir que os jogos gerados não sejam quase iguais entre si.",
-            on_change=limpar_sessao,
-        )
+        st.markdown("##### Motor de Inteligência")
 
-    # --- RESTRIÇÕES AVANÇADAS (INTEGRADO) ---
-    with st.expander("Restrições (Números Fixos e Excluídos)"):
+        col_motor, col_info_motor = st.columns([3, 1])
+        with col_motor:
+            tipo_motor = st.radio(
+                "Escolha o algoritmo:",
+                ["⚡ Vetorial (Alta Performance)", "🧬 Genético (Evolutivo)"],
+                captions=[
+                    "Instantâneo. Foca em probabilidades estatísticas puras.",
+                    "Mais lento (5-10s). Evolui gerações de jogos buscando perfeição matemática.",
+                ],
+                index=0,
+                horizontal=True,
+                on_change=limpar_sessao,
+            )
+
+        usar_genetico = "Genético" in tipo_motor
+
+    # --- RESTRIÇÕES AVANÇADAS ---
+    with st.expander("Configurações Avançadas (Opcional)"):
+        st.text(
+            "Use apenas se souber o que está fazendo. Por padrão, o gerador já está configurado da forma como recomendamos que os jogos sejam gerados."
+        )
         col_fix, col_exc = st.columns(2)
 
         # Cria lista de 1 a N
@@ -170,8 +184,16 @@ def render_generator(ctx, svc):
 
     # --- BOTÃO DE AÇÃO ---
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # Texto do botão muda conforme o motor para dar feedback claro
+    texto_botao = (
+        f"🧬 Evoluir {qtd} Jogos de Elite"
+        if usar_genetico
+        else f"⚡ Minerar {qtd} Jogos Rápidos"
+    )
+
     btn_gerar = st.button(
-        f"✨ Minerar {qtd} Jogos Otimizados",
+        texto_botao,
         type="primary",
         width="stretch",
         disabled=not can_use,
@@ -186,27 +208,47 @@ def render_generator(ctx, svc):
         payload = {
             "quantidade": qtd,
             "estrategia": strat_key,
-            "garantir_diversidade": diversidade,
             "numeros_fixos": nums_fixos,
             "numeros_evitados": nums_evitados,
         }
 
         try:
-            steps = [
-                "Carregando histórico...",
-                "Calculando frequências...",
-                "Aplicando filtros de Entropia...",
-                "Validando geometria...",
-                "Finalizando...",
-            ]
-            for i, step in enumerate(steps):
-                bar_text.text(f"⚙️ {step}")
-                bar.progress((i + 1) * 20)
-                time.sleep(
-                    0.15
-                )  # Pequeno delay cosmético para dar sensação de processamento
+            # --- RAMIFICAÇÃO: GENÉTICO vs VETORIAL ---
 
-            jogos = svc.generate(slug, payload)
+            if usar_genetico:
+                bar_text.text("🧬 Inicializando Sopa Primordial...")
+                bar.progress(10)
+
+                # Toast para avisar que a demora é normal
+                st.toast("🧬 Otimizando gerações... Aguarde.", icon="⏳")
+
+                # Passo intermediário visual
+                bar_text.text("🧬 Aplicando Mutações...")
+                bar.progress(30)
+
+                # Chamada pesada ao Service
+                jogos = svc.generate_genetic(slug, payload)
+
+                bar.progress(100)
+                bar_text.text("✅ Evolução Concluída!")
+
+            else:
+                steps = [
+                    "Carregando histórico...",
+                    "Calculando frequências...",
+                    "Aplicando filtros...",
+                    "Validando geometria...",
+                    "Finalizando...",
+                ]
+                for i, step in enumerate(steps):
+                    bar_text.text(f"⚙️ {step}")
+                    bar.progress((i + 1) * 20)
+                    time.sleep(0.15)
+
+                # Chamada rápida ao Service
+                jogos = svc.generate(slug, payload)
+
+            # --- PÓS-PROCESSAMENTO (MANTIDO IGUAL) ---
 
             # Marca uso (se não for PRO)
             if jogos and AUTHClient.get_plan() != "pro":
@@ -217,7 +259,7 @@ def render_generator(ctx, svc):
                         st.session_state.generator_marked_date = today
                         logger.info(f"✅ Geração marcada para {AUTHClient.get_plan()}")
 
-            # Salva resultado
+            # Salva resultado na sessão
             tempo_total = time.time() - start_time
             st.session_state.generator_result = {
                 "jogos": jogos,
@@ -225,13 +267,14 @@ def render_generator(ctx, svc):
                 "tempo": tempo_total,
                 "new": True,
                 "slug": slug,
+                "motor": ("Genético" if usar_genetico else "Vetorial"),
             }
             st.rerun()
 
         except Exception as e:
             bar.empty()
             bar_text.empty()
-            st.error(f"❌ Erro na mineração: {e}")
+            st.error(f"❌ Erro na mineração")
             logger.error(f"Erro gerador: {e}", exc_info=True)
             return
 
@@ -251,7 +294,7 @@ def render_generator(ctx, svc):
     st.markdown(
         """
     <div style="text-align: center; margin-top: 15px; color: #94a3b8; font-size: 0.8rem;">
-    O LotoScience não garante prêmios. Estes jogos são estatisticamente equilibrados para aumentar suas probabilidades matemáticas e evitar divisões de prêmio. Jogue com responsabilidade.
+    O LotoScience não garante prêmios. Estes jogos são estatisticamente equilibrados para concetrar seus jogos em probabilidades matemáticas mais altas e evitar divisões de prêmio. Jogue com responsabilidade.
     </div>
         """,
         unsafe_allow_html=True,
@@ -307,7 +350,6 @@ def _render_generated_games(jogos, estrategia, config, svc, color_theme):
                     unsafe_allow_html=True,
                 )
 
-            # --- CORREÇÃO AQUI: As Bolas Coloridas ---
             # 1. Cria o container flex para as bolas
             html_balls_full = "<div style='display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0;'>"
 
@@ -318,7 +360,6 @@ def _render_generated_games(jogos, estrategia, config, svc, color_theme):
             # 3. Fecha o container
             html_balls_full += "</div>"
 
-            # 4. O PULO DO GATO: Renderiza tudo como HTML inseguro
             st.markdown(html_balls_full, unsafe_allow_html=True)
             # ------------------------------------------
 

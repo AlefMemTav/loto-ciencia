@@ -1,184 +1,168 @@
 #!/usr/bin/env python3
 # scripts/run_backtest.py
+
 """
-Script para executar backtest do sistema de scoring.
-Uso: python scripts/run_backtest.py [--jogo mega_sena_sorteio] [--amostras 1000]
+Script de Backtest Científico (Walk-Forward + Monte Carlo).
+
+Uso:
+  python scripts/run_backtest.py --jogo mega_sena_sorteio --janelas 24 --jogos 20
+
+Opcional (se você expôs esses parâmetros na função):
+  --mc 500
+  --seed 42
 """
+
 import sys
 import json
+import argparse
 from pathlib import Path
+from datetime import datetime
 
-# Adiciona app ao path
+# Adiciona o diretório raiz ao path para importar 'app'
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.lottery import GAMES
 from app.services.lottery_service import LotteryService
-from app.core.statistics.backtest import (
-    backtest_validator,
-    comparar_estrategias_gerador,
-    validar_regressao_media,
-)
+from app.core.statistics.backtest import executar_backtest_temporal
 
 
 def main():
-    import argparse
+    parser = argparse.ArgumentParser(
+        description="Backtest Científico Temporal (Monte Carlo)"
+    )
 
-    parser = argparse.ArgumentParser(description="Backtest do Sistema")
     parser.add_argument(
         "--jogo",
         default="mega_sena_sorteio",
         choices=list(GAMES.keys()),
-        help="Jogo para testar",
+        help="Slug do jogo para testar (ex: mega_sena_sorteio, loto_facil_sorteio)",
     )
+
     parser.add_argument(
-        "--amostras", type=int, default=1000, help="Número de jogos aleatórios"
+        "--janelas",
+        type=int,
+        default=24,
+        help="Quantas janelas temporais testar (ex: 24 ~ últimos 2 anos aprox.)",
     )
+
     parser.add_argument(
-        "--completo", action="store_true", help="Roda todos os testes (leva ~5 min)"
+        "--jogos",
+        type=int,
+        default=20,
+        help="Quantos jogos gerar por janela para cada algoritmo",
+    )
+
+    # Estes dois args só funcionam se sua função executar_backtest_temporal aceitar.
+    parser.add_argument(
+        "--mc",
+        type=int,
+        default=500,
+        help="Simulações Monte Carlo por janela (baseline).",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Seed de reprodutibilidade.",
     )
 
     args = parser.parse_args()
 
-    # Carrega contexto
-    service = LotteryService()
-    ctx = service.get_context(args.jogo)
+    print(f"\n🚀 Iniciando Backtest para: {args.jogo}")
+    print(f"📅 Janelas Temporais (solicitadas): {args.janelas}")
+    print(f"🎲 Jogos por Janela: {args.jogos}")
+    print(f"🎯 Monte Carlo por Janela: {args.mc}")
+    print(f"🔁 Seed: {args.seed}")
+    print("-" * 60)
 
-    from datetime import datetime
+    try:
+        service = LotteryService()
+        ctx = service.get_context(args.jogo)
 
-    data_str = datetime.now().strftime("%Y%m%d")
+        print("⏳ Processando... Isso pode levar alguns minutos...\n")
 
-    print("\n" + "=" * 100)
-    print(f"🔬 BACKTEST - {ctx.config.name}")
-    print("=" * 100 + "\n")
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # TESTE 1: Validação de Scoring
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    print("\n📊 TESTE 1: Validação de Scoring")
-    print("-" * 100)
-
-    resultado = backtest_validator(ctx.df, ctx.config, n_amostras=args.amostras)
-
-    print(
-        f"\n✅ Validação: {'PASSOU ✓' if resultado['validacao_passou'] else 'FALHOU ✗'}"
-    )
-
-    print(f"\n📈 Correlações:")
-
-    # Hamming - usa p_value (com underscore)
-    rho_hamming = resultado["correlacoes"]["hamming"]["rho"]
-    p_hamming = resultado["correlacoes"]["hamming"]["p_value"]  # ← p_value!
-
-    # n_alertas - usa p_value (com underscore)
-    rho_alertas = resultado["correlacoes"]["n_alertas"]["rho"]  # ← n_alertas!
-    p_alertas = resultado["correlacoes"]["n_alertas"]["p_value"]  # ← p_value!
-
-    print(f"   Hamming:  ρ={rho_hamming:.3f}, p={p_hamming:.4f}")
-    print(f"   Alertas:  ρ={rho_alertas:.3f}, p={p_alertas:.4f}")
-
-    print(f"\n📋 Análise por Buckets:")
-    for bucket, stats in resultado["buckets"].items():
-        print(
-            f"   {bucket:10} → Score: {stats['score_medio']:.1f}, "
-            f"Hamming: {stats['hamming_medio']:.1f}, "
-            f"Alertas: {stats['n_alertas_medio']:.1f}"  # ← n_alertas_medio!
+        # Se sua versão final da função aceitar os parâmetros mc/seed:
+        resultado = executar_backtest_temporal(
+            df_completo=ctx.df,
+            config=ctx.config,
+            n_janelas=args.janelas,
+            jogos_por_janela=args.jogos,
+            n_simulacoes_monte_carlo=args.mc,
+            seed=args.seed,
         )
 
-    print(f"\n💡 Interpretação:")
-    for msg in resultado["interpretacao"]:
-        print(f"   • {msg}")
+        if "erro" in resultado:
+            print(f"\n❌ ERRO: {resultado['erro']}")
+            return
 
-    if not args.completo:
-        print("\n💡 Use --completo para rodar testes 2 e 3 também")
+        meta = resultado.get("meta", {})
+        stats = resultado["analise_estatistica"]
+        hits = resultado["hits_absolutos_reais"]
+        exp = resultado["hits_esperados_mc_media"]
 
-        # Salva resultado parcial
-        output_dir = Path("backtest_results")
+        print("🏆 RESULTADOS (Walk-Forward + Monte Carlo):")
+        print(f" Jogo: {meta.get('jogo', args.jogo)}")
+        print(f" Janelas válidas: {meta.get('n_janelas_validas', 'N/A')}")
+        print("-" * 60)
+
+        print("🧬 Genético:")
+        print(f"  Δ médio vs acaso: {stats['Genetico']['delta_medio_vs_acaso']}")
+        print(f"  IC95 do Δ médio: {stats['Genetico']['ic95_delta_medio']}")
+        print(f"  Mediana p-emp:   {stats['Genetico']['mediana_p_emp']}")
+        print(f"  Win-rate vs MC:  {stats['Genetico']['win_rate_vs_media_mc']}")
+        print()
+
+        print("⚡ Vetorial:")
+        print(f"  Δ médio vs acaso: {stats['Vetorial']['delta_medio_vs_acaso']}")
+        print(f"  IC95 do Δ médio: {stats['Vetorial']['ic95_delta_medio']}")
+        print(f"  Mediana p-emp:   {stats['Vetorial']['mediana_p_emp']}")
+        print(f"  Win-rate vs MC:  {stats['Vetorial']['win_rate_vs_media_mc']}")
+        print("-" * 60)
+
+        print("🎯 HITS ABSOLUTOS (No período testado):")
+        print(
+            f" Genético: 4={hits['Genetico']['4']} | 5={hits['Genetico']['5']} | 6+={hits['Genetico']['6']}"
+        )
+        print(
+            f" Vetorial: 4={hits['Vetorial']['4']} | 5={hits['Vetorial']['5']} | 6+={hits['Vetorial']['6']}"
+        )
+        print(f" Esperado (MC médio): 4={exp['4']} | 5={exp['5']} | 6+={exp['6']}")
+        print()
+
+        # Salva relatório JSON
+        data_hoje = datetime.now().strftime("%Y-%m-%d")
+        output_dir = Path("relatorios_backtest")
         output_dir.mkdir(exist_ok=True)
-        output_file = (
-            output_dir / f"v1_{data_str}_{args.jogo}_{args.amostras}_amostras.json"
-        )
 
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "jogo": args.jogo,
-                    "amostras": args.amostras,
-                    "validacao_scoring": resultado,
+        nome_arquivo = f"backtest_{args.jogo}_{data_hoje}.json"
+        caminho_arquivo = output_dir / nome_arquivo
+
+        relatorio_final = {
+            "meta_execucao": {
+                "data_execucao": data_hoje,
+                "jogo": args.jogo,
+                "configuracao_cli": {
+                    "janelas": args.janelas,
+                    "jogos_por_janela": args.jogos,
+                    "mc_por_janela": args.mc,
+                    "seed": args.seed,
                 },
-                f,
-                indent=2,
-                ensure_ascii=False,
-                default=str,
-            )
+            },
+            "resultado": resultado,
+        }
 
-        print(f"\n💾 Resultados salvos em: {output_file}")
-        print("=" * 100 + "\n")
-        return
+        with open(caminho_arquivo, "w", encoding="utf-8") as f:
+            json.dump(relatorio_final, f, indent=2, ensure_ascii=False, default=str)
 
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # TESTE 2: Comparação de Estratégias
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    print("\n\n📊 TESTE 2: Comparação de Estratégias")
-    print("-" * 100)
+        print(f"💾 Relatório Completo salvo em: {caminho_arquivo}")
+        print("✅ Sucesso.")
 
-    resultado_estrategias = comparar_estrategias_gerador(
-        ctx.df, ctx.config, n_jogos_por_estrategia=100
-    )
+    except Exception as e:
+        print(f"\n❌ Erro Crítico: {e}")
+        import traceback
 
-    print(f"\n🏆 Melhor: {resultado_estrategias['melhor_estrategia']}")
-    print(f"\n📈 Resultados:")
-    for estrategia, stats in resultado_estrategias["resultados"].items():
-        print(
-            f"   {estrategia:15} → Média: {stats['score_medio']:.1f}, "
-            f"Min: {stats['score_min']:.0f}, Max: {stats['score_max']:.0f}, "
-            f"Excelentes: {stats['pct_excelente']:.1f}%"
-        )
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # TESTE 3: Validação de Regressão à Média
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    print("\n\n📊 TESTE 3: Validação de Regressão à Média")
-    print("-" * 100)
-
-    resultado_regressao = validar_regressao_media(
-        ctx.df, ctx.config, janelas=[50, 100, 200]
-    )
-
-    print(f"\n✅ Conclusão: {resultado_regressao['conclusao']}")
-    print(f"\n💡 {resultado_regressao['recomendacao']}")
-    print(f"\n📈 Por Janela:")
-
-    # Usa p_value (com underscore)
-    for janela, stats in resultado_regressao["resultados"].items():
-        corr = stats.get("correlacao", 0)
-        pval = stats.get("p_value", 1.0)  # ← p_value!
-
-        sig = "✓" if pval < 0.05 else "✗"
-        print(f"   {janela:12} → ρ={corr:.3f}, p={pval:.4f} {sig}")
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # Salva resultados em JSON
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    output_dir = Path("backtest_results")
-    output_dir.mkdir(exist_ok=True)
-
-    output_file = (
-        output_dir / f"v1_{data_str}_{args.jogo}_{args.amostras}_amostras.json"
-    )
-
-    relatorio_completo = {
-        "jogo": args.jogo,
-        "amostras": args.amostras,
-        "validacao_scoring": resultado,
-        "comparacao_estrategias": resultado_estrategias,
-        "validacao_regressao": resultado_regressao,
-    }
-
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(relatorio_completo, f, indent=2, ensure_ascii=False, default=str)
-
-    print(f"\n\n💾 Resultados salvos em: {output_file}")
-    print("=" * 100 + "\n")
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

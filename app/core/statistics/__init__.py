@@ -88,6 +88,7 @@ from app.core.statistics.advanced import (
     teste_runs_numero,
     teste_runs_todos_numeros,
     indice_dispersao,
+    calibrar_pesos_dinamicos,
 )
 
 from app.core.statistics.monte_carlo import (
@@ -96,6 +97,9 @@ from app.core.statistics.monte_carlo import (
 )
 
 from app.core.statistics.temporal import (
+    calcular_ciclo_atual,
+    analise_temporal_somas,
+    analise_temporal_repetidos,
     calcular_autocorrelacao_frequencias,
     detectar_tendencia_frequencia,
 )
@@ -107,12 +111,21 @@ from app.core.statistics.clustering import (
     encontrar_numero_otimo_clusters,
 )
 
-# Backtest
-from app.core.statistics.backtest import (
-    backtest_validator,
-    comparar_estrategias_gerador,
-    validar_regressao_media,
+# Bootstrap IC
+from app.core.statistics.bootstrap_integration import (
+    avaliar_soma_com_bootstrap,
+    calcular_bootstrap_ic_com_cache,
 )
+
+# Cluster Profile
+from app.core.statistics.cluster_profile import (
+    interpretar_cluster_por_centroide,
+    analisar_perfil_cluster,
+)
+
+
+# Backtest
+from app.core.statistics.backtest import executar_backtest_temporal, backtest_validator
 
 # Padrões avançados
 from app.core.statistics.patterns import (
@@ -194,24 +207,33 @@ __all__ = [
     "teste_runs_numero",
     "teste_runs_todos_numeros",
     "indice_dispersao",
+    "calibrar_pesos_dinamicos",
     # monte_carlo
     "bootstrap_ic_soma",
     "monte_carlo_probabilidade_acerto",
+    # bootstrap iC
+    "avaliar_soma_com_bootstrap",
+    "calcular_bootstrap_ic_com_cache",
     # gaps
     "analisar_gaps_geometricos",
     "analisar_gaps_todos_numeros",
     # temporal
     "calcular_autocorrelacao_frequencias",
     "detectar_tendencia_frequencia",
+    "calcular_ciclo_atual",
+    "analise_temporal_somas",
+    "analise_temporal_repetidos",
     # clustering
     "extrair_features_jogo",
     "clusterizar_jogos_kmeans",
     "clusterizar_jogos_dbscan",
     "encontrar_numero_otimo_clusters",
+    # cluster profile
+    "interpretar_cluster_por_centroide",
+    "analisar_perfil_cluster",
     # Backtest
     "backtest_validator",
-    "comparar_estrategias_gerador",
-    "validar_regressao_media",
+    "executar_backtest_temporal",
     # Patterns
     "detectar_progressao_aritmetica_geral",
     "detectar_sequencias_longas",

@@ -14,18 +14,185 @@ from scipy import stats
 from app.core.lottery import GameConfig
 
 
+def calcular_ciclo_atual(df: pd.DataFrame, config: GameConfig) -> dict:
+    """
+    Calcula o status do Ciclo das Dezenas.
+
+    Um ciclo se fecha quando todos os números do universo (ex: 1 a 25)
+    foram sorteados pelo menos uma vez desde o início do ciclo.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Histórico completo.
+    config : GameConfig
+        Configuração do jogo.
+
+    Returns
+    -------
+    dict
+        - 'ciclo_numero': número do ciclo atual
+        - 'aberto_ha': quantos concursos o ciclo atual já dura
+        - 'faltam_sair': lista de números que faltam para fechar
+        - 'progresso': percentual de conclusão (0-100)
+    """
+    if df.empty:
+        return {
+            "ciclo_numero": 0,
+            "aberto_ha": 0,
+            "faltam_sair": list(range(1, config.n_numbers + 1)),
+            "progresso": 0.0,
+        }
+
+    todos_numeros = set(range(1, config.n_numbers + 1))
+
+    ciclo_atual = 1
+    numeros_no_ciclo = set()
+    inicio_ciclo_idx = 0
+
+    # Percorre o histórico cronologicamente
+    for i in range(len(df)):
+        sorteio = set(df.iloc[i][config.draw_cols].values)
+        numeros_no_ciclo.update(sorteio)
+
+        # Se completou o ciclo (todos os números saíram)
+        if len(numeros_no_ciclo) == config.n_numbers:
+            # Só reseta se NÃO for o último sorteio (se fechou no último, inicia novo agora)
+            if i < len(df) - 1:
+                ciclo_atual += 1
+                numeros_no_ciclo = set()
+                inicio_ciclo_idx = i + 1
+            else:
+                # Fechou EXATAMENTE no último sorteio.
+                # O status atual é: Ciclo Fechado -> Novo ciclo começa vazio no próximo.
+                return {
+                    "ciclo_numero": ciclo_atual + 1,
+                    "aberto_ha": 0,
+                    "faltam_sair": sorted(list(todos_numeros)),
+                    "progresso": 0.0,
+                    "status": "Ciclo acabou de fechar!",
+                }
+
+    # Calcula o status do ciclo aberto
+    faltam = todos_numeros - numeros_no_ciclo
+    qtd_sorteados = len(numeros_no_ciclo)
+    progresso = (qtd_sorteados / config.n_numbers) * 100
+
+    # Quantos jogos já rolaram neste ciclo?
+    aberto_ha = len(df) - inicio_ciclo_idx
+
+    return {
+        "ciclo_numero": ciclo_atual,
+        "aberto_ha": aberto_ha,
+        "faltam_sair": sorted(list(faltam)),
+        "progresso": round(progresso, 1),
+        "status": "Em andamento",
+    }
+
+
+def analise_temporal_somas(
+    df: pd.DataFrame, config: GameConfig, janela: int = 20
+) -> dict:
+    """
+    Prepara dados para o gráfico de 'Eletrocardiograma' (Somas).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Histórico.
+    janela : int
+        Quantos últimos concursos analisar.
+
+    Returns
+    -------
+    dict
+        Dados prontos para plotagem (lista de dicts) e faixas ideais.
+    """
+    if df.empty:
+        return {"dados": [], "min_ideal": 0, "max_ideal": 0}
+
+    # Recorte dos últimos N jogos
+    df_tail = df.tail(janela).copy()
+
+    # Calcula soma
+    somas = df_tail[config.draw_cols].sum(axis=1)
+
+    # Extrai range de Gauss do config (ex: "180-220")
+    try:
+        min_ideal, max_ideal = map(int, config.gauss_range.split("-"))
+    except:
+        # Fallback genérico se a string estiver errada
+        media = (config.n_numbers * config.k) / 2
+        min_ideal = int(media * 0.85)
+        max_ideal = int(media * 1.15)
+
+    dados_grafico = []
+    for idx, soma in somas.items():
+        dados_grafico.append(
+            {
+                "Concurso": idx,
+                "Soma": int(soma),
+                "Media_Movel": int(soma),  # Placeholder se quiser suavizar depois
+                "Status": (
+                    "Normal" if min_ideal <= soma <= max_ideal else "Fora do Padrão"
+                ),
+            }
+        )
+
+    return {"dados": dados_grafico, "min_ideal": min_ideal, "max_ideal": max_ideal}
+
+
+def analise_temporal_repetidos(
+    df: pd.DataFrame, config: GameConfig, janela: int = 20
+) -> dict:
+    """
+    Calcula quantos números se repetiram do concurso anterior (R5, R9, etc).
+    """
+    if df.empty or len(df) < 2:
+        return {"dados": [], "media_repetidos": 0}
+
+    # Pega um pouco mais que a janela para calcular o primeiro diff
+    df_tail = df.tail(janela + 1).copy()
+
+    dados_grafico = []
+    repetidos_lista = []
+
+    indices = df_tail.index.tolist()
+
+    for i in range(1, len(indices)):
+        atual_idx = indices[i]
+        ant_idx = indices[i - 1]
+
+        nums_atual = set(df_tail.loc[atual_idx, config.draw_cols].values)
+        nums_ant = set(df_tail.loc[ant_idx, config.draw_cols].values)
+
+        qtd_repetidos = len(nums_atual.intersection(nums_ant))
+        repetidos_lista.append(qtd_repetidos)
+
+        dados_grafico.append({"Concurso": atual_idx, "Repetidos": qtd_repetidos})
+
+    media = sum(repetidos_lista) / len(repetidos_lista) if repetidos_lista else 0
+
+    return {
+        "dados": dados_grafico,
+        "media_repetidos": round(media, 1),
+        "moda": (
+            max(set(repetidos_lista), key=repetidos_lista.count)
+            if repetidos_lista
+            else 0
+        ),
+    }
+
+
 def calcular_autocorrelacao_frequencias(
-    df: pd.DataFrame,
-    config: GameConfig,
-    max_lag: int = 50,
-    janela: int = 10
+    df: pd.DataFrame, config: GameConfig, max_lag: int = 50, janela: int = 10
 ) -> dict:
     """
     Calcula autocorrelação das frequências de números ao longo do tempo.
-    
+
     Divide o histórico em janelas e calcula a frequência de cada número
     em cada janela, depois mede a autocorrelação dessa série.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -36,7 +203,7 @@ def calcular_autocorrelacao_frequencias(
         Número máximo de lags para calcular autocorrelação.
     janela : int, default=10
         Tamanho da janela (em sorteios) para agregação.
-    
+
     Returns
     -------
     dict
@@ -48,45 +215,47 @@ def calcular_autocorrelacao_frequencias(
     """
     if df.empty or len(df) < janela * 3:
         return None
-    
+
     n_janelas = len(df) // janela
-    
+
     # Série temporal de frequências por janela
     frequencias_por_janela = []
-    
+
     for i in range(n_janelas):
         inicio = i * janela
         fim = inicio + janela
         df_janela = df.iloc[inicio:fim]
-        
+
         todos_numeros = df_janela[config.draw_cols].values.flatten()
         freq_total = len(todos_numeros)
         frequencias_por_janela.append(freq_total)
-    
+
     serie = np.array(frequencias_por_janela)
-    
+
     # Normaliza a série
     serie_norm = (serie - serie.mean()) / (serie.std() + 1e-9)
-    
+
     # Calcula autocorrelações
     n = len(serie_norm)
     max_lag = min(max_lag, n // 2)
     autocorrs = []
-    
+
     for lag in range(1, max_lag + 1):
         if lag >= n:
             break
         autocorr = np.corrcoef(serie_norm[:-lag], serie_norm[lag:])[0, 1]
         autocorrs.append(autocorr)
-    
+
     autocorrs = np.array(autocorrs)
-    
+
     # Limite de significância (aproximação)
     limite_sig = 1.96 / np.sqrt(n)
-    
+
     # Encontra lags significativos
-    lags_significativos = [i+1 for i, ac in enumerate(autocorrs) if abs(ac) > limite_sig]
-    
+    lags_significativos = [
+        i + 1 for i, ac in enumerate(autocorrs) if abs(ac) > limite_sig
+    ]
+
     # Detecta ciclo (pico na autocorrelação)
     if len(autocorrs) > 0:
         pico_idx = np.argmax(autocorrs)
@@ -95,31 +264,28 @@ def calcular_autocorrelacao_frequencias(
     else:
         ciclo_detectado = False
         periodo_ciclo = None
-    
+
     return {
-        'autocorrelacoes': autocorrs.tolist(),
-        'lags': list(range(1, len(autocorrs) + 1)),
-        'limite_significancia': round(limite_sig, 4),
-        'lags_significativos': lags_significativos,
-        'ciclo_detectado': ciclo_detectado,
-        'periodo_ciclo': periodo_ciclo,
-        'n_janelas': n_janelas,
-        'tamanho_janela': janela,
+        "autocorrelacoes": autocorrs.tolist(),
+        "lags": list(range(1, len(autocorrs) + 1)),
+        "limite_significancia": round(limite_sig, 4),
+        "lags_significativos": lags_significativos,
+        "ciclo_detectado": ciclo_detectado,
+        "periodo_ciclo": periodo_ciclo,
+        "n_janelas": n_janelas,
+        "tamanho_janela": janela,
     }
 
 
 def detectar_tendencia_frequencia(
-    df: pd.DataFrame,
-    config: GameConfig,
-    numero: int,
-    janela: int = 50
+    df: pd.DataFrame, config: GameConfig, numero: int, janela: int = 50
 ) -> dict:
     """
     Detecta tendência na frequência de um número específico.
-    
+
     Usa regressão linear para identificar se a frequência está
     aumentando, diminuindo ou estável ao longo do tempo.
-    
+
     Parameters
     ----------
     df : pd.DataFrame
@@ -130,7 +296,7 @@ def detectar_tendencia_frequencia(
         Número a analisar.
     janela : int, default=50
         Tamanho da janela móvel.
-    
+
     Returns
     -------
     dict
@@ -138,29 +304,30 @@ def detectar_tendencia_frequencia(
     """
     if df.empty or len(df) < janela * 2:
         return None
-    
+
     # Calcula frequência móvel
     n_janelas = len(df) // janela
     frequencias = []
-    
+
     for i in range(n_janelas):
         inicio = i * janela
         fim = inicio + janela
         df_janela = df.iloc[inicio:fim]
-        
+
         count = sum(
-            1 for _, row in df_janela.iterrows()
+            1
+            for _, row in df_janela.iterrows()
             if numero in row[config.draw_cols].values
         )
         frequencias.append(count / janela)
-    
+
     if len(frequencias) < 3:
         return None
-    
+
     # Regressão linear
     x = np.arange(len(frequencias))
     slope, intercept, r_value, p_value, std_err = stats.linregress(x, frequencias)
-    
+
     # Interpretação
     if p_value < 0.05:
         if slope > 0:
@@ -169,12 +336,12 @@ def detectar_tendencia_frequencia(
             tendencia = "📉 Frequência diminuindo"
     else:
         tendencia = "➡️ Frequência estável"
-    
+
     return {
-        'numero': numero,
-        'slope': round(slope, 6),
-        'r_squared': round(r_value ** 2, 4),
-        'p_value': round(p_value, 4),
-        'tendencia': tendencia,
-        'frequencias_janela': frequencias,
+        "numero": numero,
+        "slope": round(slope, 6),
+        "r_squared": round(r_value**2, 4),
+        "p_value": round(p_value, 4),
+        "tendencia": tendencia,
+        "frequencias_janela": frequencias,
     }

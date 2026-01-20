@@ -247,25 +247,40 @@ def _render_validator_results(relatorio, nums, ctx, svc):
             st.write(
                 f"- **Originalidade:** Difere {hamming} números do sorteio mais parecido da história."
             )
+    # 4.CLUSTER PROFILE
+    perfil = relatorio.get("perfil_cluster", {})
+    if perfil.get("disponivel"):
+        st.markdown("---")
+        _render_cluster_profile(perfil)
 
-    # 4. BACKTESTING (A Prova Real)
+    bootstrap = relatorio.get("bootstrap", {})
+    if bootstrap and bootstrap.get("disponivel"):
+        st.markdown("---")
+        _render_bootstrap_analysis(bootstrap, sum(nums))
+
+    # 6. BACKTESTING
     st.markdown("---")
     _render_backtesting(config, nums, svc)
 
-    # 5. DETALHES TÉCNICOS (Accordion fechado para não assustar)
+    # 7. DETALHES TÉCNICOS
     with st.expander("🔬 Ver Análise Técnica Profunda (Avançado)"):
         st.markdown("##### Geometria e Quadrantes")
         _render_geometric_metrics(metricas)
         st.markdown("##### Análise de Similaridade")
         _render_advanced_metrics(metricas)
 
-    # 6. MENSAGENS ESTRATÉGICAS
+    # 8. MENSAGENS ESTRATÉGICAS
     if relatorio["msgs"]:
         st.markdown("##### 📝 Notas do Algoritmo:")
     for msg in relatorio["msgs"]:
         if "❌" in msg:
             st.markdown(
                 f"<span style='color:#ef4444; font-weight:600;'>{msg}</span>",
+                unsafe_allow_html=True,
+            )
+        elif "ℹ️" in msg:
+            st.markdown(
+                f"<span style='color:#3b82f6; font-weight:600;'>{msg}</span>",
                 unsafe_allow_html=True,
             )
         elif "✅" in msg:
@@ -442,3 +457,110 @@ def _render_advanced_metrics(metricas):
                 help="% dos números atrasados que saíram",
             )
             col3.metric("Interpretação", regressao["interpretacao"])
+
+
+def _render_cluster_profile(perfil):
+    """Renderiza o card de personalidade do jogo (Cluster)."""
+    st.subheader("DNA do Jogo (Personalidade)")
+
+    c1, c2 = st.columns([1, 2])
+
+    with c1:
+        # Ícone Grande e Nome
+        st.markdown(
+            f"""
+<div style="text-align: center; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+    <div style="font-size: 3rem;">{perfil['icone']}</div>
+    <div style="font-weight: bold; font-size: 1.1rem; color: #334155; margin-top: 5px;">{perfil['nome_cluster']}</div>
+</div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with c2:
+        # Descrição e Detalhes
+        st.markdown(f"**O que isso significa?**")
+        st.markdown(f"{perfil['descricao']}")
+
+        # Tags Técnicas
+        tags_html = ""
+        for feat in perfil["caracteristicas"]:
+            tags_html += f'<span style="background: #e0f2fe; color: #0369a1; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-right: 5px;">{feat}</span>'
+
+        st.markdown(
+            f"<div style='margin-top: 10px;'>{tags_html}</div>", unsafe_allow_html=True
+        )
+
+        if perfil.get("is_outlier"):
+            st.warning(
+                "⚠️ **Nota:** Este jogo é um 'Outlier' (muito diferente do padrão do seu grupo). Pode ser uma aposta arriscada."
+            )
+        else:
+            st.caption(
+                f"Este perfil representa {perfil.get('percentual_historico', 0)}% dos sorteios históricos."
+            )
+
+
+def _render_bootstrap_analysis(boot, soma_jogo):
+    """Renderiza a barra de Intervalo de Confiança Bootstrap."""
+    st.subheader("Validação Científica (Bootstrap 95%)")
+
+    ic = boot["ic_bootstrap"]
+    lower = ic["ic_lower"]
+    upper = ic["ic_upper"]
+    media = ic["media_bootstrap"]
+
+    # Prepara dados para a barra de progresso visual
+    # Normaliza a soma dentro de um range um pouco maior que o IC para dar contexto
+    range_min = lower - (upper - lower) * 0.5
+    range_max = upper + (upper - lower) * 0.5
+
+    # Clamp (trava valores entre 0 e 1)
+    pos_pct = (soma_jogo - range_min) / (range_max - range_min)
+    pos_pct = max(0.0, min(1.0, pos_pct))
+
+    # Define cor da barra baseado se está dentro ou fora
+    dentro_ic = lower <= soma_jogo <= upper
+    cor_barra = "#22c55e" if dentro_ic else "#ef4444"  # Verde ou Vermelho
+
+    st.markdown(
+        f"""
+<div style="margin-bottom: 5px; font-size: 0.9rem; font-weight: bold;">
+    Análise da Soma ({soma_jogo}):
+    <span style="color: {cor_barra};">{'✅ DENTRO' if dentro_ic else '⚠️ FORA'} do Padrão Matemático</span>
+</div>
+<div style="background: #e2e8f0; width: 100%; height: 20px; border-radius: 10px; position: relative;">
+    <div style="
+        position: absolute;
+        left: {((lower - range_min) / (range_max - range_min)) * 100}%;
+        width: {((upper - lower) / (range_max - range_min)) * 100}%;
+        height: 100%;
+        background: #bbf7d0;
+        border-left: 2px solid #22c55e;
+        border-right: 2px solid #22c55e;
+        opacity: 0.6;">
+    </div>
+    <div style="
+        position: absolute;
+        left: {pos_pct * 100}%;
+        top: -5px;
+        width: 4px;
+        height: 30px;
+        background: {cor_barra};
+        border: 2px solid white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+    </div>
+</div>
+<div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #64748b; margin-top: 5px;">
+    <span>Min: {lower:.0f}</span>
+    <span>Média Ideal: {media:.0f}</span>
+    <span>Max: {upper:.0f}</span>
+</div>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    # Mensagens detalhadas do Bootstrap
+    for msg in boot.get("mensagens", []):
+        if "⚠️" in msg:
+            st.caption(msg)

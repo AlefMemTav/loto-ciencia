@@ -180,6 +180,47 @@ class GameConfig:
     def density(self) -> float:
         return self.bet_size / self.n_numbers
 
+    @property
+    def is_sparse(self) -> bool:
+        """Jogos de difícil acerto (Mega-Sena, Quina). Densidade < 20%."""
+        return self.density < 0.20
+
+    @property
+    def is_dense(self) -> bool:
+        """Jogos de fácil preenchimento (Lotofácil, Lotomania). Densidade > 40%."""
+        return self.density > 0.40
+
+    def get_overlap_limit(self) -> int:
+        """
+        Define quantos números podem se repetir entre dois jogos gerados (Hamming).
+        Baseado na conversa anterior:
+        - Mega/Quina: Máx 50% igual (ex: 3 em 6). Diversidade forçada.
+        - Intermediários: Máx 70%.
+        - Lotofácil: Máx 85% igual (ex: 12 em 15). Repetição natural.
+        """
+        k = self.bet_size
+
+        if self.is_sparse:
+            return int(k * 0.50)
+        elif self.density < 0.45:
+            return int(k * 0.70)
+        else:
+            return int(k * 0.85)
+
+    def get_recommended_weights(self, base_freq=0.5, base_gap=0.5) -> dict:
+        """
+        Ajusta pesos para evitar vícios do Genético em jogos esparsos.
+        - Mega-Sena: Trava Gap em max 30% para evitar 'falácia do apostador'.
+        """
+        if self.is_sparse:
+            # Força perfil mais conservador/frequência
+            return {
+                "w_freq": max(base_freq, 0.7),  # Mínimo 0.7
+                "w_gap": min(base_gap, 0.3),  # Máximo 0.3
+            }
+        # Lotofácil e outros seguem o fluxo normal
+        return {"w_freq": base_freq, "w_gap": base_gap}
+
     # --- PROPRIEDADES MATEMÁTICAS ---
 
     @property

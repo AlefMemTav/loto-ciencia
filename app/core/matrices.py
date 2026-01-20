@@ -1,6 +1,9 @@
 # app/core/matrices.py
 from itertools import combinations
 from app.core.lottery import GameConfig
+from math import comb
+import math
+from app.core.logger import logger
 
 
 class MatrixCatalog:
@@ -149,3 +152,43 @@ def _gerar_fechamento_dinamico(
             jogos.append(jogo)
 
     return jogos
+
+
+def gerar_fechamento(numeros_base, config: GameConfig, max_combinacoes=1000):
+    """
+    Limita fechamentos genéricos grandes para evitar explosão combinatória.
+
+    Args:
+        numeros_base: Lista de números base
+        config: GameConfig do jogo (MEGASENA, QUINA, LOTOFACIL)
+        max_combinacoes: Limite máximo de jogos
+
+    Returns:
+        Lista de jogos ou dict com erro
+    """
+    tamanho_jogo = config.bet_size
+
+    if len(numeros_base) < tamanho_jogo:
+        return []
+
+    n = len(numeros_base)
+
+    # Calcula número de combinações
+    try:
+        total_comb = math.factorial(n) // (
+            (math.factorial(tamanho_jogo) * math.factorial(n - tamanho_jogo))
+        )
+    except:
+        total_comb = comb(n, tamanho_jogo)
+
+    if total_comb > max_combinacoes:
+        return {
+            "erro": f"Fechamento de {n} números gera {total_comb:,} jogos. "
+            f"Limite: {max_combinacoes:,}. Reduza a quantidade de números."
+        }
+
+    logger.info(
+        f"Gerando fechamento para {config.name}: {n} números base -> {total_comb} jogos."
+    )
+    comb_iter = combinations(numeros_base, tamanho_jogo)
+    return [sorted(list(c)) for c in comb_iter]

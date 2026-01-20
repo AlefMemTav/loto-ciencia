@@ -1,421 +1,337 @@
 # app/core/statistics/backtest.py
 """
-Módulo de backtest para validação científica do sistema de scoring.
+Backtest Científico & Validação Temporal (Forward Testing)
+VERSÃO FINAL: Walk-Forward + Monte Carlo (hipótese nula) + p-valor empírico.
 
-Este módulo valida se scores altos realmente correlacionam com
-"jogos melhores" segundo métricas objetivas.
+O que esta função mede:
+- Se o método (Genético/Vetorial) tem performance acima do acaso em um teste fora-da-amostra,
+  com baseline estocástico robusto (Monte Carlo) em cada janela temporal.
 
-ATUALIZAÇÃO (11/01/2026): Critério ajustado para jogos de baixa densidade
-baseado em análise empírica de 1000 amostras + histórico real (2955 sorteios).
+O que ela NÃO promete:
+- "prever" sorteios. Ela apenas testa se existe ganho estatístico vs aleatório.
 """
 
 import numpy as np
 import pandas as pd
 import random
-from typing import Dict, List, Tuple
-from collections import defaultdict
-from scipy.stats import spearmanr, pearsonr
+from typing import List, Dict, Optional, Tuple
 
 from app.core.lottery import GameConfig
-from app.core.validator import validar_jogo
-from app.core.statistics import (
-    get_historico_jogos,
-    get_tabela_inteligencia,
-    analise_intervalo_confianca,
-    calcular_distribuicoes_geometricas,
-    calcular_distancia_minima_historico,
-)
+from app.core.statistics import get_tabela_inteligencia, analise_intervalo_confianca
 from app.core.logger import logger
 
+from app.core.generator_fast import gerar_jogos_vetorizado
+from app.core.generator_genetic import gerar_jogos_geneticos
 
-def backtest_validator(
-    df: pd.DataFrame, config: GameConfig, n_amostras: int = 1000, random_state: int = 42
-) -> dict:
+
+# ----------------------------------------------------------------------
+# Mock Context mínimo para os geradores (igual ao seu)
+# ----------------------------------------------------------------------
+class MockContext:
+    def __init__(self, df, config, tabela, ic_info):
+        self.df = df
+        self.config = config
+        self.tabela = tabela
+        self.ic_info = ic_info
+
+        draw_cols = [c for c in df.columns if c.startswith("D")]
+        if not draw_cols:
+            draw_cols = config.draw_cols
+
+        self.historico_set = set(tuple(sorted(x)) for x in df[draw_cols].values)
+        self.pesos_dinamicos = {"w_freq": 0.5, "w_gap": 0.5}
+
+
+# ----------------------------------------------------------------------
+# Utilidades
+# ----------------------------------------------------------------------
+def _extrair_draw_cols(df: pd.DataFrame, config: GameConfig) -> List[str]:
+    cols = [c for c in df.columns if c.startswith("D")]
+    return cols if cols else list(config.draw_cols)
+
+
+def _contar_hits_e_score(
+    lista_jogos: List[List[int]], gabarito: np.ndarray
+) -> Tuple[int, Dict[str, int]]:
     """
-    Valida se scores altos correlacionam com jogos de maior qualidade.
-
-    Metodologia:
-    1. Gera N jogos aleatórios
-    2. Valida cada um (score 0-100)
-    3. Separa em buckets de score
-    4. Calcula métricas objetivas por bucket
-    5. Testa correlação entre score e métricas
-
-    Hipótese: Scores altos devem ter:
-    - Maior distância de Hamming (mais únicos)
-    - Somas dentro do IC histórico
-    - Menos padrões óbvios detectados
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame com histórico de sorteios.
-    config : GameConfig
-        Configuração do jogo.
-    n_amostras : int, default=1000
-        Número de jogos aleatórios a gerar.
-    random_state : int, default=42
-        Seed para reprodutibilidade.
-
-    Returns
-    -------
-    dict
-        Resultado completo do backtest com correlações e análise por bucket.
+    Score operacional (apenas para comparação): quadra=1, quina=50, sena=1000.
+    Também retorna contagens absolutas de hits 4/5/6+.
     """
-    logger.info(f"🧪 Iniciando backtest com {n_amostras} amostras para {config.name}")
+    score_total = 0
+    hits = {"4": 0, "5": 0, "6": 0}
 
-    random.seed(random_state)
-    np.random.seed(random_state)
+    # Converte gabarito em sets uma vez (velocidade)
+    g_sets = [set(row.tolist()) for row in gabarito]
 
-    # Prepara contexto
-    historico = get_historico_jogos(df, config)
-    ic_info = analise_intervalo_confianca(df, config)
-    tabela = get_tabela_inteligencia(df, config)
+    for jogo in lista_jogos:
+        s_jogo = set(jogo)
+        for s_real in g_sets:
+            acertos = len(s_jogo.intersection(s_real))
+            if acertos == 4:
+                hits["4"] += 1
+                score_total += 1
+            elif acertos == 5:
+                hits["5"] += 1
+                score_total += 50
+            elif acertos >= 6:
+                hits["6"] += 1
+                score_total += 1000
 
-    grupos_geom = config.get_geometric_groups()
-    distribuicoes_geom = calcular_distribuicoes_geometricas(df, grupos_geom, config)
+    return score_total, hits
 
-    # Coleta resultados
-    resultados = []
 
-    for i in range(n_amostras):
-        # Gera jogo aleatório
-        jogo = sorted(random.sample(range(1, config.n_numbers + 1), config.bet_size))
+def _mc_gerar_jogos_numpy(
+    rng: np.random.Generator, n_jogos: int, n_numbers: int, k: int
+) -> List[List[int]]:
+    """
+    Gera n_jogos jogos aleatórios (sem repetição) usando numpy.
+    Retorna lista de listas ordenadas.
+    """
+    jogos = []
+    # Para simplicidade/compatibilidade: loop por jogo, mas usando RNG do numpy
+    # (Mais rápido que random.sample e reprodutível via rng)
+    for _ in range(n_jogos):
+        arr = rng.choice(np.arange(1, n_numbers + 1), size=k, replace=False)
+        arr.sort()
+        jogos.append(arr.tolist())
+    return jogos
 
-        # Valida
-        validacao = validar_jogo(
-            jogo,
-            config,
-            historico_jogos=historico,
-            ic_info=ic_info,
-            df_historico=df,
-            distribuicoes_geometricas=distribuicoes_geom,
-        )
 
-        # Métricas objetivas
-        score = validacao["score"]
-        soma = sum(jogo)
-        ja_saiu = validacao["ja_saiu"]
+def _p_empirico_supera_ou_iguala(mc_scores: np.ndarray, score_obs: float) -> float:
+    """
+    p-valor empírico unilateral (conservador):
+    p = P_MC(score >= score_obs). Usa correção +1/(N+1) para nunca dar 0.
+    """
+    n = len(mc_scores)
+    if n <= 0:
+        return 1.0
+    return (np.sum(mc_scores >= score_obs) + 1.0) / (n + 1.0)
 
-        # Distância de Hamming mínima
-        if config.bet_size == config.k:
-            min_hamming, max_sim = calcular_distancia_minima_historico(jogo, df, config)
-        else:
-            min_hamming, max_sim = config.bet_size, 0.0
 
-        # Dentro do IC?
-        if ic_info:
-            ic_80 = ic_info["ic_80"]
-            dentro_ic80 = ic_80[0] <= soma <= ic_80[1]
-            distancia_ic_centro = abs(soma - ic_info["media"]) / ic_info["desvio"]
-        else:
-            dentro_ic80 = True
-            distancia_ic_centro = 0.0
+def _bootstrap_ic95_media(
+    deltas: np.ndarray, n_boot: int, rng: np.random.Generator
+) -> Tuple[float, float]:
+    if len(deltas) == 0:
+        return (0.0, 0.0)
+    means = []
+    for _ in range(n_boot):
+        sample = rng.choice(deltas, size=len(deltas), replace=True)
+        means.append(float(np.mean(sample)))
+    lo, hi = np.percentile(means, [2.5, 97.5])
+    return float(lo), float(hi)
 
-        # Contagem de alertas
-        n_alertas = sum(1 for msg in validacao["msgs"] if "⚠️" in msg or "❌" in msg)
 
-        resultados.append(
+# ----------------------------------------------------------------------
+# Função principal
+# ----------------------------------------------------------------------
+def executar_backtest_temporal(
+    df_completo: pd.DataFrame,
+    config: GameConfig,
+    n_janelas: int = 12,
+    jogos_por_janela: int = 10,
+    n_simulacoes_monte_carlo: int = 500,
+    tamanho_teste: int = 10,
+    step: int = 20,
+    seed: int = 42,
+    n_bootstrap: int = 2000,
+    estrategia: str = "balanceada",
+) -> Dict:
+    """
+    Walk-Forward + Monte Carlo:
+    - Para cada corte temporal:
+      - Treina no passado (df_treino)
+      - Testa nos próximos 'tamanho_teste' sorteios reais
+      - Compara método vs distribuição aleatória gerada por Monte Carlo
+    - Retorna p-valor empírico por janela + agregações globais.
+
+    Métrica primária operacional: score ponderado (1/50/1000) por janela.
+    Métricas secundárias: hits 4/5/6+ absolutos.
+    """
+    logger.info(
+        f"⏳ Backtest Científico (Walk-Forward + Monte Carlo N={n_simulacoes_monte_carlo}) para {config.name}"
+    )
+
+    total_sorteios = len(df_completo)
+    if total_sorteios < 200:
+        return {
+            "erro": "Histórico insuficiente para backtest temporal (mínimo 200 sorteios)."
+        }
+
+    inicio = max(100, total_sorteios - (n_janelas * step) - tamanho_teste)
+    pontos_corte = list(range(inicio, total_sorteios - tamanho_teste, step))
+    if len(pontos_corte) == 0:
+        return {
+            "erro": "Não foi possível montar pontos de corte com os parâmetros atuais."
+        }
+
+    # RNGs reprodutíveis
+    rng_global = np.random.default_rng(seed)
+
+    # Acumuladores por janela (para inferência)
+    deltas_gen = []
+    deltas_vet = []
+    pvals_gen = []
+    pvals_vet = []
+    wins_gen = 0
+    wins_vet = 0
+    n_janelas_validas = 0
+
+    # Acumuladores de hits absolutos (reais) e baseline esperado (média MC)
+    hits_reais = {
+        "Genetico": {"4": 0, "5": 0, "6": 0},
+        "Vetorial": {"4": 0, "5": 0, "6": 0},
+    }
+    hits_esperado_mc = {"4": 0.0, "5": 0.0, "6": 0.0}
+
+    detalhes = []
+
+    for corte in pontos_corte:
+        df_treino = df_completo.iloc[:corte].copy()
+        df_futuro = df_completo.iloc[corte : corte + tamanho_teste].copy()
+
+        draw_cols = _extrair_draw_cols(df_futuro, config)
+        gabarito = df_futuro[draw_cols].values
+
+        try:
+            tabela = get_tabela_inteligencia(df_treino, config)
+            ic_info = analise_intervalo_confianca(df_treino, config)
+            ctx = MockContext(df_treino, config, tabela, ic_info)
+
+            jogos_gen = gerar_jogos_geneticos(
+                ctx, quantidade=jogos_por_janela, estrategia=estrategia
+            )
+            jogos_vet = gerar_jogos_vetorizado(
+                ctx, quantidade=jogos_por_janela, estrategia=estrategia
+            )
+
+            score_gen, hits_gen = _contar_hits_e_score(jogos_gen, gabarito)
+            score_vet, hits_vet = _contar_hits_e_score(jogos_vet, gabarito)
+
+            for kk in ["4", "5", "6"]:
+                hits_reais["Genetico"][kk] += int(hits_gen[kk])
+                hits_reais["Vetorial"][kk] += int(hits_vet[kk])
+
+        except Exception as e:
+            logger.error(f"[Backtest] Erro no corte {corte}: {e}")
+            continue
+
+        # Monte Carlo por janela (hipótese nula)
+        # Usa seed derivada do corte para independência reprodutível por janela
+        rng_janela = np.random.default_rng(seed + int(corte))
+
+        mc_scores = np.zeros(n_simulacoes_monte_carlo, dtype=float)
+        mc_hits = {"4": 0, "5": 0, "6": 0}
+
+        for i in range(n_simulacoes_monte_carlo):
+            jogos_mc = _mc_gerar_jogos_numpy(
+                rng=rng_janela,
+                n_jogos=jogos_por_janela,
+                n_numbers=config.n_numbers,
+                k=config.bet_size,
+            )
+            s_mc, h_mc = _contar_hits_e_score(jogos_mc, gabarito)
+            mc_scores[i] = s_mc
+            for kk in ["4", "5", "6"]:
+                mc_hits[kk] += int(h_mc[kk])
+
+        media_mc = float(np.mean(mc_scores))
+        # delta = ganho absoluto vs esperança do acaso (por janela)
+        delta_gen = float(score_gen - media_mc)
+        delta_vet = float(score_vet - media_mc)
+
+        # p-valores empíricos por janela (unilateral: "melhor que acaso")
+        p_gen = _p_empirico_supera_ou_iguala(mc_scores, score_gen)
+        p_vet = _p_empirico_supera_ou_iguala(mc_scores, score_vet)
+
+        # win/loss por janela (métrica simples, robusta)
+        wins_gen += int(score_gen > media_mc)
+        wins_vet += int(score_vet > media_mc)
+
+        deltas_gen.append(delta_gen)
+        deltas_vet.append(delta_vet)
+        pvals_gen.append(p_gen)
+        pvals_vet.append(p_vet)
+
+        # baseline esperado (média de hits MC por janela)
+        for kk in ["4", "5", "6"]:
+            hits_esperado_mc[kk] += mc_hits[kk] / n_simulacoes_monte_carlo
+
+        n_janelas_validas += 1
+
+        detalhes.append(
             {
-                "jogo": jogo,
-                "score": score,
-                "soma": soma,
-                "hamming": min_hamming,
-                "ja_saiu": ja_saiu,
-                "dentro_ic80": dentro_ic80,
-                "distancia_ic_centro": distancia_ic_centro,
-                "n_alertas": n_alertas,
-                "risco_divisao": validacao["risco_divisao"],
+                "corte": int(corte),
+                "janela_futura": f"{int(corte)+1} a {int(corte)+tamanho_teste}",
+                "score_gen": int(score_gen),
+                "score_vet": int(score_vet),
+                "mc_media": round(media_mc, 4),
+                "delta_gen": round(delta_gen, 4),
+                "delta_vet": round(delta_vet, 4),
+                "p_emp_gen": round(p_gen, 6),
+                "p_emp_vet": round(p_vet, 6),
             }
         )
 
-        if (i + 1) % 200 == 0:
-            logger.info(f"  Progresso: {i+1}/{n_amostras}")
-
-    df_resultados = pd.DataFrame(resultados)
-
-    # Análise por bucket
-    buckets = [(0, 40), (40, 60), (60, 80), (80, 100)]
-    analise_buckets = {}
-
-    for min_score, max_score in buckets:
-        bucket_name = f"{min_score}-{max_score}"
-        mask = (df_resultados["score"] >= min_score) & (
-            df_resultados["score"] < max_score
-        )
-        df_bucket = df_resultados[mask]
-
-        if len(df_bucket) == 0:
-            continue
-
-        analise_buckets[bucket_name] = {
-            "n_jogos": len(df_bucket),
-            "score_medio": df_bucket["score"].mean(),
-            "hamming_medio": df_bucket["hamming"].mean(),
-            "hamming_std": df_bucket["hamming"].std(),
-            "dentro_ic80_pct": df_bucket["dentro_ic80"].mean() * 100,
-            "distancia_ic_media": df_bucket["distancia_ic_centro"].mean(),
-            "n_alertas_medio": df_bucket["n_alertas"].mean(),
-            "risco_alto_pct": (df_bucket["risco_divisao"] == "ALTO").mean() * 100,
-            "ja_saiu_pct": df_bucket["ja_saiu"].mean() * 100,
+    if n_janelas_validas == 0:
+        return {
+            "erro": "Nenhuma janela válida foi processada (todos os cortes falharam)."
         }
 
-    # Correlações
-    scores = df_resultados["score"].values
+    deltas_gen = np.array(deltas_gen, dtype=float)
+    deltas_vet = np.array(deltas_vet, dtype=float)
 
-    corr_hamming, p_hamming = spearmanr(scores, df_resultados["hamming"])
-    corr_alertas, p_alertas = spearmanr(scores, df_resultados["n_alertas"])
-    corr_ic_dist, p_ic_dist = spearmanr(scores, df_resultados["distancia_ic_centro"])
+    # IC95% do ganho médio via bootstrap nas janelas (robusto e interpretável)
+    ic_gen = _bootstrap_ic95_media(deltas_gen, n_boot=n_bootstrap, rng=rng_global)
+    ic_vet = _bootstrap_ic95_media(deltas_vet, n_boot=n_bootstrap, rng=rng_global)
 
-    # Métricas absolutas (NOVO - 11/01/2026)
-    hamming_medio_sistema = df_resultados["hamming"].mean()
-    hamming_mediano_sistema = df_resultados["hamming"].median()
+    # Estatística global simples: taxa de vitórias vs acaso (não é “p-value”, mas é robusto)
+    win_rate_gen = wins_gen / n_janelas_validas
+    win_rate_vet = wins_vet / n_janelas_validas
 
-    # Interpretação
-    interpretacao = []
-
-    if corr_hamming > 0.3 and p_hamming < 0.05:
-        interpretacao.append(
-            "✅ Scores altos correlacionam com maior unicidade (Hamming)"
-        )
-    elif corr_hamming < -0.1:
-        interpretacao.append("⚠️ PROBLEMA: Scores altos associados a jogos MENOS únicos")
-
-    if corr_alertas < -0.3 and p_alertas < 0.05:
-        interpretacao.append("✅ Scores altos têm menos alertas detectados")
-    elif corr_alertas > 0.1:
-        interpretacao.append("⚠️ PROBLEMA: Scores altos associados a MAIS alertas")
-
-    if abs(corr_ic_dist) < 0.2:
-        interpretacao.append("✅ Scores capturam mais que apenas proximidade à média")
-
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    # NOVO (11/01/2026): Critério adaptado por densidade do jogo
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    if config.density < 0.15:  # Mega-Sena, Quina (baixa densidade)
-        # Para jogos de baixa densidade, Hamming natural já é alto (~6.5)
-        # Critério: alertas forte + Hamming absoluto adequado
-
-        validacao_passou = (
-            corr_alertas < -0.5  # Forte correlação negativa com alertas
-            and p_alertas < 0.05  # Estatisticamente significativo
-            and hamming_medio_sistema
-            >= 4.5  # Hamming absoluto razoável (>75% do máximo)
-        )
-
-        interpretacao.append(
-            f"ℹ️ Jogo de baixa densidade: critério focado em alertas + Hamming absoluto"
-        )
-        interpretacao.append(
-            f"📊 Hamming médio do sistema: {hamming_medio_sistema:.2f} "
-            f"(esperado ≥4.5 para Mega-Sena)"
-        )
-
-        if hamming_medio_sistema >= 6.0:
-            interpretacao.append(
-                f"✅ Hamming {hamming_medio_sistema:.2f} é EXCELENTE (>100% do tamanho da aposta)"
-            )
-    else:  # Lotofácil (alta densidade)
-        # Para jogos densos, exija também correlação de Hamming
-        validacao_passou = (
-            corr_hamming > 0.2
-            and corr_alertas < -0.2
-            and p_hamming < 0.05
-            and p_alertas < 0.05
-        )
-
-        interpretacao.append("ℹ️ Jogo de alta densidade: critério padrão (correlações)")
-    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-    resultado_final = {
-        "validacao_passou": validacao_passou,
-        "n_amostras": n_amostras,
-        "correlacoes": {
-            "hamming": {"rho": round(corr_hamming, 3), "p_value": round(p_hamming, 4)},
-            "n_alertas": {
-                "rho": round(corr_alertas, 3),
-                "p_value": round(p_alertas, 4),
-            },
-            "distancia_ic": {
-                "rho": round(corr_ic_dist, 3),
-                "p_value": round(p_ic_dist, 4),
-            },
-        },
-        "metricas_absolutas": {  # NOVO
-            "hamming_medio": round(hamming_medio_sistema, 2),
-            "hamming_mediano": round(hamming_mediano_sistema, 2),
-        },
-        "buckets": analise_buckets,
-        "interpretacao": interpretacao,
-        "config": {
+    # Relatório final
+    return {
+        "meta": {
             "jogo": config.name,
-            "n_numbers": config.n_numbers,
-            "k": config.k,
-            "densidade": config.density,
+            "n_janelas_validas": int(n_janelas_validas),
+            "parametros": {
+                "n_janelas_solicitadas": int(n_janelas),
+                "jogos_por_janela": int(jogos_por_janela),
+                "tamanho_teste": int(tamanho_teste),
+                "step": int(step),
+                "simulacoes_mc_por_janela": int(n_simulacoes_monte_carlo),
+                "seed": int(seed),
+                "bootstrap_reps": int(n_bootstrap),
+                "estrategia": estrategia,
+            },
         },
+        "analise_estatistica": {
+            "Genetico": {
+                "delta_medio_vs_acaso": round(float(np.mean(deltas_gen)), 4),
+                "ic95_delta_medio": [round(ic_gen[0], 4), round(ic_gen[1], 4)],
+                "mediana_p_emp": round(float(np.median(np.array(pvals_gen))), 6),
+                "win_rate_vs_media_mc": round(float(win_rate_gen), 4),
+            },
+            "Vetorial": {
+                "delta_medio_vs_acaso": round(float(np.mean(deltas_vet)), 4),
+                "ic95_delta_medio": [round(ic_vet[0], 4), round(ic_vet[1], 4)],
+                "mediana_p_emp": round(float(np.median(np.array(pvals_vet))), 6),
+                "win_rate_vs_media_mc": round(float(win_rate_vet), 4),
+            },
+        },
+        "hits_absolutos_reais": {
+            "Genetico": hits_reais["Genetico"],
+            "Vetorial": hits_reais["Vetorial"],
+        },
+        "hits_esperados_mc_media": {
+            k: round(v, 3) for k, v in hits_esperado_mc.items()
+        },
+        "detalhes_janelas": detalhes,
     }
 
-    if validacao_passou:
-        logger.info(
-            f"✅ Backtest PASSOU: Sistema de scoring validado para {config.name}"
-        )
-    else:
-        logger.warning(
-            f"⚠️ Backtest FALHOU: Revisar critérios de scoring para {config.name}"
-        )
 
-    return resultado_final
-
-
-def comparar_estrategias_gerador(
-    df: pd.DataFrame, config: GameConfig, n_jogos_por_estrategia: int = 100
-) -> dict:
-    """
-    Compara qualidade dos jogos gerados por diferentes estratégias.
-
-    Testa: "conservadora", "balanceada", "agressiva", "pura"
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Histórico de sorteios.
-    config : GameConfig
-        Configuração do jogo.
-    n_jogos_por_estrategia : int, default=100
-        Quantos jogos gerar por estratégia.
-
-    Returns
-    -------
-    dict
-        Comparação de scores médios e distribuições por estratégia.
-    """
-    from app.core.generator import gerar_multiplos_jogos
-
-    estrategias = ["conservadora", "balanceada", "agressiva", "pura"]
-
-    logger.info(f"🔬 Comparando estratégias de geração para {config.name}")
-
-    # Pré-calcula contexto para evitar recalcular a cada geração
-    contexto_precomputado = {
-        "tabela": get_tabela_inteligencia(df, config),
-        "historico_jogos": get_historico_jogos(df, config),
-        "ic_info": analise_intervalo_confianca(df, config),
-        "distribuicoes_geometricas": calcular_distribuicoes_geometricas(
-            df, config.get_geometric_groups(), config
-        ),
-        "taxa_regressao": None,  # Pode ser calculado se necessário
-    }
-
-    resultados = {}
-
-    for estrategia in estrategias:
-        logger.info(f"  Testando estratégia: {estrategia}")
-
-        jogos = gerar_multiplos_jogos(
-            df,
-            config,
-            quantidade=n_jogos_por_estrategia,
-            estrategia=estrategia,
-            garantir_diversidade=True,
-            contexto_precomputado=contexto_precomputado,
-        )
-
-        scores = []
-        for jogo in jogos:
-            val = validar_jogo(jogo, config, df_historico=df)
-            scores.append(val["score"])
-
-        resultados[estrategia] = {
-            "score_medio": np.mean(scores),
-            "score_mediana": np.median(scores),
-            "score_std": np.std(scores),
-            "score_min": np.min(scores),
-            "score_max": np.max(scores),
-            "pct_excelente": (np.array(scores) >= 85).mean() * 100,
-            "pct_bom": (np.array(scores) >= 70).mean() * 100,
-        }
-
-    # Melhor estratégia
-    melhor = max(resultados.items(), key=lambda x: x[1]["score_medio"])
-
-    logger.info(
-        f"📊 Melhor estratégia: {melhor[0]} (score médio: {melhor[1]['score_medio']:.1f})"
-    )
-
+# Mantida por compatibilidade (não confundir com prova de performance preditiva)
+def backtest_validator(df, config, n_amostras=1000, random_state=42):
     return {
-        "resultados": resultados,
-        "melhor_estrategia": melhor[0],
-        "config": config.name,
-    }
-
-
-def validar_regressao_media(
-    df: pd.DataFrame, config: GameConfig, janelas: List[int] = [50, 100, 200]
-) -> dict:
-    """
-    Valida se a regressão à média é real para diferentes janelas temporais.
-
-    Testa a hipótese: "Números atrasados tendem a sair nos próximos N sorteios"
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        Histórico completo.
-    config : GameConfig
-        Configuração do jogo.
-    janelas : List[int]
-        Tamanhos de janela futura a testar.
-
-    Returns
-    -------
-    dict
-        Correlações e taxas de retorno para cada janela.
-    """
-    from app.core.statistics import calcular_taxa_regressao
-
-    logger.info(f"📈 Validando regressão à média para {config.name}")
-
-    if len(df) < max(janelas) + 50:
-        return {"erro": "Histórico insuficiente"}
-
-    resultados = {}
-
-    for janela in janelas:
-        taxa = calcular_taxa_regressao(df, config, janela=janela)
-
-        if taxa:
-            resultados[f"janela_{janela}"] = taxa
-
-            significativo = taxa["p_value"] < 0.05
-            forca = taxa["correlacao"]
-
-            logger.info(
-                f"  Janela {janela}: ρ={forca:.3f}, "
-                f"p={taxa['p_value']:.4f}, "
-                f"{'✅ SIGNIFICATIVO' if significativo else '❌ não significativo'}"
-            )
-
-    # Conclusão geral
-    correlacoes = [r["correlacao"] for r in resultados.values()]
-    p_values = [r["p_value"] for r in resultados.values()]
-
-    media_corr = np.mean(correlacoes)
-    min_p = min(p_values)
-
-    conclusao = (
-        "✅ Regressão à média validada"
-        if media_corr > 0.2 and min_p < 0.05
-        else "⚠️ Regressão fraca ou inexistente"
-    )
-
-    return {
-        "resultados": resultados,
-        "media_correlacao": round(media_corr, 3),
-        "min_p_value": round(min_p, 4),
-        "conclusao": conclusao,
-        "recomendacao": (
-            "Estratégias 'agressivas' são justificadas"
-            if media_corr > 0.2
-            else "Preferir estratégias 'balanceadas' ou 'conservadoras'"
-        ),
+        "status": "deprecated",
+        "msg": "Use executar_backtest_temporal (walk-forward + monte carlo).",
     }
