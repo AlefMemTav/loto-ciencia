@@ -1,0 +1,349 @@
+{
+  "meta_execucao": {
+    "data_execucao": "2026-01-20",
+    "jogo": "loto_facil_sorteio",
+    "configuracao_cli": {
+      "janelas": 24,
+      "jogos_por_janela": 20,
+      "mc_por_janela": 500,
+      "seed": 42
+    }
+  },
+  "resultado": {
+    "meta": {
+      "jogo": "Lotofácil",
+      "n_janelas_validas": 24,
+      "parametros": {
+        "n_janelas_solicitadas": 24,
+        "jogos_por_janela": 20,
+        "tamanho_teste": 10,
+        "step": 20,
+        "simulacoes_mc_por_janela": 500,
+        "seed": 42,
+        "bootstrap_reps": 2000,
+        "estrategia": "balanceada"
+      },
+      "simulacoes_mc": 500
+    },
+    "analise_estatistica": {
+      "Genetico": {
+        "delta_medio_vs_acaso": 68.5812,
+        "ic95_delta_medio": [
+          -30.494312500000003,
+          249.4749270833331
+        ],
+        "mediana_p_emp": 0.613772,
+        "win_rate_vs_media_mc": 0.2917
+      },
+      "Vetorial": {
+        "delta_medio_vs_acaso": -17.2521,
+        "ic95_delta_medio": [
+          -32.96179166666667,
+          -1.3749999999999993
+        ],
+        "mediana_p_emp": 0.657685,
+        "win_rate_vs_media_mc": 0.25
+      }
+    },
+    "hits_absolutos_reais": {
+      "Genetico": {
+        "4": 4,
+        "5": 1,
+        "6": 0,
+        "11": 441,
+        "12": 81,
+        "13": 4,
+        "14": 1,
+        "15": 0,
+        "20": 0
+      },
+      "Vetorial": {
+        "4": 3,
+        "5": 0,
+        "6": 0,
+        "11": 420,
+        "12": 88,
+        "13": 3,
+        "15": 0,
+        "20": 0
+      }
+    },
+    "hits_esperados_mc_media": {
+      "4": 6.95,
+      "5": 0.2,
+      "6": 0.0,
+      "11": 421.04,
+      "12": 79.8,
+      "13": 6.95,
+      "14": 0.2,
+      "15": 0.0,
+      "20": 0.0
+    },
+    "detalhes_janelas": [
+      {
+        "corte": 3101,
+        "janela_futura": "3102 a 3111",
+        "score_gen": 155,
+        "score_vet": 100,
+        "mc_media": 146.64,
+        "delta_gen": 8.36,
+        "delta_vet": -46.64,
+        "p_emp_gen": 0.1976,
+        "p_emp_vet": 0.8543
+      },
+      {
+        "corte": 3121,
+        "janela_futura": "3122 a 3131",
+        "score_gen": 120,
+        "score_vet": 85,
+        "mc_media": 148.62,
+        "delta_gen": -28.62,
+        "delta_vet": -63.62,
+        "p_emp_gen": 0.6088,
+        "p_emp_vet": 0.9581
+      },
+      {
+        "corte": 3141,
+        "janela_futura": "3142 a 3151",
+        "score_gen": 120,
+        "score_vet": 100,
+        "mc_media": 125.68,
+        "delta_gen": -5.68,
+        "delta_vet": -25.68,
+        "p_emp_gen": 0.5908,
+        "p_emp_vet": 0.8283
+      },
+      {
+        "corte": 3161,
+        "janela_futura": "3162 a 3171",
+        "score_gen": 65,
+        "score_vet": 115,
+        "mc_media": 136.72,
+        "delta_gen": -71.72,
+        "delta_vet": -21.72,
+        "p_emp_gen": 0.992,
+        "p_emp_vet": 0.7106
+      },
+      {
+        "corte": 3181,
+        "janela_futura": "3182 a 3191",
+        "score_gen": 110,
+        "score_vet": 125,
+        "mc_media": 145.42,
+        "delta_gen": -35.42,
+        "delta_vet": -20.42,
+        "p_emp_gen": 0.7764,
+        "p_emp_vet": 0.5888
+      },
+      {
+        "corte": 3201,
+        "janela_futura": "3202 a 3211",
+        "score_gen": 150,
+        "score_vet": 160,
+        "mc_media": 143.81,
+        "delta_gen": 6.19,
+        "delta_vet": 16.19,
+        "p_emp_gen": 0.2515,
+        "p_emp_vet": 0.1816
+      },
+      {
+        "corte": 3221,
+        "janela_futura": "3222 a 3231",
+        "score_gen": 95,
+        "score_vet": 140,
+        "mc_media": 144.4,
+        "delta_gen": -49.4,
+        "delta_vet": -4.4,
+        "p_emp_gen": 0.8882,
+        "p_emp_vet": 0.3693
+      },
+      {
+        "corte": 3241,
+        "janela_futura": "3242 a 3251",
+        "score_gen": 195,
+        "score_vet": 120,
+        "mc_media": 141.65,
+        "delta_gen": 53.35,
+        "delta_vet": -21.65,
+        "p_emp_gen": 0.02,
+        "p_emp_vet": 0.6507
+      },
+      {
+        "corte": 3261,
+        "janela_futura": "3262 a 3271",
+        "score_gen": 125,
+        "score_vet": 85,
+        "mc_media": 153.88,
+        "delta_gen": -28.88,
+        "delta_vet": -68.88,
+        "p_emp_gen": 0.6188,
+        "p_emp_vet": 0.9621
+      },
+      {
+        "corte": 3281,
+        "janela_futura": "3282 a 3291",
+        "score_gen": 210,
+        "score_vet": 95,
+        "mc_media": 139.27,
+        "delta_gen": 70.73,
+        "delta_vet": -44.27,
+        "p_emp_gen": 0.012,
+        "p_emp_vet": 0.9242
+      },
+      {
+        "corte": 3301,
+        "janela_futura": "3302 a 3311",
+        "score_gen": 110,
+        "score_vet": 175,
+        "mc_media": 143.96,
+        "delta_gen": -33.96,
+        "delta_vet": 31.04,
+        "p_emp_gen": 0.7784,
+        "p_emp_vet": 0.0599
+      },
+      {
+        "corte": 3321,
+        "janela_futura": "3322 a 3331",
+        "score_gen": 110,
+        "score_vet": 115,
+        "mc_media": 144.02,
+        "delta_gen": -34.02,
+        "delta_vet": -29.02,
+        "p_emp_gen": 0.7545,
+        "p_emp_vet": 0.6866
+      },
+      {
+        "corte": 3341,
+        "janela_futura": "3342 a 3351",
+        "score_gen": 135,
+        "score_vet": 115,
+        "mc_media": 143.14,
+        "delta_gen": -8.14,
+        "delta_vet": -28.14,
+        "p_emp_gen": 0.4092,
+        "p_emp_vet": 0.6647
+      },
+      {
+        "corte": 3361,
+        "janela_futura": "3362 a 3371",
+        "score_gen": 80,
+        "score_vet": 115,
+        "mc_media": 142.94,
+        "delta_gen": -62.94,
+        "delta_vet": -27.94,
+        "p_emp_gen": 0.9701,
+        "p_emp_vet": 0.6806
+      },
+      {
+        "corte": 3381,
+        "janela_futura": "3382 a 3391",
+        "score_gen": 125,
+        "score_vet": 190,
+        "mc_media": 132.55,
+        "delta_gen": -7.55,
+        "delta_vet": 57.45,
+        "p_emp_gen": 0.5689,
+        "p_emp_vet": 0.0319
+      },
+      {
+        "corte": 3401,
+        "janela_futura": "3402 a 3411",
+        "score_gen": 210,
+        "score_vet": 145,
+        "mc_media": 147.42,
+        "delta_gen": 62.58,
+        "delta_vet": -2.42,
+        "p_emp_gen": 0.018,
+        "p_emp_vet": 0.3234
+      },
+      {
+        "corte": 3421,
+        "janela_futura": "3422 a 3431",
+        "score_gen": 45,
+        "score_vet": 65,
+        "mc_media": 152.44,
+        "delta_gen": -107.44,
+        "delta_vet": -87.44,
+        "p_emp_gen": 1.0,
+        "p_emp_vet": 0.996
+      },
+      {
+        "corte": 3441,
+        "janela_futura": "3442 a 3451",
+        "score_gen": 120,
+        "score_vet": 110,
+        "mc_media": 149.23,
+        "delta_gen": -29.23,
+        "delta_vet": -39.23,
+        "p_emp_gen": 0.6427,
+        "p_emp_vet": 0.7764
+      },
+      {
+        "corte": 3461,
+        "janela_futura": "3462 a 3471",
+        "score_gen": 85,
+        "score_vet": 155,
+        "mc_media": 156.44,
+        "delta_gen": -71.44,
+        "delta_vet": -1.44,
+        "p_emp_gen": 0.9581,
+        "p_emp_vet": 0.2236
+      },
+      {
+        "corte": 3481,
+        "janela_futura": "3482 a 3491",
+        "score_gen": 2170,
+        "score_vet": 175,
+        "mc_media": 151.2,
+        "delta_gen": 2018.8,
+        "delta_vet": 23.8,
+        "p_emp_gen": 0.006,
+        "p_emp_vet": 0.0798
+      },
+      {
+        "corte": 3501,
+        "janela_futura": "3502 a 3511",
+        "score_gen": 90,
+        "score_vet": 70,
+        "mc_media": 152.68,
+        "delta_gen": -62.68,
+        "delta_vet": -82.68,
+        "p_emp_gen": 0.9261,
+        "p_emp_vet": 0.992
+      },
+      {
+        "corte": 3521,
+        "janela_futura": "3522 a 3531",
+        "score_gen": 150,
+        "score_vet": 155,
+        "mc_media": 150.17,
+        "delta_gen": -0.17,
+        "delta_vet": 4.83,
+        "p_emp_gen": 0.2954,
+        "p_emp_vet": 0.2535
+      },
+      {
+        "corte": 3541,
+        "janela_futura": "3542 a 3551",
+        "score_gen": 90,
+        "score_vet": 130,
+        "mc_media": 141.14,
+        "delta_gen": -51.14,
+        "delta_vet": -11.14,
+        "p_emp_gen": 0.9162,
+        "p_emp_vet": 0.5269
+      },
+      {
+        "corte": 3561,
+        "janela_futura": "3562 a 3571",
+        "score_gen": 250,
+        "score_vet": 215,
+        "mc_media": 135.63,
+        "delta_gen": 114.37,
+        "delta_vet": 79.37,
+        "p_emp_gen": 0.006,
+        "p_emp_vet": 0.016
+      }
+    ]
+  }
+}
