@@ -125,7 +125,7 @@ from app.core.statistics.cluster_profile import (
 
 
 # Backtest
-from app.core.statistics.backtest import executar_backtest_temporal, backtest_validator
+from app.core.statistics.backtest import executar_backtest_temporal
 
 # Padrões avançados
 from app.core.statistics.patterns import (
@@ -232,7 +232,6 @@ __all__ = [
     "interpretar_cluster_por_centroide",
     "analisar_perfil_cluster",
     # Backtest
-    "backtest_validator",
     "executar_backtest_temporal",
     # Patterns
     "detectar_progressao_aritmetica_geral",
