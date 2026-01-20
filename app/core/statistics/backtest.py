@@ -358,7 +358,26 @@ def executar_backtest_temporal(
 
     # Limpa keys zeradas do relatório final para não poluir
     def limpar_zeros(d):
-        return {k: v for k, v in d.items() if v > 0 or k in ["15", "20", "5", "6"]}
+        # Lista de chaves que queremos ver sempre, mesmo que sejam zero
+        whitelist = [
+            "0",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",  # Mega, Quina, Mania(0)
+            "11",
+            "12",
+            "13",
+            "14",
+            "15",  # Lotofácil, Mania
+            "16",
+            "17",
+            "18",
+            "19",
+            "20",  # Mania
+        ]
+        return {k: v for k, v in d.items() if v > 0 or k in whitelist}
 
     return {
         "meta": {
