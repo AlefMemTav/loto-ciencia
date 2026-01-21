@@ -365,7 +365,7 @@ class AUTHClient:
             unsafe_allow_html=True,
         )
         if st.button(
-            "🚀 Desbloquear Agora (R$ 19,90/mês)",
+            "🚀 Desbloquear Agora",
             type="primary",
             width="stretch",
             key=f"excl_upg_{resource}",
