@@ -10,10 +10,7 @@ import pandas as pd
 from typing import List, Dict, Tuple
 
 from app.core.lottery import GameConfig
-from app.core.statistics import get_tabela_inteligencia, analise_intervalo_confianca
 from app.core.logger import logger
-
-from app.services.lottery_service import LotteryService
 
 
 # ----------------------------------------------------------------------
@@ -208,6 +205,8 @@ def executar_backtest_temporal(
     n_bootstrap: int = 2000,
     estrategia: str = "balanceada",
 ) -> Dict:
+    from app.services.lottery_service import LotteryService
+
     logger.info(
         f"⏳ Backtest Científico ({config.name}) - Janelas: {n_janelas}, MC: {n_simulacoes_monte_carlo}"
     )

@@ -80,6 +80,7 @@ class LotteryService:
         """
         Constrói um GameContext a partir de um DataFrame e config, para uso em backtest.
         """
+        logger.info(" Contexto para Backtext ativado")
         if df is None or df.empty:
             return GameContext(
                 config=config,
@@ -378,6 +379,7 @@ class LotteryService:
         estrategia = payload.get("estrategia", "balanceada")
         fixos = payload.get("numeros_fixos")
         evitados = payload.get("numeros_evitados")
+        seed = payload.get("seed", None)
 
         if fixos and len(fixos) > ctx.config.bet_size:
             raise ValueError(f"Quantidade de fixos maior que o tamanho do jogo.")
@@ -399,6 +401,7 @@ class LotteryService:
                 estrategia=estrategia,
                 numeros_fixos=fixos,
                 numeros_evitados=evitados,
+                seed=seed,
             )
             total_gerados += len(candidatos)
             aprovados = self._validar_lote_com_cache(
@@ -411,7 +414,7 @@ class LotteryService:
         jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
         melhores_jogos = [j[1] for j in jogos_avaliados[:qtd]]
 
-        # RELAXAMENTO: usa cache, não revalida, checagem O(1)
+        # RELAXAMENTO: garantir unicidade mínima (não duplicar histórico ou já aceitos)
         if len(melhores_jogos) < qtd:
             logger.warning(
                 f"⚠️ Apenas {len(melhores_jogos)} jogos passaram no filtro score>={threshold}. "
@@ -426,6 +429,9 @@ class LotteryService:
                     break
                 if jogo_tuple in set_melhores:
                     continue
+                # Unicidade mínima: não duplicar histórico nem já aceitos
+                if jogo_tuple in ctx.historico_set:
+                    continue
                 if score >= relax_threshold:
                     melhores_jogos.append(list(jogo_tuple))
                     set_melhores.add(jogo_tuple)
@@ -434,9 +440,13 @@ class LotteryService:
 
         if not melhores_jogos:
             if score_cache:
-                top_from_cache = sorted(
-                    score_cache.items(), key=lambda kv: kv[1], reverse=True
-                )[:qtd]
+                top_from_cache = [
+                    j
+                    for j in sorted(
+                        score_cache.items(), key=lambda kv: kv[1], reverse=True
+                    )
+                    if j[0] not in ctx.historico_set
+                ][:qtd]
                 return [list(j[0]) for j in top_from_cache]
             logger.warning(f"⚠️ Validador rejeitou todos os candidatos. Usando brutos.")
             return candidatos[:qtd]

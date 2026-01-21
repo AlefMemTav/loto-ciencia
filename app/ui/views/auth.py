@@ -291,10 +291,6 @@ def render_plans_view():
     with st.expander("❓ Perguntas Frequentes"):
         st.markdown(
             """
-            ### **Como funciona o pagamento?**
-            Atualmente o upgrade é manual para o MVP. Em breve integraremos com Stripe/Mercado Pago 
-            para pagamentos automatizados com cartão de crédito ou PIX.
-
             ### **Posso cancelar a qualquer momento?**
             Sim! Sem burocracia. Basta solicitar o cancelamento por e-mail e o downgrade é imediato.
 
@@ -303,7 +299,7 @@ def render_plans_view():
             Seus dados nunca são compartilhados com terceiros.
 
             ### **O que acontece se eu cancelar o Pro?**
-            Você volta para o plano Free (3 validações/dia) mas mantém acesso ao histórico de jogos 
+            Você volta para o plano Free, mas mantém acesso ao histórico de jogos 
             criados durante o período Pro.
 
             ### **Quanto custa o plano Enterprise?**

@@ -17,8 +17,15 @@ def gerar_jogos_vetorizado(
     numeros_fixos: List[int] = None,
     numeros_evitados: List[int] = None,
     buffer_size: int = 50000,
+    seed: int = None,
 ) -> List[List[int]]:
 
+    # Reprodutibilidade: define seed se fornecido
+    if seed is not None:
+        import random
+
+        np.random.seed(seed)
+        random.seed(seed)
     config = ctx.config
     n_numbers = config.n_numbers
     k = config.bet_size

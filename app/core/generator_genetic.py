@@ -12,7 +12,13 @@ from app.core.logger import logger
 
 
 class GeneticMiner:
-    def __init__(self, ctx, estrategia: str = "balanceada"):
+    def __init__(self, ctx, estrategia: str = "balanceada", seed: int = None):
+        # Reprodutibilidade: define seed se fornecido
+        if seed is not None:
+            import random
+
+            np.random.seed(seed)
+            random.seed(seed)
         self.ctx = ctx
         self.config = ctx.config
 
@@ -347,8 +353,10 @@ class GeneticMiner:
         return resultado_final
 
 
-def gerar_jogos_geneticos(ctx, quantidade=10, estrategia="balanceada", fixos=None):
-    miner = GeneticMiner(ctx, estrategia=estrategia)
+def gerar_jogos_geneticos(
+    ctx, quantidade=10, estrategia="balanceada", fixos=None, seed=None
+):
+    miner = GeneticMiner(ctx, estrategia=estrategia, seed=seed)
     n_gens = 60 if ctx.config.n_numbers >= 60 else 30
     return miner.evoluir(
         tamanho_populacao=300,
