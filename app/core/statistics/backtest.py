@@ -13,8 +13,7 @@ from app.core.lottery import GameConfig
 from app.core.statistics import get_tabela_inteligencia, analise_intervalo_confianca
 from app.core.logger import logger
 
-from app.core.generator_fast import gerar_jogos_vetorizado
-from app.core.generator_genetic import gerar_jogos_geneticos
+from app.services.lottery_service import LotteryService
 
 
 # ----------------------------------------------------------------------
@@ -260,6 +259,8 @@ def executar_backtest_temporal(
 
     detalhes = []
 
+    service = LotteryService()
+
     for corte in pontos_corte:
         df_treino = df_completo.iloc[:corte].copy()
         df_futuro = df_completo.iloc[corte : corte + tamanho_teste].copy()
@@ -268,17 +269,10 @@ def executar_backtest_temporal(
         gabarito = df_futuro[draw_cols].values
 
         try:
-            tabela = get_tabela_inteligencia(df_treino, config)
-            ic_info = analise_intervalo_confianca(df_treino, config)
-            ctx = MockContext(df_treino, config, tabela, ic_info)
-
-            # Gera Jogos
-            jogos_gen = gerar_jogos_geneticos(
-                ctx, quantidade=jogos_por_janela, estrategia=estrategia
-            )
-            jogos_vet = gerar_jogos_vetorizado(
-                ctx, quantidade=jogos_por_janela, estrategia=estrategia
-            )
+            ctx_janela = service.build_context_from_df(config, df_treino)
+            payload = {"quantidade": jogos_por_janela, "estrategia": estrategia}
+            jogos_gen = service.generate_genetic(config.slug, payload, ctx=ctx_janela)
+            jogos_vet = service.generate(config.slug, payload, ctx=ctx_janela)
 
             score_gen, hits_gen = _contar_hits_e_score(jogos_gen, gabarito, config)
             score_vet, hits_vet = _contar_hits_e_score(jogos_vet, gabarito, config)

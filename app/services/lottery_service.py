@@ -75,6 +75,83 @@ class GameContext:
 
 
 class LotteryService:
+    @staticmethod
+    def build_context_from_df(config, df):
+        """
+        Constrói um GameContext a partir de um DataFrame e config, para uso em backtest.
+        """
+        if df is None or df.empty:
+            return GameContext(
+                config=config,
+                df=df,
+                freq={},
+                poisson_finais={},
+                tabela=None,
+                historico_set=set(),
+                ic_info=None,
+                atrasos=None,
+                chi2=None,
+                coef_variacao=None,
+                reis_sequencia=[],
+                distribuicoes_geometricas={},
+                stats_quadrantes={},
+                taxa_regressao=None,
+                ciclo_atual={},
+                analise_somas={},
+                analise_repetidos={},
+                clusters_historicos={},
+                tendencias={},
+                pesos_dinamicos={},
+                matriz_coocorrencia={},
+                matriz_transicao={},
+            )
+
+        grupos_geometricos = config.get_geometric_groups()
+        distribuicoes = calcular_distribuicoes_geometricas(
+            df, grupos_geometricos, config
+        )
+        quadrantes = calcular_distribuicao_quadrantes(df, config)
+        freq = get_numeros_quentes_frios(df, config)
+        poisson_finais = analise_poisson(df, config, 0.05)
+        tabela = get_tabela_inteligencia(df, config)
+        pesos_dinamicos = calibrar_pesos_dinamicos(df, config)
+        historico_set = get_historico_jogos(df, config)
+        ic_info = analise_intervalo_confianca(df, config)
+        atrasos = calcular_atrasos(df, config)
+        chi2 = calcular_chi_quadrado(df, config)
+        coef_variacao = calcular_coeficiente_variacao(df, config)
+        reis_sequencia = get_reis_da_sequencia(df, config)
+        taxa_regressao = calcular_taxa_regressao(df, config, janela=100)
+        ciclo_atual = calcular_ciclo_atual(df, config)
+        analise_somas = analise_temporal_somas(df, config, janela=30)
+        analise_repetidos = analise_temporal_repetidos(df, config, janela=30)
+        matriz_cooc = matriz_coocorrencia_numeros(df, config)
+        matriz_transicao = calcular_matriz_transicao(df, config)
+        return GameContext(
+            config=config,
+            df=df,
+            freq=freq,
+            poisson_finais=poisson_finais,
+            tabela=tabela,
+            historico_set=historico_set,
+            ic_info=ic_info,
+            atrasos=atrasos,
+            chi2=chi2,
+            coef_variacao=coef_variacao,
+            reis_sequencia=reis_sequencia,
+            distribuicoes_geometricas=distribuicoes,
+            stats_quadrantes=quadrantes,
+            taxa_regressao=taxa_regressao,
+            ciclo_atual=ciclo_atual,
+            analise_somas=analise_somas,
+            analise_repetidos=analise_repetidos,
+            clusters_historicos=None,
+            tendencias=None,
+            pesos_dinamicos=pesos_dinamicos,
+            matriz_coocorrencia=matriz_cooc,
+            matriz_transicao=matriz_transicao,
+        )
+
     def _validar_lote_com_cache(
         self, candidatos, ctx, score_cache, threshold, jogos_existentes
     ):
@@ -290,8 +367,11 @@ class LotteryService:
             stats_quadrantes=ctx.stats_quadrantes,
         )
 
-    def generate(self, slug: str, payload: dict) -> List[List[int]]:
-        ctx = self.get_context(slug)
+    def generate(
+        self, slug: str, payload: dict, ctx: GameContext = None
+    ) -> List[List[int]]:
+        if ctx is None:
+            ctx = self.get_context(slug)
 
         # Extrai parâmetros
         qtd = int(payload.get("quantidade", 1))
@@ -363,28 +443,37 @@ class LotteryService:
 
         return melhores_jogos
 
-    def generate_genetic(self, slug: str, payload: dict) -> List[List[int]]:
+    # Substitua apenas o método generate_genetic existente por este trecho.
+    def generate_genetic(
+        self, slug: str, payload: dict, ctx: GameContext = None
+    ) -> List[List[int]]:
+        if ctx is None:
+            ctx = self.get_context(slug)
+
         """
         Motor Evolutivo com Validação e cache, unificado com generate.
         """
         logger.info(f"🧬 Iniciando Mineração Genética para {slug}")
 
-        ctx = self.get_context(slug)
-
         qtd_alvo = int(payload.get("quantidade", 1))
         fixos = payload.get("numeros_fixos")
         estrategia = payload.get("estrategia", "balanceada")
+        seed = payload.get("seed", None)
 
         qtd_bruta = min(qtd_alvo * 5, 100)
-        threshold = 70
-        relax_threshold = 55
+        threshold = payload.get("threshold", 70)
+        relax_threshold = payload.get("relax_threshold", 55)
         score_cache = {}
         jogos_existentes = set()
         jogos_avaliados = []
 
         try:
             candidatos = gerar_jogos_geneticos(
-                ctx=ctx, quantidade=qtd_bruta, estrategia=estrategia, fixos=fixos
+                ctx=ctx,
+                quantidade=qtd_bruta,
+                estrategia=estrategia,
+                fixos=fixos,
+                seed=seed,
             )
             aprovados = self._validar_lote_com_cache(
                 candidatos, ctx, score_cache, threshold, jogos_existentes
@@ -400,12 +489,18 @@ class LotteryService:
                     f"Relaxando para score>={relax_threshold}..."
                 )
                 set_melhores = set(tuple(j) for j in melhores)
-                for jogo_tuple, score in score_cache.items():
+                # ordena cache por score decrescente e tenta completar com revalidação mínima
+                for jogo_tuple, score in sorted(
+                    score_cache.items(), key=lambda kv: kv[1], reverse=True
+                ):
                     if len(melhores) >= qtd_alvo:
                         break
                     if jogo_tuple in set_melhores:
                         continue
                     if score >= relax_threshold:
+                        # Revalidação mínima: evitar duplicatas no histórico
+                        if jogo_tuple in jogos_existentes:
+                            continue
                         melhores.append(list(jogo_tuple))
                         set_melhores.add(jogo_tuple)
 
@@ -418,7 +513,8 @@ class LotteryService:
         except Exception as e:
             logger.error(f"❌ Erro no Algoritmo Genético: {e}")
             logger.warning("⚠️ Usando fallback vetorial.")
-            return self.generate(slug, payload)
+            # passe o ctx para o fallback para evitar look-ahead
+            return self.generate(slug, payload, ctx=ctx)
 
     def closures(
         self, slug: str, base: List[int], max_combinacoes: int = 1000

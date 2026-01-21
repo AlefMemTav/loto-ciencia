@@ -227,7 +227,7 @@ def render_generator(ctx, svc):
                 bar.progress(30)
 
                 # Chamada pesada ao Service
-                jogos = svc.generate_genetic(slug, payload)
+                jogos = svc.generate_genetic(slug, payload, None)
 
                 bar.progress(100)
                 bar_text.text("✅ Evolução Concluída!")
@@ -246,7 +246,7 @@ def render_generator(ctx, svc):
                     time.sleep(0.15)
 
                 # Chamada rápida ao Service
-                jogos = svc.generate(slug, payload)
+                jogos = svc.generate(slug, payload, None)
 
             # --- PÓS-PROCESSAMENTO (MANTIDO IGUAL) ---
 
