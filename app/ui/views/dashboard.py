@@ -17,15 +17,24 @@ def render_dashboard(ctx, svc):
     reis_sequencia = ctx.reis_sequencia
     tabela = ctx.tabela
     ic_info = ctx.ic_info
+    ciclo = ctx.ciclo_atual
+    somas = ctx.analise_somas
+    repetidos = ctx.analise_repetidos
+    tendencias = ctx.tendencias
     constants = config.as_constants_dict()
-    color = constants.get("heat_color", "#ef4444")
+    main_color = constants.get("heat_color", "#ef4444")
 
     st.markdown(
-        f"<h3>🔭 O Raio-X da <span style='color: {color};'>{config.name}</span></h3>",
+        f"""
+        <div style="background: linear-gradient(90deg, #f8fafc 0%, #e2e8f0 100%); padding: 20px; border-radius: 10px; border-left: 5px solid {main_color}; margin-bottom: 25px;">
+            <h2 style="color: #1e293b; margin:0;">🔭 Centro de Inteligência: <span style="color: {main_color};">{config.name}</span></h2>
+            <p style="color: #475569; font-size: 1rem; margin-top: 5px;">
+                Transformamos os dados brutos de <strong>{len(df)} sorteios</strong> em padrões matemáticos visuais.
+                Use este painel para identificar tendências antes de gerar seus jogos.
+            </p>
+        </div>
+        """,
         unsafe_allow_html=True,
-    )
-    st.write(
-        "Bem-vindo ao painel de inteligência. Aqui transformamos dados brutos em estratégias de jogo."
     )
 
     # 1. KPIs (Resumo Rápido)
@@ -35,6 +44,20 @@ def render_dashboard(ctx, svc):
     # 2. Oportunidades (O que o usuário quer ver primeiro)
     _render_gap_bar_charts(atrasos, config)
     st.markdown("---")
+
+    # === [NOVA SEÇÃO] CICLOS E TENDÊNCIAS TEMPORAIS ===
+    st.subheader("Dinâmica Temporal (O Momento do Jogo)")
+    st.write(
+        "Entenda o 'timing' exato: ciclos de fechamento, temperatura da soma e repetições."
+    )
+
+    col_ciclo, col_tempo = st.columns([1, 2])
+
+    with col_ciclo:
+        _render_ciclo_section(ciclo, config)
+
+    with col_tempo:
+        _render_temporal_charts(somas, repetidos, config)
 
     # 3. Tendências de Longo Prazo (LLN e Quentes/Frios)
     _render_bar_charts(freq, 15, config)
@@ -81,76 +104,89 @@ def render_dashboard(ctx, svc):
 
     # 6. Auditoria Técnica (Fica por último para não assustar)
     st.subheader("🛡️ Auditoria de Integridade")
-    st.caption("Ferramentas matemáticas para validar se o sorteio é honesto.")
+    st.caption(
+        "Ferramentas matemáticas avançadas para validar a aleatoriedade e honestidade dos sorteios."
+    )
 
     c1, c2 = st.columns(2)
 
     with c1:
-        st.markdown("**🔢 Análise de Finais (Poisson)**")
-        if poisson_finais:
-            st.warning(f"Detectamos {len(poisson_finais)} finais atrasados.")
-            cols = st.columns(len(poisson_finais))
-            for i, item in enumerate(poisson_finais):
-                cols[i].metric(
-                    f"Final {item['digito']}",
-                    f"p={item['p_value']}",
-                    help="Probabilidade estatística baixa. Indica que este final 'deveria' ter saído mais vezes.",
-                )
-        else:
-            st.success("✅ A distribuição dos finais (0-9) está normal.")
-            st.caption("Não há finais criticamente atrasados no momento.")
+        with st.container(border=True):
+            st.markdown("**🔢 Análise de Finais (Poisson)**")
+            if poisson_finais:
+                st.warning(f"⚠️ Detectamos {len(poisson_finais)} finais atrasados.")
+                cols = st.columns(len(poisson_finais))
+                for i, item in enumerate(poisson_finais):
+                    cols[i].metric(
+                        f"Final {item['digito']}",
+                        f"p={item['p_value']}",
+                        help="Probabilidade estatística extremamente baixa. Pela Lei de Poisson, este final 'deveria' ter saído mais vezes.",
+                    )
+            else:
+                st.success("✅ A distribuição dos finais (0-9) está normal.")
+                st.caption("Não há anomalias estatísticas nos dígitos finais.")
 
     with c2:
-        st.markdown(f"**⚖️ Teste de Honestidade (Chi-Quadrado) para a {config.name}**")
+        with st.container(border=True):
+            st.markdown(f"**⚖️ Teste de Honestidade (Chi-Quadrado)**")
 
-        if chi2:
-            p_chi = chi2.get("p_chi", 0)
-            p_ks = chi2.get("p_ks", 0)
+            if chi2:
+                p_chi = chi2.get("p_chi", 0)
+                # Se p_chi > 0.05, não rejeitamos a hipótese nula (distribuição é uniforme) -> Verde
+                is_honesto = p_chi > 0.05
 
-            # Se p_chi > 0.05, não rejeitamos a hipótese nula (distribuição é uniforme) -> Verde
-            is_honesto = p_chi > 0.05
+                cor = "#22c55e" if is_honesto else "#ef4444"
+                texto = "Aprovado (Aleatório)" if is_honesto else "Alerta de Viés"
+                bg = "#f0fdf4" if is_honesto else "#fef2f2"
 
-            cor = "green" if is_honesto else "red"
-            texto = (
-                "Aprovado (Distribuição Uniforme)" if is_honesto else "Alerta de Viés"
-            )
+                # Layout do card
+                st.markdown(
+                    f"""
+                    <div style="background-color: {bg}; padding: 10px; border-radius: 5px; border-left: 5px solid {cor};">
+                        <strong>Status:</strong> <span style="color:{cor}; font-weight:bold;">{texto}</span><br>
+                        <small>Chi² p-value: {p_chi:.4f} (> 0.05 é ideal)</small>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.info("Dados insuficientes para teste Chi-Quadrado.")
 
-            # Layout do card
-            st.markdown(
-                f"""
-                <div style="background-color: #f0fdf4; padding: 10px; border-radius: 5px; border-left: 5px solid {cor};">
-                    <strong>Status:</strong> {texto}<br>
-                    <small>Chi² p-value: {p_chi:.4f} (> 0.05 é ideal)</small><br>
-                    <small>KS p-value: {p_ks:.4f} (> 0.05 é ideal)</small>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info("Dados insuficientes para teste Chi-Quadrado.")
-
-        if coef_variacao:
-            st.markdown(f"**📉 Coeficiente de Variação (CV) para a {config.name}**")
-            st.caption(
-                "Mede quão uniforme está a frequência dos números (quanto menor, mais uniforme)."
-            )
-
-            st.metric(
-                "CV (%)",
-                f"{coef_variacao['coeficiente_variacao']:.2f}",
-                help=coef_variacao["interpretacao"],
-            )
-        else:
-            st.info("Dados insuficientes para calcular o CV.")
+            if coef_variacao:
+                st.markdown(f"**📉 Coeficiente de Variação (CV)**")
+                st.metric(
+                    "CV (%)",
+                    f"{coef_variacao['coeficiente_variacao']:.2f}",
+                    help=coef_variacao["interpretacao"],
+                )
 
     _render_regression_analysis(config, ctx)
 
-    # 7. Tabela Científica (Escondida para curiosos)
+    # 7. Tabela Científica
     _render_z_score_gaps_section(tabela)
+
+    # --- CTA FINAL ---
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 30px; border-radius: 15px; text-align: center; color: white;">
+            <h2 style="color: white; margin-bottom: 10px;">Viu os padrões? Agora use a IA a seu favor.</h2>
+            <p style="color: #cbd5e1; margin-bottom: 20px;">
+                Nossa engine usa exatamente esses dados (Atrasos, Z-Score, Regressão) para montar jogos otimizados.
+            </p>
+            <a href="/Gerador_de_Jogos" target="_self">
+                <button style="background-color: #22c55e; border: none; color: white; padding: 12px 30px; border-radius: 25px; font-weight: bold; cursor: pointer; font-size: 1.1rem;">
+                    🚀 Gerar Jogos com Base na Estatística
+                </button>
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_kpis(freq, df, config):
-    """Renderiza os 4 KPIs principais."""
+    """Renderiza os 4 KPIs principais com CSS inline para garantir visual."""
     if not freq.empty:
         num_mais = freq.idxmax()
         qtd_mais = freq.max()
@@ -162,60 +198,46 @@ def _render_kpis(freq, df, config):
 
     k1, k2, k3, k4 = st.columns(4)
 
+    def card_html(label, value, sub, color="#64748b"):
+        return f"""
+        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center;">
+            <div style="font-size: 0.85rem; color: #64748b; font-weight: 600; text-transform: uppercase;">{label}</div>
+            <div style="font-size: 1.8rem; font-weight: 800; color: #1e293b; margin: 5px 0;">{value}</div>
+            <div style="font-size: 0.8rem; color: {color}; font-weight: 500;">{sub}</div>
+        </div>
+        """
+
     with k1:
         st.markdown(
-            f"""
-        <div class="custom-metric-card">
-            <div class="metric-label">Total de Sorteios</div>
-            <div class="metric-value">{len(df)}</div>
-            <div class="metric-delta status-good">Desde {config.start_year}</div>
-        </div>
-        """,
+            card_html(
+                "Base de Dados", len(df), f"Desde {config.start_year}", "#3b82f6"
+            ),
             unsafe_allow_html=True,
         )
-
     with k2:
         st.markdown(
-            f"""
-        <div class="custom-metric-card">
-            <div class="metric-label">Rei da Mesa 🔥</div>
-            <div class="metric-value">Nº {num_mais}</div>
-            <div class="metric-delta status-good">Saiu {qtd_mais} vezes</div>
-        </div>
-        """,
+            card_html(
+                "Rei da Mesa 🔥", f"Nº {num_mais}", f"Saiu {qtd_mais}x", "#22c55e"
+            ),
             unsafe_allow_html=True,
         )
-
     with k3:
         st.markdown(
-            f"""
-        <div class="custom-metric-card">
-            <div class="metric-label">O Tímido ❄️</div>
-            <div class="metric-value">Nº {num_menos}</div>
-            <div class="metric-delta status-bad">Saiu {qtd_menos} vezes</div>
-        </div>
-        """,
+            card_html("O Tímido ❄️", f"Nº {num_menos}", f"Saiu {qtd_menos}x", "#ef4444"),
             unsafe_allow_html=True,
         )
-
     with k4:
         st.markdown(
-            f"""
-        <div class="custom-metric-card">
-            <div class="metric-label">Média Esperada</div>
-            <div class="metric-value">~{media:.0f}</div>
-            <div class="metric-delta status-warn">Vezes por número</div>
-        </div>
-        """,
+            card_html("Média Esperada", f"~{media:.0f}x", "Por dezena", "#eab308"),
             unsafe_allow_html=True,
         )
 
 
 def _render_gap_bar_charts(atrasos, config):
-    """Renderiza gráfico de números atrasados usando atrasos do ctx."""
-    st.subheader("⏰ Relógio dos Atrasados")
+    """Renderiza gráfico de números atrasados."""
+    st.subheader("Relógio dos Atrasados")
     st.write(
-        "Estes números estão 'dormindo' há muito tempo. Segundo a estatística, a chance deles acordarem aumenta a cada sorteio."
+        "Estes números estão 'dormindo' há muito tempo. Pela **Teoria do Retorno à Média**, a probabilidade deles saírem aumenta a cada sorteio que passa."
     )
 
     # Mostra os 20 mais atrasados
@@ -225,20 +247,22 @@ def _render_gap_bar_charts(atrasos, config):
     col_graph, col_info = st.columns([3, 1])
 
     with col_graph:
-        st.bar_chart(top_atrasados, color="#ef4444", height=250)
+        st.bar_chart(top_atrasados, color="#ef4444", height=280)
 
     with col_info:
         maior_gap = atrasos.index[0]
         tempo = atrasos.iloc[0]
         st.markdown(
             f"""
-            <div style="background-color: #fef2f2; padding: 15px; border-radius: 10px; border: 1px solid #fca5a5;">
-                <h4 style="color: #991b1b; margin:0;">🚨 Alerta</h4>
-                <p style="font-size: 0.9em; color: #7f1d1d;">
-                    O número <strong>{maior_gap}</strong> é o campeão de atraso.<br>
-                    Ele não aparece há <strong>{tempo} jogos</strong>.
+            <div style="background-color: #fef2f2; padding: 20px; border-radius: 10px; border: 1px solid #fca5a5; text-align: center;">
+                <h2 style="color: #dc2626; margin:0; font-size: 2.5rem;">{maior_gap:02d}</h2>
+                <div style="color: #991b1b; font-weight: bold; margin-bottom: 10px;">O Grande Atrasado</div>
+                <p style="font-size: 0.9em; color: #7f1d1d; margin: 0;">
+                    Não sai há<br>
+                    <strong style="font-size: 1.2rem;">{tempo} sorteios</strong>
                 </p>
-                <small style="color: #ef4444;">Alta probabilidade de retorno em breve.</small>
+                <hr style="border-color: #fca5a5; margin: 10px 0;">
+                <small style="color: #ef4444;">Estratégia sugerida:<br>Fixar nos próximos jogos.</small>
             </div>
             """,
             unsafe_allow_html=True,
@@ -252,10 +276,11 @@ def _render_bar_charts(freq, num, config):
     total_aparicoes = freq.sum()
     media_teorica = total_aparicoes / config.n_numbers
 
-    st.subheader("⚖️ Equilíbrio Matemático (LLN)")
+    st.subheader("Equilíbrio Matemático (Lei dos Grandes Números)")
     st.markdown(
         f"""
-        A linha vermelha pontilhada mostra onde todos os números **deveriam estar** (~{media_teorica:.0f} vezes).
+        A linha vermelha pontilhada representa a **"Gravidade Estatística"** (~{media_teorica:.0f} vezes).
+        Números muito acima tendem a descer (esfriar), e números muito abaixo tendem a subir (esquentar) para buscar o equilíbrio.
         """
     )
 
@@ -263,15 +288,14 @@ def _render_bar_charts(freq, num, config):
 
     # --- GRÁFICO 1: QUENTES ---
     with c1:
-        st.markdown(f"**🔥 Os {num} Mais Quentes** (Acima da Média)")
-        st.caption("Eles estão saindo mais do que o normal. Cuidado: podem esfriar.")
+        st.markdown(f"**Os {num} Mais Quentes** (Acima da Média)")
 
         dados_quentes = freq.head(num).reset_index()
         dados_quentes.columns = ["Dezena", "Frequencia"]
 
         barras = (
             alt.Chart(dados_quentes)
-            .mark_bar(color="#a79f28")
+            .mark_bar(color="#eab308")  # Yellow-500
             .encode(
                 x=alt.X("Dezena:O", sort="-y", title="Dezena"),
                 y=alt.Y("Frequencia", title="Saídas"),
@@ -289,15 +313,14 @@ def _render_bar_charts(freq, num, config):
 
     # --- GRÁFICO 2: FRIOS ---
     with c2:
-        st.markdown(f"**❄️ Os {num} Mais Frios** (Abaixo da Média)")
-        st.caption("Eles estão devendo aparições. A tendência é subirem.")
+        st.markdown(f"**Os {num} Mais Frios** (Abaixo da Média)")
 
         dados_frios = freq.tail(num).reset_index()
         dados_frios.columns = ["Dezena", "Frequencia"]
 
         barras_frias = (
             alt.Chart(dados_frios)
-            .mark_bar(color="#17a2b8")
+            .mark_bar(color="#0ea5e9")  # Sky-500
             .encode(
                 x=alt.X("Dezena:O", sort="y", title="Dezena"),
                 y=alt.Y("Frequencia", title="Saídas"),
@@ -310,28 +333,31 @@ def _render_bar_charts(freq, num, config):
 
 def _render_heatmap_section(freq, conjuntos, config):
     """Renderiza mapa de calor interativo."""
-    st.subheader("🗺️ Mapa de Calor")
-    st.write(
-        "Visualize onde os números caem no volante. Use os filtros para ver padrões ocultos."
+    st.subheader("Mapa de Calor do Volante")
+    st.markdown(
+        "Identifique **zonas mortas** (claras) e **zonas quentes** (escuras) no desenho do volante."
     )
 
-    col_graf, col_filtros = st.columns([3, 1])
+    col_graf, col_filtros = st.columns([2.5, 1])
 
     with col_filtros:
-        st.markdown("**🔎 Escolha um Padrão:**")
-        filtro = st.radio(
-            "Visualizar:", list(conjuntos.keys()), label_visibility="collapsed"
-        )
-        nums_filtro = conjuntos[filtro]
-
-        # Mini estatística do filtro selecionado
-        if not freq.empty:
-            st.markdown("---")
-            freq_filtro = freq[freq.index.isin(nums_filtro)]
-            media_grupo = freq_filtro.mean() if not freq_filtro.empty else 0
-            st.caption(
-                f"Neste grupo, cada número saiu em média **{media_grupo:.1f} vezes**."
+        with st.container(border=True):
+            st.markdown("**🔎 Filtro de Padrão:**")
+            filtro = st.radio(
+                "Visualizar:", list(conjuntos.keys()), label_visibility="collapsed"
             )
+            nums_filtro = conjuntos[filtro]
+
+            # Mini estatística do filtro selecionado
+            if not freq.empty:
+                st.markdown("---")
+                freq_filtro = freq[freq.index.isin(nums_filtro)]
+                media_grupo = freq_filtro.mean() if not freq_filtro.empty else 0
+                st.metric(
+                    "Média de Saídas",
+                    f"{media_grupo:.1f}",
+                    help="Neste grupo específico",
+                )
 
     with col_graf:
         _plot_heatmap_matplotlib(freq, nums_filtro, config)
@@ -385,11 +411,11 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config):
             txtcol = "white" if intensity > 0.6 else "black"
             weight = "bold"
         else:
-            face = "#f0f0f0"
-            alpha = 0.3
-            edge = "#e0e0e0"
+            face = "#f1f5f9"
+            alpha = 1.0
+            edge = "#cbd5e1"
             lw = 0.5
-            txtcol = "#ccc"
+            txtcol = "#cbd5e1"
             weight = "normal"
 
         ax.add_patch(plt.Circle((col, y), r, color=face, alpha=alpha, ec=edge, lw=lw))
@@ -423,10 +449,9 @@ def _render_probability_report(conjuntos, config, svc, ctx):
     Usa análise estatística avançada com distribuições empíricas.
     Mostra média, desvio-padrão e percentis baseados em dados reais.
     """
-    st.subheader("📊 Guia de Equilíbrio (Análise Estatística)")
+    st.subheader("Guia de Equilíbrio (Intervalos de Confiança)")
     st.write(
-        "Baseado em **análise estatística real** dos sorteios históricos. "
-        "A tabela mostra quantos números de cada grupo aparecem tipicamente nos sorteios."
+        "Abaixo você vê a **Assinatura Estatística** do jogo. 90% dos resultados históricos caem dentro do 'Intervalo Normal'."
     )
 
     # Filtra apenas os grupos geométricos relevantes para a análise
@@ -435,14 +460,14 @@ def _render_probability_report(conjuntos, config, svc, ctx):
         "Miolo (Centro)": conjuntos["Miolo (Centro)"],
         "Cruz": conjuntos["Cruz"],
         "Xis (Diagonais)": conjuntos["Xis (Diagonais)"],
-        "Cantos": conjuntos["Cantos"],
-        "Quadrante 1 (Sup. Esq)": conjuntos["Quadrante 1 (Sup. Esq)"],
-        "Quadrante 2 (Sup. Dir)": conjuntos["Quadrante 2 (Sup. Dir)"],
-        "Quadrante 3 (Inf. Esq)": conjuntos["Quadrante 3 (Inf. Esq)"],
-        "Quadrante 4 (Inf. Dir)": conjuntos["Quadrante 4 (Inf. Dir)"],
+        "Primos": conjuntos["Primos"],
+        "Quadrante 1": conjuntos["Quadrante 1 (Sup. Esq)"],
+        "Quadrante 2": conjuntos["Quadrante 2 (Sup. Dir)"],
+        "Quadrante 3": conjuntos["Quadrante 3 (Inf. Esq)"],
+        "Quadrante 4": conjuntos["Quadrante 4 (Inf. Dir)"],
     }
 
-    with st.expander("Ver Tabela Estatística Completa", expanded=True):
+    with st.expander("Abrir Relatório Estatístico Completo", expanded=False):
         # Só executa quando usuário abre o expander
         distribuicoes = svc.analyze_distributions(config.slug, grupos_geometricos)
 
@@ -481,8 +506,7 @@ def _render_probability_report(conjuntos, config, svc, ctx):
         df_rel = df_rel.sort_values(by="_raw_media", ascending=False)
 
         st.caption(
-            f"💡 **Como usar:** Procure manter seus jogos dentro do 'Intervalo Normal' (90% dos sorteios históricos). "
-            f"Por exemplo, se a Moldura tem média de 2.5, escolha 2-3 números da borda."
+            f"💡 **Dica Estratégica:** Se a Moldura tem média de 10 e Intervalo 8-12, evite jogos com apenas 4 números na moldura. Eles são estatisticamente raros."
         )
 
         st.dataframe(
@@ -494,22 +518,16 @@ def _render_probability_report(conjuntos, config, svc, ctx):
                     help=f"Quantos números deste grupo aparecem, em média, nos sorteios de {config.k} números.",
                 ),
                 "Desvio (σ)": st.column_config.TextColumn(
-                    "Desvio-Padrão",
-                    help="Medida de variabilidade. Menor = mais consistente.",
+                    "Volatilidade",
+                    help="Quanto menor, mais confiável é a média.",
                 ),
                 "Intervalo Normal": st.column_config.TextColumn(
-                    "Faixa Esperada (90%)",
-                    help="90% dos sorteios históricos ficaram dentro desta faixa. Sair muito deste intervalo é estatisticamente raro.",
+                    "Zona Segura (90%)",
+                    help="Tente manter seus jogos dentro desta faixa numérica.",
                 ),
             },
             hide_index=True,
             width="stretch",
-        )
-
-        st.info(
-            "📈 **Nota Estatística:** Esta análise usa distribuições empíricas reais "
-            "ao invés de heurísticas fixas. Os valores mostram o comportamento histórico "
-            f"dos últimos {len(ctx.df)} sorteios da {config.name}."
         )
 
 
@@ -518,7 +536,7 @@ def _render_regression_analysis(config, ctx):
     Exibe análise de regressão à média validando a estratégia "agressiva".
     """
 
-    with st.expander("📈 Validação: Regressão à Média Funciona?", expanded=False):
+    with st.expander("📈 Validação Científica: Regressão à Média", expanded=False):
 
         regressao = ctx.taxa_regressao
         if not regressao:
@@ -526,8 +544,7 @@ def _render_regression_analysis(config, ctx):
             return
 
         st.markdown(
-            "**Pergunta:** Números atrasados realmente tendem a sair? "
-            "Analisamos os últimos 100 sorteios para validar esta hipótese estatística."
+            "Analisamos os últimos 100 sorteios para responder: **Números atrasados realmente têm mais chance de sair?**"
         )
 
         col1, col2, col3 = st.columns(3)
@@ -541,9 +558,9 @@ def _render_regression_analysis(config, ctx):
             st.markdown(
                 f"""
                 <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid {cor};">
-                    <strong>Correlação (ρ)</strong><br>
-                    <span style="font-size: 1.5em; color: {cor};">{regressao['correlacao']}</span><br>
-                    <small>Entre atraso e saída futura</small>
+                    <strong>Força da Tendência</strong><br>
+                    <span style="font-size: 1.5em; color: {cor};">{regressao['correlacao']:.2f}</span><br>
+                    <small>Correlação de Pearson</small>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -565,38 +582,195 @@ def _render_regression_analysis(config, ctx):
             st.markdown(
                 f"""
                 <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
-                    <strong>Interpretação</strong><br>
+                    <strong>Veredito</strong><br>
                     <span style="font-size: 1.1em; color: #92400e;">{regressao['interpretacao']}</span><br>
-                    <small>p-value: {regressao['p_value']:.4f}</small>
+                    <small>Confiança Estatística</small>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        if regressao["correlacao"] > 0.2:
-            st.success(
-                "✅ **Evidência forte de regressão à média!** "
-                "Isso valida estratégias que priorizam números atrasados (modo 'Agressivo' no gerador)."
-            )
-        elif regressao["correlacao"] > 0.1:
-            st.info(
-                "ℹ️ **Evidência moderada de regressão.** "
-                "Há alguma tendência, mas não é muito forte."
-            )
-        else:
-            st.warning(
-                "⚠️ **Sem evidência clara.** "
-                "Neste período específico, números atrasados não mostraram tendência forte de retorno."
-            )
-
 
 def _render_z_score_gaps_section(tabela):
     """Renderiza tabela de inteligência (usa tabela do ctx)."""
-    with st.expander("🤓 Área Nerd: Dados Brutos (Z-Score & Gaps)"):
+    with st.expander("🤓 Bastidores: Tabela de Pesos (Z-Score & Gaps)"):
         st.write(
-            "Estes são os dados matemáticos que alimentam o Gerador de Jogos. O 'Peso' define a probabilidade de escolha."
+            "Esta é a matriz matemática usada pelo nosso Gerador. O 'Peso' define a probabilidade de cada bola ser escolhida pela IA."
         )
         st.dataframe(
             tabela.style.background_gradient(subset=["Peso_Geracao"], cmap="Greens"),
             width="stretch",
         )
+
+
+def _render_ciclo_section(ciclo, config):
+    """Renderiza o card de Ciclo das Dezenas."""
+    if not ciclo:
+        st.info("Dados de ciclo indisponíveis.")
+        return
+
+    with st.container(border=True):
+        st.markdown("##### 🔄 Ciclo das Dezenas")
+
+        c1, c2 = st.columns(2)
+        c1.metric("Ciclo Atual", f"#{ciclo['ciclo_numero']}")
+        c2.metric(
+            "Rodadas",
+            f"{ciclo['aberto_ha']}",
+            help="Há quantos sorteios este ciclo está aberto.",
+        )
+
+        progresso = ciclo["progresso"] / 100
+        st.caption(f"Progresso: {ciclo['progresso']:.1f}%")
+        st.progress(progresso)
+
+        faltam = ciclo["faltam_sair"]
+
+        if not faltam:
+            st.success(
+                "✅ **Ciclo Fechado!** Todos os números saíram. Um novo ciclo começa no próximo sorteio."
+            )
+        else:
+            st.markdown("**Faltam sair:**")
+            # Renderiza bolinhas pequenas para os que faltam
+            html = "<div style='display: flex; flex-wrap: wrap; gap: 5px;'>"
+            for n in faltam:
+                html += f"""
+<div style="
+    background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;
+    width: 28px; height: 28px; border-radius: 50%; 
+    display: flex; align-items: center; justify-content: center; 
+    font-weight: bold; font-size: 0.8rem;">
+    {n:02d}
+</div>
+                """
+            html += "</div>"
+            st.markdown(html, unsafe_allow_html=True)
+
+            if config.n_numbers <= 25:  # Lotofácil
+                st.caption(
+                    "💡 **Dica:** Fixar estes números costuma ser uma estratégia forte."
+                )
+
+
+def _render_temporal_charts(somas_data, repetidos_data, config):
+    """Renderiza gráficos de Soma e Repetidos em abas."""
+
+    tab_soma, tab_rep = st.tabs(
+        ["📈 Eletrocardiograma (Soma)", "♻️ Repetidos do Anterior"]
+    )
+
+    with tab_soma:
+        if not somas_data or not somas_data.get("dados"):
+            st.info("Dados insuficientes.")
+        else:
+            df_soma = pd.DataFrame(somas_data["dados"])
+            min_ideal = somas_data["min_ideal"]
+            max_ideal = somas_data["max_ideal"]
+
+            st.caption(
+                f"A faixa verde ({min_ideal} - {max_ideal}) é a zona segura. Picos fora dela indicam 'zebras'."
+            )
+
+            # Gráfico Base
+            base = alt.Chart(df_soma).encode(
+                x=alt.X("Concurso:O", axis=alt.Axis(labels=False))
+            )
+
+            # Linha da Soma
+            line = base.mark_line(point=True, color="#3b82f6").encode(
+                y=alt.Y("Soma", scale=alt.Scale(zero=False)),
+                tooltip=["Concurso", "Soma", "Status"],
+            )
+
+            # Faixa Ideal (Retângulo de fundo)
+            rect = (
+                alt.Chart(pd.DataFrame({"y": [min_ideal], "y2": [max_ideal]}))
+                .mark_rect(color="green", opacity=0.1)
+                .encode(y="y", y2="y2")
+            )
+
+            st.altair_chart(rect + line, width="stretch")
+
+    with tab_rep:
+        if not repetidos_data or not repetidos_data.get("dados"):
+            st.info("Dados insuficientes.")
+        else:
+            df_rep = pd.DataFrame(repetidos_data["dados"])
+            media = repetidos_data["media_repetidos"]
+
+            st.caption(
+                f"Média histórica: **{media:.1f} repetidos** por sorteio. Tente jogar perto disso."
+            )
+
+            barras = (
+                alt.Chart(df_rep)
+                .mark_bar(color="#a855f7")
+                .encode(
+                    x=alt.X("Concurso:O", axis=alt.Axis(labels=False)),
+                    y=alt.Y("Repetidos"),
+                    tooltip=["Concurso", "Repetidos"],
+                )
+            )
+
+            regua = (
+                alt.Chart(pd.DataFrame({"y": [media]}))
+                .mark_rule(color="red", strokeDash=[3, 3])
+                .encode(y="y")
+            )
+
+            st.altair_chart(barras + regua, width="stretch")
+
+
+def _render_momentum_section(tendencias):
+    """Renderiza cards de números em alta e baixa (estilo bolsa de valores)."""
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        st.markdown("##### Em Alta")
+        if not tendencias["alta"]:
+            st.caption("Nenhum número em tendência clara de alta no momento.")
+        else:
+            for item in tendencias["alta"]:
+                n = item["numero"]
+                slope = item["slope"] * 100  # Multiplica para ficar legível
+                st.markdown(
+                    f"""
+<div style="
+    display: flex; justify-content: space-between; align-items: center;
+    background: #f0fdf4; border: 1px solid #bbf7d0; 
+    padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;">
+    <span style="font-weight: bold; font-size: 1.1rem; color: #166534;">Nº {n:02d}</span>
+    <div style="text-align: right;">
+        <span style="color: #16a34a; font-weight: bold;">+{slope:.2f}%</span><br>
+        <span style="font-size: 0.7rem; color: #15803d;">força da subida</span>
+    </div>
+</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    with c2:
+        st.markdown("##### Em Baixa")
+        if not tendencias["baixa"]:
+            st.caption("Nenhum número em tendência clara de baixa no momento.")
+        else:
+            for item in tendencias["baixa"]:
+                n = item["numero"]
+                slope = item["slope"] * 100
+                st.markdown(
+                    f"""
+<div style="
+    display: flex; justify-content: space-between; align-items: center;
+    background: #fef2f2; border: 1px solid #fecaca; 
+    padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;">
+    <span style="font-weight: bold; font-size: 1.1rem; color: #991b1b;">Nº {n:02d}</span>
+    <div style="text-align: right;">
+        <span style="color: #dc2626; font-weight: bold;">{slope:.2f}%</span><br>
+        <span style="font-size: 0.7rem; color: #b91c1c;">força da queda</span>
+    </div>
+</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
