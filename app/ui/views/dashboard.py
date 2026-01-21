@@ -45,10 +45,10 @@ def render_dashboard(ctx, svc):
     _render_gap_bar_charts(atrasos, config)
     st.markdown("---")
 
-    # === [NOVA SEÇÃO] CICLOS E TENDÊNCIAS TEMPORAIS ===
-    st.subheader("Dinâmica Temporal (O Momento do Jogo)")
+    # === CICLOS E TENDÊNCIAS TEMPORAIS ===
+    st.subheader("Dinâmica Temporal")
     st.write(
-        "Entenda o 'timing' exato: ciclos de fechamento, temperatura da soma e repetições."
+        "Entenda o momento exato: ciclos de fechamento, temperatura da soma e repetições."
     )
 
     col_ciclo, col_tempo = st.columns([1, 2])
@@ -58,6 +58,9 @@ def render_dashboard(ctx, svc):
 
     with col_tempo:
         _render_temporal_charts(somas, repetidos, config)
+
+    _render_momentum_section(tendencias)
+    st.markdown("---")
 
     # 3. Tendências de Longo Prazo (LLN e Quentes/Frios)
     _render_bar_charts(freq, 15, config)
@@ -128,10 +131,14 @@ def render_dashboard(ctx, svc):
 
     with c2:
         with st.container(border=True):
-            st.markdown(f"**⚖️ Teste de Honestidade (Chi-Quadrado)**")
+            st.markdown(
+                f"**⚖️ Teste de Honestidade (Chi-Quadrado e Kolmogorov-Smirnov)**"
+            )
 
             if chi2:
                 p_chi = chi2.get("p_chi", 0)
+                p_ks = chi2.get("p_ks", 0)
+
                 # Se p_chi > 0.05, não rejeitamos a hipótese nula (distribuição é uniforme) -> Verde
                 is_honesto = p_chi > 0.05
 
@@ -144,7 +151,8 @@ def render_dashboard(ctx, svc):
                     f"""
                     <div style="background-color: {bg}; padding: 10px; border-radius: 5px; border-left: 5px solid {cor};">
                         <strong>Status:</strong> <span style="color:{cor}; font-weight:bold;">{texto}</span><br>
-                        <small>Chi² p-value: {p_chi:.4f} (> 0.05 é ideal)</small>
+                        <small>Chi² p-value: {p_chi:.4f} (> 0.05 é ideal)</small><br>
+                        <small>KS p-value: {p_ks:.4f} (> 0.05 é ideal)</small>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -154,6 +162,9 @@ def render_dashboard(ctx, svc):
 
             if coef_variacao:
                 st.markdown(f"**📉 Coeficiente de Variação (CV)**")
+                st.caption(
+                    "Mede quão uniforme está a frequência dos números (quanto menor, mais uniforme)."
+                )
                 st.metric(
                     "CV (%)",
                     f"{coef_variacao['coeficiente_variacao']:.2f}",
@@ -237,7 +248,7 @@ def _render_gap_bar_charts(atrasos, config):
     """Renderiza gráfico de números atrasados."""
     st.subheader("Relógio dos Atrasados")
     st.write(
-        "Estes números estão 'dormindo' há muito tempo. Pela **Teoria do Retorno à Média**, a probabilidade deles saírem aumenta a cada sorteio que passa."
+        'Estes números estão "dormindo" há muito tempo. Pela **Teoria do Retorno à Média**, a probabilidade deles saírem aumenta a cada sorteio que passa.'
     )
 
     # Mostra os 20 mais atrasados
@@ -460,6 +471,7 @@ def _render_probability_report(conjuntos, config, svc, ctx):
         "Miolo (Centro)": conjuntos["Miolo (Centro)"],
         "Cruz": conjuntos["Cruz"],
         "Xis (Diagonais)": conjuntos["Xis (Diagonais)"],
+        "Cantos": conjuntos["Cantos"],
         "Primos": conjuntos["Primos"],
         "Quadrante 1": conjuntos["Quadrante 1 (Sup. Esq)"],
         "Quadrante 2": conjuntos["Quadrante 2 (Sup. Dir)"],
@@ -506,7 +518,7 @@ def _render_probability_report(conjuntos, config, svc, ctx):
         df_rel = df_rel.sort_values(by="_raw_media", ascending=False)
 
         st.caption(
-            f"💡 **Dica Estratégica:** Se a Moldura tem média de 10 e Intervalo 8-12, evite jogos com apenas 4 números na moldura. Eles são estatisticamente raros."
+            f'💡 **Dica Estratégica:** Procure manter os seus jogos dentro da "Zona Segura". Por exemplo, se a Moldura tem média histórica de 10 e intervalo 8-12 (ou seja, volatilidade de 2), evite jogos com apenas 4 números na Moldura. Eles são estatisticamente raros.'
         )
 
         st.dataframe(
@@ -559,8 +571,8 @@ def _render_regression_analysis(config, ctx):
                 f"""
                 <div style="background-color: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid {cor};">
                     <strong>Força da Tendência</strong><br>
-                    <span style="font-size: 1.5em; color: {cor};">{regressao['correlacao']:.2f}</span><br>
-                    <small>Correlação de Pearson</small>
+                    <span style="font-size: 1.5em; color: {cor};">{regressao['correlacao']}</span><br>
+                    <small>Correlação de Pearson entre atraso e saída futura</small>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -584,10 +596,25 @@ def _render_regression_analysis(config, ctx):
                 <div style="background-color: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
                     <strong>Veredito</strong><br>
                     <span style="font-size: 1.1em; color: #92400e;">{regressao['interpretacao']}</span><br>
-                    <small>Confiança Estatística</small>
+                    <small>p-value: {regressao['p_value']:.4f}</small><br>
                 </div>
                 """,
                 unsafe_allow_html=True,
+            )
+        if regressao["correlacao"] > 0.2:
+            st.success(
+                "✅ **Evidência forte de regressão à média!** "
+                "Isso valida estratégias que priorizam números atrasados (modo 'Agressivo' no gerador)."
+            )
+        elif regressao["correlacao"] > 0.1:
+            st.info(
+                "ℹ️ **Evidência moderada de regressão.** "
+                "Há alguma tendência, mas não é muito forte."
+            )
+        else:
+            st.warning(
+                "⚠️ **Sem evidência clara.** "
+                "Neste período específico, números atrasados não mostraram tendência forte de retorno."
             )
 
 
@@ -595,7 +622,7 @@ def _render_z_score_gaps_section(tabela):
     """Renderiza tabela de inteligência (usa tabela do ctx)."""
     with st.expander("🤓 Bastidores: Tabela de Pesos (Z-Score & Gaps)"):
         st.write(
-            "Esta é a matriz matemática usada pelo nosso Gerador. O 'Peso' define a probabilidade de cada bola ser escolhida pela IA."
+            'Esta é a matriz matemática usada pelo nosso Gerador. O "Peso" define a probabilidade de cada bola ser escolhida pela IA.'
         )
         st.dataframe(
             tabela.style.background_gradient(subset=["Peso_Geracao"], cmap="Greens"),
@@ -724,53 +751,58 @@ def _render_temporal_charts(somas_data, repetidos_data, config):
 
 def _render_momentum_section(tendencias):
     """Renderiza cards de números em alta e baixa (estilo bolsa de valores)."""
+    st.subheader("Momento do Jogo")
+    st.write(
+        'Diferente dos "Quentes", estes são os números que estão **mudando de comportamento** recentemente.'
+    )
+    if tendencias and (tendencias["alta"] or tendencias["baixa"]):
+        with st.expander("Números em Tendência", expanded=False):
+            c1, c2 = st.columns(2)
 
-    c1, c2 = st.columns(2)
+            with c1:
+                st.markdown("##### Em Alta")
+                if not tendencias["alta"]:
+                    st.caption("Nenhum número em tendência clara de alta no momento.")
+                else:
+                    for item in tendencias["alta"]:
+                        n = item["numero"]
+                        slope = item["slope"] * 100  # Multiplica para ficar legível
+                        st.markdown(
+                            f"""
+        <div style="
+            display: flex; justify-content: space-between; align-items: center;
+            background: #f0fdf4; border: 1px solid #bbf7d0; 
+            padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;">
+            <span style="font-weight: bold; font-size: 1.1rem; color: #166534;">Nº {n:02d}</span>
+            <div style="text-align: right;">
+                <span style="color: #16a34a; font-weight: bold;">+{slope:.2f}%</span><br>
+                <span style="font-size: 0.7rem; color: #15803d;">força da subida</span>
+            </div>
+        </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
 
-    with c1:
-        st.markdown("##### Em Alta")
-        if not tendencias["alta"]:
-            st.caption("Nenhum número em tendência clara de alta no momento.")
-        else:
-            for item in tendencias["alta"]:
-                n = item["numero"]
-                slope = item["slope"] * 100  # Multiplica para ficar legível
-                st.markdown(
-                    f"""
-<div style="
-    display: flex; justify-content: space-between; align-items: center;
-    background: #f0fdf4; border: 1px solid #bbf7d0; 
-    padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;">
-    <span style="font-weight: bold; font-size: 1.1rem; color: #166534;">Nº {n:02d}</span>
-    <div style="text-align: right;">
-        <span style="color: #16a34a; font-weight: bold;">+{slope:.2f}%</span><br>
-        <span style="font-size: 0.7rem; color: #15803d;">força da subida</span>
-    </div>
-</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-    with c2:
-        st.markdown("##### Em Baixa")
-        if not tendencias["baixa"]:
-            st.caption("Nenhum número em tendência clara de baixa no momento.")
-        else:
-            for item in tendencias["baixa"]:
-                n = item["numero"]
-                slope = item["slope"] * 100
-                st.markdown(
-                    f"""
-<div style="
-    display: flex; justify-content: space-between; align-items: center;
-    background: #fef2f2; border: 1px solid #fecaca; 
-    padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;">
-    <span style="font-weight: bold; font-size: 1.1rem; color: #991b1b;">Nº {n:02d}</span>
-    <div style="text-align: right;">
-        <span style="color: #dc2626; font-weight: bold;">{slope:.2f}%</span><br>
-        <span style="font-size: 0.7rem; color: #b91c1c;">força da queda</span>
-    </div>
-</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+            with c2:
+                st.markdown("##### Em Baixa")
+                if not tendencias["baixa"]:
+                    st.caption("Nenhum número em tendência clara de baixa no momento.")
+                else:
+                    for item in tendencias["baixa"]:
+                        n = item["numero"]
+                        slope = item["slope"] * 100
+                        st.markdown(
+                            f"""
+        <div style="
+            display: flex; justify-content: space-between; align-items: center;
+            background: #fef2f2; border: 1px solid #fecaca; 
+            padding: 8px 12px; border-radius: 6px; margin-bottom: 6px;">
+            <span style="font-weight: bold; font-size: 1.1rem; color: #991b1b;">Nº {n:02d}</span>
+            <div style="text-align: right;">
+                <span style="color: #dc2626; font-weight: bold;">{slope:.2f}%</span><br>
+                <span style="font-size: 0.7rem; color: #b91c1c;">força da queda</span>
+            </div>
+        </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
