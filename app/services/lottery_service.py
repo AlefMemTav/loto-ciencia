@@ -1,4 +1,12 @@
 # app/services/lottery_service.py
+"""
+Serviço de Loteria com Validação.
+Versão 2.1: CORREÇÕES CRÍTICAS APLICADAS
+- Threshold de validação aumentado (20 → 70)
+- Fator de excesso aumentado (5 → 10)
+- Fallback inteligente quando poucos jogos passam
+"""
+
 from dataclasses import dataclass
 from datetime import timedelta
 import os
@@ -67,6 +75,37 @@ class GameContext:
 
 
 class LotteryService:
+    def _validar_lote_com_cache(
+        self, candidatos, ctx, score_cache, threshold, jogos_existentes
+    ):
+        """
+        Valida um lote de jogos, usando e atualizando o cache de scores.
+        Retorna lista de (score, jogo) aprovados e atualiza jogos_existentes.
+        """
+        jogos_aprovados = []
+        for jogo in candidatos:
+            jogo_tuple = tuple(jogo)
+            if jogo_tuple in jogos_existentes:
+                continue
+            if jogo_tuple in score_cache:
+                score = score_cache[jogo_tuple]
+            else:
+                report = validar_jogo(
+                    jogo,
+                    ctx.config,
+                    historico_jogos=ctx.historico_set,
+                    ic_info=ctx.ic_info,
+                    df_historico=ctx.df,
+                    distribuicoes_geometricas=ctx.distribuicoes_geometricas,
+                    stats_quadrantes=ctx.stats_quadrantes,
+                )
+                score = report["score"]
+                score_cache[jogo_tuple] = score
+            if score >= threshold:
+                jogos_aprovados.append((score, jogo))
+                jogos_existentes.add(jogo_tuple)
+        return jogos_aprovados
+
     """
     Serviço centralizado para lógica de loteria.
     """
@@ -79,7 +118,6 @@ class LotteryService:
         if not os.path.exists(filepath):
             return "missing"
         mtime = os.path.getmtime(filepath)
-        # Retorna caminho + data de modificação. Se o arquivo mudar, isso muda.
         return f"{filepath}:{mtime}"
 
     @staticmethod
@@ -157,11 +195,8 @@ class LotteryService:
         )
         lista_tendencias = []
         for n in range(1, config.n_numbers + 1):
-            # Janela de 30 a 50 concursos é ideal para tendência de curto prazo
             res = detectar_tendencia_frequencia(df, config, numero=n, janela=30)
-            if (
-                res and res["p_value"] < 0.10
-            ):  # Filtra apenas tendências com alguma relevância
+            if res and res["p_value"] < 0.10:
                 lista_tendencias.append(res)
 
         # Separa em Alta e Baixa
@@ -172,11 +207,11 @@ class LotteryService:
         )
         em_baixa = sorted(
             [t for t in lista_tendencias if t["slope"] < 0], key=lambda x: x["slope"]
-        )  # Menor slope (mais negativo) primeiro
+        )
 
         tendencias = {
-            "alta": em_alta[:5],  # Top 5 subindo
-            "baixa": em_baixa[:5],  # Top 5 descendo
+            "alta": em_alta[:5],
+            "baixa": em_baixa[:5],
         }
         logger.info(f"✅ [CACHE] {slug}: Contexto pronto e cacheado.")
 
@@ -216,7 +251,6 @@ class LotteryService:
         config = self.get_config(slug)
 
         # 3. Chama o estático
-        # Se 'current_hash' for igual ao da última vez, o Streamlit retorna o cache instantaneamente.
         return self._build_context_static(slug, current_hash, config)
 
     def _build_empty_context(self, config, df):
@@ -265,132 +299,125 @@ class LotteryService:
         fixos = payload.get("numeros_fixos")
         evitados = payload.get("numeros_evitados")
 
-        # Validação Rápida antes de chamar o gerador (Fail Fast)
         if fixos and len(fixos) > ctx.config.bet_size:
             raise ValueError(f"Quantidade de fixos maior que o tamanho do jogo.")
 
-        fator_excesso = 5
-        qtd_bruta = qtd * fator_excesso
-
-        # Limite de segurança para não travar em pedidos gigantes
-        qtd_bruta = min(qtd_bruta, 1000)
-
-        candidatos = gerar_jogos_vetorizado(
-            ctx=ctx,
-            quantidade=qtd_bruta,
-            estrategia=estrategia,
-            numeros_fixos=fixos,
-            numeros_evitados=evitados,
-        )
-
+        fator_excesso = 10
+        batch_size = min(qtd * fator_excesso, 500)
+        max_candidatos = min(qtd * fator_excesso * 4, 2000)
         jogos_avaliados = []
+        score_cache = {}
+        jogos_existentes = set()
+        total_gerados = 0
+        threshold = 70
+        relax_threshold = 55
 
-        for jogo in candidatos:
-            # Validamos cada candidato.
-            report = validar_jogo(
-                jogo,
-                ctx.config,
-                historico_jogos=ctx.historico_set,
-                ic_info=ctx.ic_info,
-                df_historico=ctx.df,
-                distribuicoes_geometricas=ctx.distribuicoes_geometricas,
-                stats_quadrantes=ctx.stats_quadrantes,
+        while len(jogos_avaliados) < qtd and total_gerados < max_candidatos:
+            candidatos = gerar_jogos_vetorizado(
+                ctx=ctx,
+                quantidade=batch_size,
+                estrategia=estrategia,
+                numeros_fixos=fixos,
+                numeros_evitados=evitados,
             )
-            score = report["score"]
+            total_gerados += len(candidatos)
+            aprovados = self._validar_lote_com_cache(
+                candidatos, ctx, score_cache, threshold, jogos_existentes
+            )
+            jogos_avaliados.extend(aprovados)
+            if len(jogos_avaliados) >= qtd:
+                break
 
-            # Critério de corte básico (opcional): rejeitar lixo total
-            if score > 20:
-                jogos_avaliados.append((score, jogo))
-
-        # 5. Seleção dos Melhores (Ranking)
-        # Ordena pelo Score (decrescente)
         jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
-
-        # Pega apenas a quantidade que o usuário pediu
         melhores_jogos = [j[1] for j in jogos_avaliados[:qtd]]
 
-        # Fallback: Se o validador rejeitou tudo (muito raro), devolve os brutos
-        if not melhores_jogos:
+        # RELAXAMENTO: usa cache, não revalida, checagem O(1)
+        if len(melhores_jogos) < qtd:
             logger.warning(
-                f"Validador rejeitou todos os {len(candidatos)} candidatos. Usando brutos."
+                f"⚠️ Apenas {len(melhores_jogos)} jogos passaram no filtro score>={threshold}. "
+                f"Relaxando para score>={relax_threshold}..."
             )
+            set_melhores = set(tuple(j) for j in melhores_jogos)
+            sorted_cache = sorted(
+                score_cache.items(), key=lambda kv: kv[1], reverse=True
+            )
+            for jogo_tuple, score in sorted_cache:
+                if len(melhores_jogos) >= qtd:
+                    break
+                if jogo_tuple in set_melhores:
+                    continue
+                if score >= relax_threshold:
+                    melhores_jogos.append(list(jogo_tuple))
+                    set_melhores.add(jogo_tuple)
+
+            logger.info(f"✅ Após relaxamento: {len(melhores_jogos)} jogos disponíveis")
+
+        if not melhores_jogos:
+            if score_cache:
+                top_from_cache = sorted(
+                    score_cache.items(), key=lambda kv: kv[1], reverse=True
+                )[:qtd]
+                return [list(j[0]) for j in top_from_cache]
+            logger.warning(f"⚠️ Validador rejeitou todos os candidatos. Usando brutos.")
             return candidatos[:qtd]
 
         return melhores_jogos
 
     def generate_genetic(self, slug: str, payload: dict) -> List[List[int]]:
         """
-        Fachada para o Motor Evolutivo com Validação Final.
-
-        Fluxo:
-        1. Pede ao GA para evoluir 3x mais jogos do que o necessário.
-        2. Passa os sobreviventes pelo Validador Oficial (juiz severo).
-        3. Retorna apenas a Elite da Elite.
+        Motor Evolutivo com Validação e cache, unificado com generate.
         """
         logger.info(f"🧬 Iniciando Mineração Genética para {slug}")
 
         ctx = self.get_context(slug)
 
-        # Parâmetros
         qtd_alvo = int(payload.get("quantidade", 1))
         fixos = payload.get("numeros_fixos")
         estrategia = payload.get("estrategia", "balanceada")
-        # Tática de Over-provisioning:
-        # Pedimos o triplo de jogos para poder descartar os que tiverem Score baixo
-        qtd_bruta = qtd_alvo * 3
-        # Trava de segurança para não explodir o tempo de processamento
-        qtd_bruta = min(qtd_bruta, 50)
+
+        qtd_bruta = min(qtd_alvo * 5, 100)
+        threshold = 70
+        relax_threshold = 55
+        score_cache = {}
+        jogos_existentes = set()
+        jogos_avaliados = []
 
         try:
-            # 1. Mineração Evolutiva (Otimiza matemática interna)
             candidatos = gerar_jogos_geneticos(
                 ctx=ctx, quantidade=qtd_bruta, estrategia=estrategia, fixos=fixos
             )
-
-            # 2. Refinamento pelo Validador (Alinha com a expectativa visual do usuário)
-            jogos_avaliados = []
-
-            for jogo in candidatos:
-                # O validador aplica critérios que o GA talvez não veja (ex: Simetria Visual)
-                report = validar_jogo(
-                    jogo,
-                    ctx.config,
-                    historico_jogos=ctx.historico_set,
-                    ic_info=ctx.ic_info,
-                    df_historico=ctx.df,
-                    distribuicoes_geometricas=ctx.distribuicoes_geometricas,
-                    stats_quadrantes=ctx.stats_quadrantes,
-                )
-                score = report["score"]
-
-                # Aceitamos apenas jogos decentes
-                if score >= 50:
-                    jogos_avaliados.append((score, jogo))
-
-            # 3. Ordenação (Ranking)
-            # Queremos os maiores scores primeiro
-            jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
-
-            logger.info(
-                f"🧬 Evolução: {len(candidatos)} candidatos -> {len(jogos_avaliados)} aprovados."
+            aprovados = self._validar_lote_com_cache(
+                candidatos, ctx, score_cache, threshold, jogos_existentes
             )
+            jogos_avaliados.extend(aprovados)
 
-            # Retorna apenas a quantidade solicitada
+            jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
             melhores = [j[1] for j in jogos_avaliados[:qtd_alvo]]
 
-            # Se o filtro genético + validador foi muito rigoroso e sobrou pouco,
-            # completa com os candidatos brutos do genético (melhor que falhar)
             if len(melhores) < qtd_alvo:
-                faltam = qtd_alvo - len(melhores)
-                extras = [j for j in candidatos if j not in melhores][:faltam]
-                melhores.extend(extras)
+                logger.warning(
+                    f"⚠️ Apenas {len(melhores)} jogos genéticos passaram no filtro score>={threshold}. "
+                    f"Relaxando para score>={relax_threshold}..."
+                )
+                set_melhores = set(tuple(j) for j in melhores)
+                for jogo_tuple, score in score_cache.items():
+                    if len(melhores) >= qtd_alvo:
+                        break
+                    if jogo_tuple in set_melhores:
+                        continue
+                    if score >= relax_threshold:
+                        melhores.append(list(jogo_tuple))
+                        set_melhores.add(jogo_tuple)
+
+                logger.info(
+                    f"✅ Após relaxamento: {len(melhores)} jogos genéticos disponíveis"
+                )
 
             return melhores
 
         except Exception as e:
-            logger.error(f"Erro no Algoritmo Genético: {e}")
-            logger.warning("Usando fallback vetorial.")
-            # Fallback para o método padrão se o genético falhar
+            logger.error(f"❌ Erro no Algoritmo Genético: {e}")
+            logger.warning("⚠️ Usando fallback vetorial.")
             return self.generate(slug, payload)
 
     def closures(

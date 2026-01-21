@@ -1,7 +1,8 @@
 # app/core/generator_fast.py
 """
 Motor de Geração Vetorial de Alta Performance (NumPy).
-Versão 2.0: Com Reranking Estrutural (Co-ocorrência).
+Versão 2.1: CORREÇÕES CRÍTICAS APLICADAS
+- Normalização Softmax (elimina viés negativo)
 """
 
 import numpy as np
@@ -39,15 +40,9 @@ def gerar_jogos_vetorizado(
 
     df_raw = ctx.tabela.copy()
 
-    # Resolve nomes de colunas variados
-    if "Numero" in df_raw.columns:
-        bolas_indices = df_raw["Numero"].values.astype(int)
-    elif "numero" in df_raw.columns:
-        bolas_indices = df_raw["numero"].values.astype(int)
-    else:
-        bolas_indices = df_raw.index.values.astype(int)
+    # Padronizado: cada coluna já representa a bola 1, 2, ..., N
+    bolas_indices = np.arange(1, n_numbers + 1)
 
-    # Corrige índice 0 para N (caso exista erro na fonte)
     if n_numbers >= 100:
         bolas_indices = np.where(bolas_indices == 0, n_numbers, bolas_indices)
 
@@ -61,17 +56,17 @@ def gerar_jogos_vetorizado(
     z_gap[dest_indices] = vals_gap[mask_safe]
 
     # Aplica estratégia
-    if estrategia == "agressiva":  # Foca em atrasos (Gaps)
+    if estrategia == "agressiva":
         scores_final = (z_gap * 0.7) + (z_freq * 0.3)
-    elif estrategia == "conservadora":  # Foca em repetição (Freq)
+    elif estrategia == "conservadora":
         scores_final = (z_freq * 0.7) + (z_gap * 0.3)
-    elif estrategia == "pura":  # Aleatório informado
+    elif estrategia == "pura":
         scores_final = np.ones(n_numbers)
-    else:  # Balanceada (usando calibração dinâmica)
+    else:  # Balanceada
         scores_final = (z_freq * w_freq) + (z_gap * w_gap)
 
     # ============================================================
-    # [NOVO] INJEÇÃO DE INTELIGÊNCIA TEMPORAL (MARKOV + CICLO)
+    # INJEÇÃO DE INTELIGÊNCIA TEMPORAL (MARKOV + CICLO)
     # ============================================================
 
     # 1. Bônus Markov (O Efeito Dominó)
@@ -97,7 +92,6 @@ def gerar_jogos_vetorizado(
             # Jogos densos (Lotofácil) respeitam muito o ciclo -> Bônus alto
             # Jogos esparsos (Mega) respeitam pouco -> Bônus baixo
             peso_ciclo = 2.0 if config.is_dense else 0.5
-
             indices_faltam = np.array(faltam) - 1
             # Filtra índices válidos para evitar crash
             indices_validos = indices_faltam[
@@ -105,13 +99,11 @@ def gerar_jogos_vetorizado(
             ]
             scores_final[indices_validos] += peso_ciclo
 
-    # ============================================================
+    scores_final = np.nan_to_num(scores_final, nan=-10.0)  # NaN vira muito negativo
 
-    # Normalização Softmax-like para probabilidades positivas
-    scores_final = np.nan_to_num(scores_final, nan=0.0)
-    # Shift para garantir que o menor score seja positivo base
-    scores_final = scores_final - scores_final.min() + 0.1
-    probs = scores_final / scores_final.sum()
+    # Softmax robusto (evita overflow numérico)
+    scores_exp = np.exp(scores_final - scores_final.max())  # Shift para estabilidade
+    probs = scores_exp / scores_exp.sum()
 
     # Filtro de Evitados
     pool = np.arange(1, n_numbers + 1)
@@ -130,9 +122,9 @@ def gerar_jogos_vetorizado(
 
     jogos_aceitos = []
     attempts = 0
-    max_attempts = 20  # Menos tentativas, mas buffer maior
+    max_attempts = 20
 
-    # Matriz de Co-ocorrência (se disponível) para Reranking
+    # Matriz de Co-ocorrência para informação
     matriz_cooc = getattr(ctx, "matriz_coocorrencia", None)
 
     while len(jogos_aceitos) < quantidade and attempts < max_attempts:
@@ -172,42 +164,43 @@ def gerar_jogos_vetorizado(
 
         mask_valid &= (somas >= ic_min) & (somas <= ic_max)
 
-        # Filtro B: Estrutural (Co-ocorrência) - O PULO DO GATO
-        # Se temos a matriz, calculamos o score estrutural do lote
-        if (
-            matriz_cooc is not None and attempts <= 5
-        ):  # Nas primeiras tentativas, seja rigoroso
-            # Performance: Não calculamos para todos, apenas para os que passaram na soma
-            indices_validos = np.where(mask_valid)[0]
+        # ══════════════════════════════════════════════════════════════════════
+        # Co-ocorrência como Reranking (Classificação)
+        # ══════════════════════════════════════════════════════════════════════
 
-            if len(indices_validos) > 0:
-                subset_candidatos = candidatos[indices_validos]
-                # Como os jogos são índices 1-based, ajustamos para 0-based
-                idx_0based = subset_candidatos - 1
+        validos_batch = candidatos[mask_valid]
 
-                # Heurística Vetorial: Soma da co-ocorrência média do jogo
-                # Iteramos (python loop) pois indexação avançada 3D no numpy é complexa aqui
-                # Mas é rápido para ~20k jogos
-                struct_scores = []
-                for jogo in idx_0based:
-                    # Extrai submatriz do jogo e soma triângulo superior
-                    sub = matriz_cooc[np.ix_(jogo, jogo)]
-                    score = np.sum(np.triu(sub, 1))
-                    struct_scores.append(score)
+        # Se temos a matriz de inteligência, usamos para ORDENAR os jogos (melhores primeiro)
+        # Em vez de filtrar/deletar, nós apenas priorizamos.
+        if matriz_cooc is not None and len(validos_batch) > 0:
+            # Performance: Limitamos o reranking se o batch for gigante para não travar
+            limit_rerank = 5000
+            if len(validos_batch) > limit_rerank:
+                # Se tivermos muitos jogos, pegamos uma amostra aleatória primeiro para ser rápido
+                indices_random = np.random.choice(
+                    len(validos_batch), limit_rerank, replace=False
+                )
+                validos_batch = validos_batch[indices_random]
 
-                struct_scores = np.array(struct_scores)
+            # Ajusta para índice 0-based para consultar a matriz
+            idx_0based = validos_batch - 1
+            struct_scores = []
 
-                # Mantém apenas os Top 50% mais estruturados desse lote
-                mediana_score = np.median(struct_scores)
-                mask_struct = struct_scores >= (
-                    mediana_score * 0.9
-                )  # 10% tolerância abaixo da média
+            # Loop rápido (numPy puro seria complexo para extração 3D irregular)
+            for jogo in idx_0based:
+                # Soma a força de conexão entre os pares do jogo
+                sub = matriz_cooc[np.ix_(jogo, jogo)]
+                # Pega triângulo superior (soma das conexões únicas)
+                score = np.sum(np.triu(sub, 1))
+                struct_scores.append(score)
 
-                # Atualiza a máscara principal
-                # Precisamos mapear de volta para o array original 'mask_valid'
-                # Indices que eram validos mas falharam na estrutura:
-                indices_rejeitados = indices_validos[~mask_struct]
-                mask_valid[indices_rejeitados] = False
+            # RERANKING: Ordena do maior score para o menor
+            struct_scores = np.array(struct_scores)
+            # argsort dá os índices do menor pro maior, então invertemos [::-1]
+            ordem_inteligente = np.argsort(struct_scores)[::-1]
+
+            # Aplica a nova ordem ao batch
+            validos_batch = validos_batch[ordem_inteligente]
 
         # --- 5. SELEÇÃO FINAL E HAMMING ---
         validos_batch = candidatos[mask_valid]
@@ -232,12 +225,13 @@ def _passa_hamming(jogo, lista_aceitos, config):
         return True
     limite_igualdade = config.get_overlap_limit()
     set_jogo = set(jogo)
-    # Checagem rápida contra o último gerado (otimização comum)
+
+    # Checagem rápida contra o último gerado
     if len(lista_aceitos) > 0:
         if len(set_jogo.intersection(set(lista_aceitos[-1]))) > limite_igualdade:
             return False
 
-    # Checagem completa se passou na rápida
+    # Checagem completa
     for aceito in lista_aceitos[:-1]:
         comum = len(set_jogo.intersection(set(aceito)))
         if comum > limite_igualdade:

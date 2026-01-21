@@ -294,7 +294,8 @@ def render_generator(ctx, svc):
     st.markdown(
         """
     <div style="text-align: center; margin-top: 15px; color: #94a3b8; font-size: 0.8rem;">
-    O LotoScience não garante prêmios. Estes jogos são estatisticamente equilibrados para concetrar seus jogos em probabilidades matemáticas mais altas e evitar divisões de prêmio. Jogue com responsabilidade.
+    O LotoScience não garante prêmios. Estes jogos são estatisticamente equilibrados para concetrar seus jogos em probabilidades matemáticas mais altas e evitar divisões de prêmio. Loterias são jogos de azar. Jogue com responsabilidade.
+    Aposte somente o que você pode perder.
     </div>
         """,
         unsafe_allow_html=True,
