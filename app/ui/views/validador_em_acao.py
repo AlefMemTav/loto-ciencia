@@ -227,49 +227,6 @@ def render_validador_em_acao():
             unsafe_allow_html=True,
         )
 
-        # --- HISTÓRICO RECENTE (SEO E RETENÇÃO) ---
-        st.markdown("### 📅 Histórico Recente")
-
-        # Tabela simplificada
-        ultimos = ctx.df.tail(10).sort_index(ascending=False)
-
-        # Prepara dados para tabela limpa
-        dados_tabela = []
-        for idx, row in ultimos.iterrows():
-            # Recalcula score rápido (com cache)
-            res_hist = validar_sorteio_cached(
-                slug_selecionado, idx, tuple(row.tolist())
-            )
-            sc = res_hist.get("score_original", 0)
-
-            nums_fmt = " - ".join([f"{n:02d}" for n in sorted(row.tolist())])
-            dados_tabela.append(
-                {
-                    "Concurso": idx,
-                    "Números Sorteados": nums_fmt,
-                    "Score Inteligência Estatística": sc,
-                    "Qualidade": (
-                        "🟢 Ótimo" if sc > 70 else "🟡 Médio" if sc > 50 else "🔴 Zebra"
-                    ),
-                }
-            )
-
-        df_display = pd.DataFrame(dados_tabela)
-        st.dataframe(
-            df_display,
-            hide_index=True,
-            width="stretch",
-            column_config={
-                "Score da nossa Inteligência Estatística": st.column_config.ProgressColumn(
-                    "Score Inteligência Estatística",
-                    help="Qualidade estatística do resultado",
-                    format="%d",
-                    min_value=0,
-                    max_value=100,
-                ),
-            },
-        )
-
     except Exception as e:
         st.error(f"Erro ao carregar resultados")
         logger.error(e)

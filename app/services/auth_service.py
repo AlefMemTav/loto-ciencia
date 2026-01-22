@@ -63,6 +63,22 @@ class AuthService:
         except Exception as e:
             logger.error(f"Erro ao criar demo user: {e}")
 
+        try:
+            mais_email = "maischancesloterias@gmail.com"
+            cursor.execute("SELECT id FROM users WHERE email = ?", (mais_email,))
+            if not cursor.fetchone():
+                mais_pass = hash_password("maischancesloterias@gmail.com")
+                cursor.execute(
+                    "INSERT INTO users (email, password_hash, plan) VALUES (?, ?, ?)",
+                    (mais_email, mais_pass, "pro"),
+                )
+                conn.commit()
+                logger.info(
+                    "Usuário Mais criado: maischancesloterias@gmail.com / maischancesloterias@gmail.com"
+                )
+        except Exception as e:
+            logger.error(f"Erro ao criar demo user: {e}")
+
         conn.close()
 
     def get_user_by_email(self, email: str) -> Optional[dict]:

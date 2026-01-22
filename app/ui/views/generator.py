@@ -69,9 +69,11 @@ def render_generator(ctx, svc):
         col_qtd, col_strat = st.columns([1, 2])
 
         with col_qtd:
-            qtd = st.slider(
-                "Quantidade de Jogos a Minerar:", 1, 10, 3, on_change=limpar_sessao
-            )
+            # Quantidade fixa em 1 (não permitir gerar mais por enquanto)
+            qtd = 1
+            # Exibe informação estática em vez de um slider para evitar problemas de compatibilidade
+            # ou erros de widget na execução do Streamlit.
+            st.info("Quantidade de Jogos a Minerar: 1 (fixo por enquanto)")
 
         with col_strat:
             # Mapas de display para ficar mais amigável

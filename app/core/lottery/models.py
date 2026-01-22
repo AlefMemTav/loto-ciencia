@@ -159,7 +159,6 @@ class GameConfig:
 
     # Configurações visuais e estatísticas
     theme_color: str = "#2563eb"
-    gauss_range: str = "140-240"
     bet_k: Optional[int] = None  # Se for None, assume k
 
     # Validações

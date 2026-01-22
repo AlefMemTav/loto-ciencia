@@ -6,7 +6,7 @@ Este módulo contém funções para análise de autocorrelação temporal,
 detecção de ciclos e análise de tendências nas frequências de números
 ao longo do tempo.
 """
-
+import math
 import numpy as np
 import pandas as pd
 from typing import Optional, List
@@ -111,20 +111,20 @@ def analise_temporal_somas(
     if df.empty:
         return {"dados": [], "min_ideal": 0, "max_ideal": 0}
 
-    # Recorte dos últimos N jogos
     df_tail = df.tail(janela).copy()
-
-    # Calcula soma
     somas = df_tail[config.draw_cols].sum(axis=1)
 
-    # Extrai range de Gauss do config (ex: "180-220")
-    try:
-        min_ideal, max_ideal = map(int, config.gauss_range.split("-"))
-    except:
-        # Fallback genérico se a string estiver errada
-        media = (config.n_numbers * config.k) / 2
-        min_ideal = int(media * 0.85)
-        max_ideal = int(media * 1.15)
+    N = config.n_numbers
+    k = config.k
+
+    media_teorica = k * (N + 1) / 2
+
+    var_universo = (N**2 - 1) / 12
+    fator_correcao = (N - k) / (N - 1)
+    sigma = math.sqrt(k * var_universo * fator_correcao)
+
+    min_ideal = int(media_teorica - (2.0 * sigma))
+    max_ideal = int(media_teorica + (2.0 * sigma))
 
     dados_grafico = []
     for idx, soma in somas.items():
@@ -132,10 +132,8 @@ def analise_temporal_somas(
             {
                 "Concurso": idx,
                 "Soma": int(soma),
-                "Media_Movel": int(soma),  # Placeholder se quiser suavizar depois
-                "Status": (
-                    "Normal" if min_ideal <= soma <= max_ideal else "Fora do Padrão"
-                ),
+                "Media_Movel": int(soma),
+                "Status": ("Normal" if min_ideal <= soma <= max_ideal else "Atípico"),
             }
         )
 

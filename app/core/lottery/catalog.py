@@ -21,7 +21,6 @@ MEGASENA = GameConfig(
         "Você marca de 6 a 20 números. Ganha quem acertar 6 (Sena), "
         "5 (Quina) ou 4 (Quadra) números sorteados."
     ),
-    gauss_range="140-240",
     theme_color="#16a34a",
 )
 
@@ -39,7 +38,6 @@ QUINA = GameConfig(
         "Você aposta de 5 a 15 números. Ganha quem acerta 5 (Quina), "
         "4 (Quadra), 3 (Terno) ou 2 (Duque)."
     ),
-    gauss_range="120-200",
     theme_color="#7c3aed",
 )
 
@@ -57,7 +55,6 @@ LOTOFACIL = GameConfig(
         "Você marca entre 15 e 20 números. Fatura prêmio se acertar "
         "11, 12, 13, 14 ou 15 números."
     ),
-    gauss_range="180-220",
     theme_color="#db2777",
     target_score_excellent=70,
     target_score_accept=60,
@@ -80,7 +77,6 @@ LOTOMANIA = GameConfig(
         "São sorteados 20 números. Ganha quem acerta 20, 19, 18, 17, 16, 15 ou "
         "nenhum número (0 acertos)."
     ),
-    gauss_range="2000-3000",
     theme_color="#f59e0b",
     target_score_excellent=80,
     target_score_accept=65,
