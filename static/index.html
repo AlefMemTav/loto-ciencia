@@ -29,8 +29,16 @@
 
     <link rel="icon" type="image/png" sizes="192x192" href="./android-chrome-192x192.png">
 
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6476426656586515"
-        crossorigin="anonymous"></script>
+    <script>
+        var isApp = navigator.userAgent.includes('wv');
+        if (!isApp) {
+            var adsenseScript = document.createElement('script');
+            adsenseScript.async = true;
+            adsenseScript.src = "https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6476426656586515";
+            adsenseScript.crossOrigin = "anonymous";
+            document.head.appendChild(adsenseScript);
+        }
+    </script>
     <script src="./vendor/bokeh/bokeh-2.4.3.min.js"></script>
     <script src="./vendor/bokeh/bokeh-widgets-2.4.3.min.js"></script>
     <script src="./vendor/bokeh/bokeh-tables-2.4.3.min.js"></script>
