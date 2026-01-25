@@ -49,7 +49,7 @@ def get_checkout_url(user_email: str):
 
         # Cria a sessão no Stripe
         checkout_session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
+            payment_method_types=["card", "boleto"],
             line_items=[
                 {
                     "price": price_id,

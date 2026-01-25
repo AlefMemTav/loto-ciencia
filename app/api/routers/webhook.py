@@ -7,7 +7,6 @@ from app.services.auth_service import auth_service
 
 router = APIRouter()
 
-# Essa chave vem do Dashboard do Stripe (Developers > Webhooks)
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 
 
@@ -20,46 +19,43 @@ async def stripe_webhook(request: Request, stripe_signature: str = Header(None))
     payload = await request.body()
 
     try:
-        # 1. Verifica a assinatura (Garante que veio do Stripe e não de um hacker)
         event = stripe.Webhook.construct_event(
             payload, stripe_signature, STRIPE_WEBHOOK_SECRET
         )
     except ValueError as e:
-        # Payload inválido
         logger.error(f"Webhook Payload Error: {e}")
         raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.error.SignatureVerificationError as e:
-        # Assinatura falsa
         logger.error(f"Webhook Signature Error: {e}")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    # 2. Processa o evento
-    if event["type"] == "checkout.session.completed":
+    event_type = event["type"]
+
+    if event_type == "checkout.session.completed":
         session = event["data"]["object"]
 
         if session.get("payment_status") != "paid":
-            logger.warning(
-                f"Checkout completado, mas pagamento não confirmado: {session.get('id')}"
+            logger.info(
+                f"Sessão {session.get('id')} completada, aguardando pagamento (Boleto)."
             )
             return {"status": "ignored"}
 
-        # Recupera o email que enviamos no payment.py
         user_email = session.get("client_reference_id")
+        if user_email:
+            logger.info(f"💰 Pagamento Imediato confirmado (Cartão) para: {user_email}")
+            auth_service.upgrade_user(user_email)
+
+    elif event_type == "invoice.paid":
+        invoice = event["data"]["object"]
+
+        user_email = invoice.get("customer_email")
 
         if user_email:
-            logger.info(f"💰 Pagamento confirmado ($$) para: {user_email}")
+            logger.info(
+                f"💰 Boleto Compensado ou Renovação confirmada para: {user_email}"
+            )
             auth_service.upgrade_user(user_email)
         else:
-            logger.warning("Pagamento recebido sem email de referência.")
+            logger.warning("Fatura paga recebida sem email do cliente.")
 
-        # Lembra do client_reference_id que colocamos no payment.py? Usamos ele agora!
-        user_email = session.get("client_reference_id")
-
-        if user_email:
-            logger.info(f"💰 Pagamento confirmado para: {user_email}")
-            auth_service.upgrade_user(user_email)
-        else:
-            logger.warning("Pagamento recebido sem email de referência.")
-
-    # Retorna 200 OK para o Stripe saber que deu certo
     return {"status": "success"}
