@@ -132,11 +132,11 @@ def render_landing_page():
         st.markdown(
             """
 <div style="background-color: #ffffff; padding: 25px; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center; min-height: 500px; transition: transform 0.3s;">
-    <h3 style="color: #64748b; margin-top: 10px; font-size: 1.4rem;">Essencial</h3>
+    <h3 style="color: #64748b; margin-top: 10px; font-size: 1.4rem;">Gratuito</h3>
     <div style="font-size: 2.2rem; color: #1e293b; margin: 20px 0; font-weight: 800;">
-        R$ 9,90<span style="font-size: 1rem; font-weight: normal; color: #94a3b8;">/mês</span>
+        Grátis<span style="font-size: 1rem; font-weight: normal; color: #94a3b8;">/sempre</span>
     </div>
-    <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 25px;">Para o apostador casual</p>
+    <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 25px;">Para conhecer a Inteligência Artificial</p>
     <div style="text-align: left; margin-bottom: 30px;">
         <div style="margin-bottom: 10px;">✅ <b>Validador Técnico</b> (Básico)</div>
         <div style="margin-bottom: 10px;">✅ Score 0-100</div>
@@ -148,13 +148,12 @@ def render_landing_page():
         <div style="margin-bottom: 10px; color: #94a3b8;">❌ Ferramentas de Bolão</div>
     </div>
     <a href="Registro" style="text-decoration: none;">
-        <div style="background: #f1f5f9; color: #475569; padding: 12px; border-radius: 8px; font-weight: bold; border: 1px solid #cbd5e1;">Escolher Essencial</div>
+        <div style="background: #f1f5f9; color: #475569; padding: 12px; border-radius: 8px; font-weight: bold; border: 1px solid #cbd5e1;">Começar Grátis</div>
     </a>
 </div>
             """,
             unsafe_allow_html=True,
         )
-
     # --- PLANO 2: PRO (Recomendado/Hero) ---
     with c_pro:
         st.markdown(
