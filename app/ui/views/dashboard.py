@@ -428,7 +428,7 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config):
             lw = 0.5
             txtcol = "#cbd5e1"
             weight = "normal"
-
+        alpha = max(0.0, min(1.0, float(alpha)))
         ax.add_patch(plt.Circle((col, y), r, color=face, alpha=alpha, ec=edge, lw=lw))
         ax.text(
             col,

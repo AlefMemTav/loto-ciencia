@@ -85,5 +85,5 @@ LOTOMANIA = GameConfig(
 )
 
 GAMES_REGISTRY: Dict[str, GameConfig] = {
-    g.slug: g for g in [MEGASENA, LOTOFACIL, QUINA, LOTOMANIA]
+    g.slug: g for g in [LOTOFACIL, MEGASENA, QUINA, LOTOMANIA]
 }
