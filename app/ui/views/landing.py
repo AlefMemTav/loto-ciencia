@@ -162,7 +162,7 @@ def render_landing_page():
     <div style="position: absolute; top: -15px; left: 50%; transform: translateX(-50%); background: #6366f1; color: white; padding: 5px 15px; border-radius: 20px; font-size: 0.8rem; font-weight: bold;">MAIS POPULAR</div>
     <h3 style="color: #4f46e5; margin-top: 10px; font-size: 1.6rem;">Profissional</h3>
     <div style="font-size: 2.8rem; color: #1e293b; margin: 20px 0; font-weight: 800;">
-        R$ 19,90<span style="font-size: 1rem; font-weight: normal; color: #94a3b8;">/mês</span>
+        R$ 9,90<span style="font-size: 1rem; font-weight: normal; color: #94a3b8;">/mês</span>
     </div>
     <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 25px;">Para quem joga para ganhar</p>
     <div style="text-align: left; margin-bottom: 30px;">
