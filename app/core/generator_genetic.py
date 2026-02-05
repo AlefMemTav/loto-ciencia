@@ -1,14 +1,16 @@
 # app/core/generator_genetic.py
 """
 Motor de Geração Genética (Algoritmo Evolutivo).
-Versão 2.1: CORREÇÕES CRÍTICAS APLICADAS
+Versão 2.2: OTIMIZAÇÕES DE PERFORMANCE
 - Penalidades proporcionais (reduz de 20/15 para 5/3)
+- Co-ocorrência vetorizada (elimina loop Python)
 """
 
 import numpy as np
 import random
 from typing import List, Optional
 from app.core.logger import logger
+from app.core.generator_fast import _calcular_scores_coocorrencia_batch
 
 
 class GeneticMiner:
@@ -116,8 +118,12 @@ class GeneticMiner:
 
     def _fitness(self, populacao: np.ndarray) -> np.ndarray:
         """
-        Fitness v2.1: Híbrido com Penalidades Proporcionais
+        Fitness v2.2: Alinhado com validador completo.
+        Inclui verificações de entropia, span, finais, metades e múltiplos.
         """
+        n_pop = len(populacao)
+        k = self.bet_k
+
         # 1. Score Linear Base
         indices = populacao - 1
         score_freq = self.z_freq_aligned[indices].sum(axis=1)
@@ -132,44 +138,98 @@ class GeneticMiner:
             + score_ciclo
         )
 
-        # 2. Score Estrutural (Co-ocorrência)
-        cooc_score = np.zeros(len(populacao))
-        if hasattr(self.ctx, "matriz_coocorrencia"):
+        # 2. Score Estrutural (Co-ocorrência) - VETORIZADO
+        cooc_score = np.zeros(n_pop)
+        if hasattr(self.ctx, "matriz_coocorrencia") and self.ctx.matriz_coocorrencia is not None:
             matriz = self.ctx.matriz_coocorrencia
-            for i, jogo in enumerate(indices):
-                sub_matriz = matriz[np.ix_(jogo, jogo)]
-                cooc_score[i] = np.sum(np.triu(sub_matriz, k=1))
+            cooc_score = _calcular_scores_coocorrencia_batch(indices, matriz)
 
+        # 3. Penalidades (Alinhadas com validador)
+        penalties = np.zeros(n_pop)
+
+        # 3.1 Penalidade Soma (Proporcional à distância do IC)
         somas = populacao.sum(axis=1)
-        n_pares = (populacao % 2 == 0).sum(axis=1)
-
-        penalties = np.zeros(len(populacao))
-
-        # Penalidade Soma (Proporcional à distância do IC)
-        dist_soma = np.zeros(len(populacao))
-
-        # Calcula distância normalizada para jogos fora do IC
+        dist_soma = np.zeros(n_pop)
         mask_abaixo = somas < self.ic_min
         mask_acima = somas > self.ic_max
 
         if mask_abaixo.any():
             dist_soma[mask_abaixo] = (self.ic_min - somas[mask_abaixo]) / self.ic_min
-
         if mask_acima.any():
             dist_soma[mask_acima] = (somas[mask_acima] - self.ic_max) / self.ic_max
 
-        # Penalidade máxima ~5 (em vez de 20)
         penalties += dist_soma * 5.0
 
-        # Penalidade Paridade (Proporcional à distância do ideal 50/50)
-        ideal_pares = self.bet_k / 2.0
+        # 3.2 Penalidade Paridade
+        n_pares = (populacao % 2 == 0).sum(axis=1)
+        ideal_pares = k / 2.0
         dist_parity = np.abs(n_pares - ideal_pares) / ideal_pares
-
-        # Penalidade máxima ~3 (em vez de 15)
         penalties += dist_parity * 3.0
 
-        # Fórmula Final
-        raw_fitness = (linear_score * 0.4) + (cooc_score * 0.6) - penalties
+        # Penalidade extrema para todos pares ou todos ímpares
+        extremo_paridade = (n_pares == 0) | (n_pares == k)
+        penalties[extremo_paridade] += 5.0
+
+        # 3.3 Penalidade Span (números muito concentrados)
+        spans = populacao[:, -1] - populacao[:, 0]  # já ordenado
+        span_minimo = self.n_numbers * 0.3
+        span_baixo = spans < span_minimo
+        penalties[span_baixo] += 3.0
+
+        span_muito_baixo = spans < self.n_numbers * 0.2
+        penalties[span_muito_baixo] += 2.0  # adicional
+
+        # 3.4 Penalidade Entropia/PA (gaps uniformes = padrão óbvio)
+        # Calcula gaps para toda a população de forma vetorizada
+        gaps = np.diff(populacao, axis=1)  # (n_pop, k-1)
+
+        # Conta gaps únicos por jogo
+        unique_gaps_count = np.array([len(np.unique(g)) for g in gaps])
+
+        # PA perfeita (todos gaps iguais)
+        pa_perfeita = unique_gaps_count == 1
+        penalties[pa_perfeita] += 5.0
+
+        # Poucos gaps únicos
+        poucos_gaps = (unique_gaps_count <= 2) & (k >= 6) & (~pa_perfeita)
+        penalties[poucos_gaps] += 3.0
+
+        # 3.5 Penalidade Metades (superior/inferior)
+        meio = self.n_numbers // 2
+        superior = (populacao <= meio).sum(axis=1)
+        inferior = k - superior
+
+        # Desequilíbrio extremo
+        extremo_metades = (superior == 0) | (inferior == 0)
+        penalties[extremo_metades] += 4.0
+
+        # Desequilíbrio alto
+        deseq_metades = np.abs(superior - inferior) >= k * 0.6
+        penalties[deseq_metades & ~extremo_metades] += 2.0
+
+        # 3.6 Penalidade Finais Repetidos (vício de terminal)
+        # Calcula finais para toda a população
+        finais = populacao % 10  # (n_pop, k)
+
+        # Conta o máximo de repetições por jogo
+        max_finais = np.zeros(n_pop)
+        for i in range(n_pop):
+            _, counts = np.unique(finais[i], return_counts=True)
+            max_finais[i] = counts.max()
+
+        limite_final = max(4, int(k * 0.4))
+        finais_altos = max_finais >= limite_final
+        penalties[finais_altos] += 3.0
+
+        # 3.7 Penalidade Múltiplos Dominantes
+        for d in [5, 10]:
+            mult = (populacao % d == 0).sum(axis=1)
+            fracao = mult / k
+            dominante = fracao >= 0.6
+            penalties[dominante] += 2.0
+
+        # Fórmula Final: balanceia linear, estrutural e penalidades
+        raw_fitness = (linear_score * 0.3) + (cooc_score * 0.5) - (penalties * 2.0)
 
         return raw_fitness
 

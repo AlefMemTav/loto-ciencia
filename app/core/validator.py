@@ -1010,6 +1010,193 @@ def _analise_padroes_avancados(
         logger.error(f"Erro na análise de padrões avançados: {e}")
 
 
+# ===== FUNÇÕES DE SCORE =====
+
+
+def calcular_score_rapido(
+    numeros: list[int],
+    config: "GameConfig",
+    ic_info: dict = None,
+    historico_jogos: set = None,
+) -> int:
+    """
+    Score rápido para filtragem interna dos geradores.
+    Versão 2.1: Penalidades calibradas para alinhar com validador completo.
+
+    O validador completo aplica ~20 análises diferentes. Este score rápido
+    aplica as 10 mais impactantes com penalidades ajustadas para que o
+    score final seja aproximado ao do validador completo.
+
+    Verificações realizadas (em ordem de impacto):
+    1. Jogo já sorteado (retorna 0 imediatamente)
+    2. Soma dentro do IC95/IC80
+    3. Paridade equilibrada
+    4. Entropia mínima (detecta PAs e sequências óbvias)
+    5. Span mínimo
+    6. Finais repetidos (vício de terminal)
+    7. Metades (superior/inferior)
+    8. Concentração em linhas (layout)
+    9. Números sortudos em excesso
+    10. Múltiplos dominantes
+
+    Args:
+        numeros: Lista de números do jogo (já ordenados)
+        config: Configuração do jogo
+        ic_info: Informações de intervalo de confiança (opcional)
+        historico_jogos: Set de jogos já sorteados como tuplas (opcional)
+
+    Returns:
+        Score inteiro de 0 a 100
+    """
+    # Base score ajustado: validador completo tende a dar scores mais baixos
+    # devido às múltiplas análises. Começamos com 85 para compensar.
+    score = 85
+    k = len(numeros)
+    numeros_sorted = sorted(numeros)
+
+    # 1. Já saiu? (eliminação imediata)
+    if historico_jogos and tuple(numeros_sorted) in historico_jogos:
+        return 0
+
+    # 2. Soma (IC95 e IC80)
+    soma = sum(numeros)
+    if ic_info:
+        ic_95 = ic_info.get("ic_95")
+        ic_80 = ic_info.get("ic_80")
+
+        if ic_95 and len(ic_95) == 2:
+            # Ajusta IC para o tamanho real da aposta se diferente
+            if k != config.k:
+                fator = k / config.k
+                ic_min_95, ic_max_95 = ic_95[0] * fator, ic_95[1] * fator
+                ic_min_80 = ic_80[0] * fator if ic_80 else ic_min_95 * 1.05
+                ic_max_80 = ic_80[1] * fator if ic_80 else ic_max_95 * 0.95
+            else:
+                ic_min_95, ic_max_95 = ic_95[0], ic_95[1]
+                ic_min_80 = ic_80[0] if ic_80 else ic_min_95 * 1.05
+                ic_max_80 = ic_80[1] if ic_80 else ic_max_95 * 0.95
+
+            if not (ic_min_95 <= soma <= ic_max_95):
+                score -= 30  # Fora do IC95 - penalidade severa
+            elif not (ic_min_80 <= soma <= ic_max_80):
+                score -= 12  # Fora do IC80 mas dentro do IC95
+
+    # 3. Paridade (pares vs ímpares)
+    pares = sum(1 for n in numeros if n % 2 == 0)
+    if pares in [0, k]:
+        # Extremo: todos pares ou todos ímpares - penalidade severa
+        score -= 30
+    elif pares < k * 0.15 or pares > k * 0.85:
+        # Muito desequilibrado (ex: 2/15 ou 13/15 para Lotofácil)
+        score -= 12
+    elif pares < k * 0.25 or pares > k * 0.75:
+        # Desequilibrado
+        score -= 8
+
+    # 4. Entropia (detecta sequências e PAs)
+    penalidade_entropia = 0
+    if k >= 3:
+        gaps = [numeros_sorted[i + 1] - numeros_sorted[i] for i in range(k - 1)]
+        unique_gaps = len(set(gaps))
+
+        # Todos os gaps iguais = PA perfeita (muito previsível)
+        if unique_gaps == 1:
+            penalidade_entropia = 30
+        # Poucos gaps únicos = padrão repetitivo
+        elif unique_gaps <= 2 and k >= 6:
+            penalidade_entropia = 15
+
+        # Detecta sequências longas (consecutivos)
+        max_seq = 1
+        current_seq = 1
+        for g in gaps:
+            if g == 1:
+                current_seq += 1
+                max_seq = max(max_seq, current_seq)
+            else:
+                current_seq = 1
+
+        # Usa a MAIOR penalidade entre entropia e sequência (evita dupla contagem)
+        penalidade_seq = 0
+        if max_seq >= 5:
+            penalidade_seq = 12
+        elif max_seq >= 4:
+            penalidade_seq = 6
+
+        score -= max(penalidade_entropia, penalidade_seq)
+
+    # 5. Span mínimo
+    span = numeros_sorted[-1] - numeros_sorted[0]
+    span_minimo = config.n_numbers * 0.35
+    if span < span_minimo:
+        score -= 20
+    elif span < config.n_numbers * 0.45:
+        score -= 10
+
+    # 6. Finais repetidos (vício de terminal)
+    finais = [n % 10 for n in numeros]
+    contagem_finais = Counter(finais)
+    max_final = max(contagem_finais.values()) if contagem_finais else 0
+
+    # Penalidade calibrada para o tamanho do jogo
+    limite_final_error = max(4, int(k * 0.35))
+    limite_final_alert = max(3, int(k * 0.25))
+
+    if max_final >= limite_final_error:
+        score -= 18
+    elif max_final >= limite_final_alert:
+        score -= 8
+
+    # 7. Metades (Superior/Inferior)
+    meio = config.n_numbers // 2
+    superior = sum(1 for n in numeros if n <= meio)
+    inferior = k - superior
+
+    if superior == 0 or inferior == 0:
+        score -= 25
+    elif abs(superior - inferior) >= k * 0.6:
+        score -= 12
+
+    # 8. Concentração em linhas (se layout disponível)
+    layout = config.layout
+    if layout and layout.rows > 0 and layout.cols > 0:
+        contagem_linhas = [0] * layout.rows
+        for num in numeros:
+            if 1 <= num <= config.n_numbers:
+                linha_idx = (num - 1) // layout.cols
+                if 0 <= linha_idx < layout.rows:
+                    contagem_linhas[linha_idx] += 1
+
+        max_linha = max(contagem_linhas) if contagem_linhas else 0
+        limite_linha = max(4, int(k * 0.45))
+
+        if max_linha >= limite_linha:
+            score -= 12
+
+    # 9. Números sortudos em excesso (risco de divisão)
+    # Nota: Penalidade moderada - o validador completo considera mais fatores
+    sortudos = {7, 3, 13, 21, 33, 11, 27, 9}
+    qtd_sortudos = len(set(numeros) & sortudos)
+    if qtd_sortudos >= 6:
+        score -= 10
+    elif qtd_sortudos >= 5:
+        score -= 5
+
+    # 10. Múltiplos dominantes
+    for d in [5, 10, 3]:
+        multiplos = sum(1 for n in numeros if n % d == 0)
+        fracao = multiplos / k
+        if fracao >= 0.7:
+            score -= 12
+            break
+        elif fracao >= 0.55:
+            score -= 6
+            break
+
+    # Garante que o score fique entre 0 e 100
+    return max(0, min(100, score))
+
+
 # ===== FUNÇÃO PRINCIPAL =====
 
 
