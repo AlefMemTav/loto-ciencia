@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-from app.core.generator_objective import score_plausibility_batch
+from app.core.generator_objective import (
+    portfolio_diagnostics,
+    score_plausibility_batch,
+)
 from app.core.lottery.catalog import MEGASENA
 from app.services.lottery_service import LotteryService
 
@@ -109,3 +112,58 @@ def test_sparse_portfolio_caps_number_exposure():
             exposure[number] = exposure.get(number, 0) + 1
 
     assert max(exposure.values()) <= 2
+
+
+def test_tail_controlled_strategy_caps_exposure_and_pairs():
+    ctx = _ctx()
+    service = LotteryService()
+
+    games = service.generate(
+        MEGASENA.slug,
+        {
+            "quantidade": 20,
+            "estrategia": "cauda_controlada",
+            "seed": 99,
+            "null_model_samples": 1000,
+        },
+        ctx=ctx,
+    )
+
+    diag = portfolio_diagnostics(games, MEGASENA, ctx.matriz_coocorrencia)
+
+    assert len(games) == 20
+    assert diag["max_exposicao"] <= 5
+    assert diag["max_repeticao_par"] <= 3
+    assert diag["overlap_max"] <= MEGASENA.get_overlap_limit()
+
+
+def test_real_game_mode_returns_auditable_package_without_validator(monkeypatch):
+    ctx = _ctx()
+    service = LotteryService()
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("validator must not select real-game packages")
+
+    monkeypatch.setattr("app.services.lottery_service.validar_jogo", fail_if_called)
+
+    result = service.generate_real_game(
+        MEGASENA.slug,
+        {
+            "quantidade": 2,
+            "perfil_esforco": "rapido",
+            "estrategia_base": "agressiva",
+            "seed": 123,
+            "candidate_pool_size": 16,
+            "tournament_packages": 10,
+            "monte_carlo_packages": 20,
+            "null_model_samples": 1000,
+        },
+        ctx=ctx,
+    )
+
+    assert len(result["jogos"]) == 2
+    assert all(len(game) == MEGASENA.bet_size for game in result["jogos"])
+    assert result["relatorio"]["modo"] == "jogo_real"
+    assert result["relatorio"]["seed"] == 123
+    assert 0 <= result["relatorio"]["percentil_vs_monte_carlo"] <= 100
+    assert 0 <= result["relatorio"]["p_empirico_mc_supera_ou_iguala"] <= 1

@@ -67,6 +67,7 @@ def gerar_jogos_vetorizado(
     percentil_min: float = 5.0,
     percentil_max: float = 95.0,
     null_model_samples: int = None,
+    candidate_multiplier: int = 4000,
 ) -> List[List[int]]:
 
     rng = np.random.default_rng(seed)
@@ -109,7 +110,7 @@ def gerar_jogos_vetorizado(
         z_gap[dest_indices] = vals_gap[mask_safe]
 
     # Aplica estratégia
-    if estrategia == "agressiva":
+    if estrategia in ("agressiva", "cauda_controlada"):
         scores_final = (z_gap * 0.55 * usar_atrasados) + (
             z_freq * 0.45 * usar_quentes
         )
@@ -180,6 +181,7 @@ def gerar_jogos_vetorizado(
             "conservadora": 1.15,
             "balanceada": 1.35,
             "agressiva": 1.45,
+            "cauda_controlada": 1.55,
             "pura": 2.0,
         }.get(estrategia, 1.35)
     temperatura = max(float(temperatura), 0.2)
@@ -213,7 +215,8 @@ def gerar_jogos_vetorizado(
     candidatos_acumulados = []
     attempts = 0
     max_attempts = 8
-    batch = max(buffer_size, quantidade * 4000)
+    candidate_multiplier = max(100, int(candidate_multiplier))
+    batch = max(buffer_size, quantidade * candidate_multiplier)
 
     while attempts < max_attempts:
         attempts += 1
@@ -267,6 +270,7 @@ def gerar_jogos_vetorizado(
         quantidade,
         rng,
         estrategia=estrategia,
+        ctx=ctx,
     )
 
 

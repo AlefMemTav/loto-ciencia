@@ -17,6 +17,7 @@ from app.core.generator_fast import gerar_jogos_vetorizado
 from app.core.generator_genetic import gerar_jogos_geneticos
 from app.core.logger import logger
 from app.core.lottery import GAMES, GameConfig
+from app.core.real_game_mode import generate_real_game_package
 from app.core.statistics.clustering import clusterizar_jogos_kmeans
 from app.services.data_loader import carregar_dados_loteria_excel
 
@@ -402,6 +403,88 @@ class LotteryService:
         )
 
         return jogos[:qtd]
+
+    def generate_real_game(
+        self, slug: str, payload: dict, ctx: GameContext = None
+    ) -> dict:
+        if ctx is None:
+            ctx = self.get_context(slug)
+
+        qtd = int(payload.get("quantidade", 1))
+        perfil_esforco = payload.get("perfil_esforco", "forte")
+        estrategia_base = payload.get("estrategia_base") or payload.get(
+            "estrategia",
+            "agressiva",
+        )
+        seed = payload.get("seed", None)
+
+        fixos = sorted(set(payload.get("numeros_fixos") or []))
+        evitados = sorted(set(payload.get("numeros_evitados") or []))
+        if fixos and len(fixos) > ctx.config.bet_size:
+            raise ValueError("Quantidade de fixos maior que o tamanho do jogo.")
+        fora_range = [n for n in fixos + evitados if n < 1 or n > ctx.config.n_numbers]
+        if fora_range:
+            raise ValueError(f"Números fora do intervalo permitido: {fora_range}")
+        conflito = sorted(set(fixos) & set(evitados))
+        if conflito:
+            raise ValueError(f"Números não podem ser fixos e evitados: {conflito}")
+        vagas = ctx.config.bet_size - len(fixos)
+        disponiveis = ctx.config.n_numbers - len(fixos) - len(evitados)
+        if disponiveis < vagas:
+            raise ValueError("Restrições impossibilitam preencher o jogo.")
+
+        percentil_min = float(payload.get("percentil_min", 5.0))
+        percentil_max = float(payload.get("percentil_max", 95.0))
+        if not (0 <= percentil_min < percentil_max <= 100):
+            raise ValueError("Faixa de percentis deve satisfazer 0 <= min < max <= 100.")
+
+        if estrategia_base == "pura":
+            usar_quentes = False
+            usar_atrasados = False
+            usar_markov = False
+            usar_ciclo = False
+            usar_coocorrencia = False
+            frequencia_recente = False
+            historical_signal_strength = 0.0
+        else:
+            usar_quentes = bool(payload.get("usar_quentes", True)) and bool(
+                payload.get("frequencia_recente", True)
+            )
+            usar_atrasados = bool(payload.get("usar_atrasados", True))
+            usar_markov = bool(payload.get("usar_markov", True))
+            usar_ciclo = bool(payload.get("usar_ciclo", True))
+            usar_coocorrencia = bool(payload.get("usar_coocorrencia", True))
+            frequencia_recente = bool(payload.get("frequencia_recente", True))
+            historical_signal_strength = float(
+                payload.get("historical_signal_strength", 1.0)
+            )
+
+        options = {
+            "numeros_fixos": fixos,
+            "numeros_evitados": evitados,
+            "temperatura": payload.get("temperatura", None),
+            "usar_quentes": usar_quentes,
+            "usar_atrasados": usar_atrasados,
+            "usar_markov": usar_markov,
+            "usar_ciclo": usar_ciclo,
+            "usar_coocorrencia": usar_coocorrencia,
+            "frequencia_recente": frequencia_recente,
+            "historical_signal_strength": historical_signal_strength,
+            "percentil_min": percentil_min,
+            "percentil_max": percentil_max,
+            "null_model_samples": payload.get("null_model_samples", None),
+            "candidate_pool_size": payload.get("candidate_pool_size", None),
+            "tournament_packages": payload.get("tournament_packages", None),
+            "monte_carlo_packages": payload.get("monte_carlo_packages", None),
+        }
+        return generate_real_game_package(
+            ctx=ctx,
+            quantidade=qtd,
+            perfil_esforco=perfil_esforco,
+            estrategia_base=estrategia_base,
+            seed=seed,
+            payload_options=options,
+        )
 
     # Substitua apenas o método generate_genetic existente por este trecho.
     def generate_genetic(

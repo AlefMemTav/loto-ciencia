@@ -7,10 +7,14 @@ chamar o validador nem perseguir o score exibido ao usuário.
 
 from __future__ import annotations
 
+from itertools import combinations
 import numpy as np
 
 from app.core.ticket_features import extract_ticket_features_batch
 from app.core.statistics.feature_percentiles import batch_feature_percentiles
+
+
+TAIL_CONTROLLED = "cauda_controlada"
 
 
 def score_plausibility_batch(
@@ -68,18 +72,24 @@ def score_plausibility_batch(
         "compressibilidade_simples": 1.7,
     }
 
-    def _central_score(pct: np.ndarray, weight: float) -> np.ndarray:
+    def _bounds_for(metric: str) -> tuple[float, float]:
+        if estrategia == TAIL_CONTROLLED and metric in {"soma", "span", "gap_medio"}:
+            return 4.0, 96.0
+        return percentil_min, percentil_max
+
+    def _central_score(
+        pct: np.ndarray, weight: float, metric: str
+    ) -> np.ndarray:
+        lower, upper = _bounds_for(metric)
         center = 1.0 - np.abs(pct - 50.0) / 50.0
-        outside_low = np.maximum(0.0, percentil_min - pct) / max(1.0, percentil_min)
-        outside_high = np.maximum(0.0, pct - percentil_max) / max(
-            1.0, 100.0 - percentil_max
-        )
+        outside_low = np.maximum(0.0, lower - pct) / max(1.0, lower)
+        outside_high = np.maximum(0.0, pct - upper) / max(1.0, 100.0 - upper)
         return (center * weight) - ((outside_low + outside_high) * weight * 1.8)
 
     for metric, weight in central_weights.items():
         pct = percentiles.get(metric)
         if pct is not None:
-            scores += _central_score(pct, weight)
+            scores += _central_score(pct, weight, metric)
 
     for metric, weight in high_bad_weights.items():
         pct = percentiles.get(metric)
@@ -125,7 +135,23 @@ def score_plausibility_batch(
             cooc = _calcular_scores_coocorrencia_batch(indices, matriz)
             std = cooc.std()
             cooc_z = np.zeros_like(cooc) if std < 1e-9 else (cooc - cooc.mean()) / std
-            scores += np.clip(cooc_z, -1.5, 1.5) * 0.35 * historical_signal_strength
+            if estrategia == TAIL_CONTROLLED:
+                scores += (
+                    np.clip(cooc_z, -1.0, 2.0)
+                    * 0.25
+                    * historical_signal_strength
+                )
+                scores -= (
+                    np.maximum(0.0, cooc_z - 2.0)
+                    * 0.45
+                    * historical_signal_strength
+                )
+            else:
+                scores += (
+                    np.clip(cooc_z, -1.5, 1.5)
+                    * 0.35
+                    * historical_signal_strength
+                )
 
     historico = getattr(ctx, "historico_set", None) or set()
     if k == config.k and historico:
@@ -143,6 +169,7 @@ def select_diverse_portfolio(
     quantidade: int,
     rng: np.random.Generator | None = None,
     estrategia: str = "balanceada",
+    ctx=None,
 ) -> list[list[int]]:
     """Seleciona os melhores candidatos preservando diversidade do portfólio."""
     if rng is None:
@@ -156,6 +183,16 @@ def select_diverse_portfolio(
     scores = scores[finite_mask]
     if len(candidates) == 0:
         return []
+
+    if estrategia == TAIL_CONTROLLED:
+        return _select_tail_controlled_portfolio(
+            candidates=candidates,
+            scores=scores,
+            config=config,
+            quantidade=quantidade,
+            rng=rng,
+            ctx=ctx,
+        )
 
     noise_scale = {
         "conservadora": 0.55,
@@ -248,3 +285,260 @@ def select_diverse_portfolio(
             _add(row)
 
     return [row.tolist() for row in selected[:quantidade]]
+
+
+def _feature_key_from_values(feature_values: dict[str, np.ndarray], idx: int) -> tuple:
+    return (
+        int(feature_values["soma"][idx] // 15),
+        int(feature_values["pares"][idx]),
+        int(feature_values["span"][idx] // 8),
+        int(feature_values["gap_medio"][idx] // 3),
+    )
+
+
+def _pair_keys(row: np.ndarray) -> list[tuple[int, int]]:
+    nums = [int(n) for n in row.tolist()]
+    return [tuple(pair) for pair in combinations(nums, 2)]
+
+
+def _cooccurrence_z(candidates: np.ndarray, ctx) -> np.ndarray:
+    if ctx is None:
+        return np.zeros(len(candidates), dtype=float)
+
+    matriz = getattr(ctx, "matriz_coocorrencia", None)
+    n = getattr(getattr(ctx, "config", None), "n_numbers", None)
+    if (
+        matriz is None
+        or not hasattr(matriz, "shape")
+        or n is None
+        or matriz.shape != (n, n)
+    ):
+        return np.zeros(len(candidates), dtype=float)
+
+    from app.core.generator_fast import _calcular_scores_coocorrencia_batch
+
+    cooc = _calcular_scores_coocorrencia_batch(candidates - 1, matriz)
+    std = cooc.std()
+    if std < 1e-9:
+        return np.zeros_like(cooc, dtype=float)
+    return (cooc - cooc.mean()) / std
+
+
+def _select_tail_controlled_portfolio(
+    candidates: np.ndarray,
+    scores: np.ndarray,
+    config,
+    quantidade: int,
+    rng: np.random.Generator,
+    ctx=None,
+) -> list[list[int]]:
+    """
+    Seleciona o portfólio como conjunto.
+
+    Esta estratégia preserva plausibilidade individual, mas adiciona ganho
+    marginal por cluster controlado e penaliza redundância que não aumenta
+    cobertura real do pacote.
+    """
+    noise = rng.gumbel(0.0, 0.65, size=len(scores))
+    score_std = scores.std()
+    score_z = (
+        np.zeros_like(scores)
+        if score_std < 1e-9
+        else (scores - scores.mean()) / score_std
+    )
+    cooc_z = _cooccurrence_z(candidates, ctx)
+    base_rank = score_z + np.clip(cooc_z, -1.0, 2.0) * 0.20 + noise
+    order = np.argsort(base_rank)[::-1]
+
+    pool_size = min(len(order), max(quantidade * 350, 1200))
+    order = order[:pool_size]
+    ordered = candidates[order]
+    ordered_score_z = score_z[order]
+    ordered_cooc_z = cooc_z[order]
+    feature_values = extract_ticket_features_batch(ordered, config)
+
+    selected: list[np.ndarray] = []
+    seen: set[tuple[int, ...]] = set()
+    exposure: dict[int, int] = {}
+    pair_exposure: dict[tuple[int, int], int] = {}
+    feature_exposure: dict[tuple, int] = {}
+
+    overlap_limit = config.get_overlap_limit()
+    expected_exposure = quantidade * config.bet_size / max(1, config.n_numbers)
+    soft_target = max(2, int(np.ceil(expected_exposure * 1.25)))
+    hard_cap = max(2, int(np.ceil(expected_exposure * 2.5)))
+    if getattr(config, "slug", "") == "mega_sena_sorteio" and quantidade >= 20:
+        hard_cap = 5
+
+    def _would_break_hard_caps(row: np.ndarray) -> bool:
+        if any(exposure.get(int(n), 0) >= hard_cap for n in row):
+            return True
+        return any(pair_exposure.get(pair, 0) >= 3 for pair in _pair_keys(row))
+
+    def _overlap_penalty(row: np.ndarray) -> float:
+        if not selected:
+            return 0.0
+        s = set(row.tolist())
+        penalty = 0.0
+        for prev in selected:
+            common = len(s.intersection(set(prev.tolist())))
+            if common > overlap_limit:
+                return 1e6
+            penalty += max(0, common - 2) ** 2
+        return penalty * 0.0
+
+    def _marginal_score(idx: int, row: np.ndarray) -> float:
+        feature_key = _feature_key_from_values(feature_values, idx)
+        pairs = _pair_keys(row)
+        number_reuse_bonus = sum(
+            min(exposure.get(int(n), 0), 2) for n in row
+        ) * 0.0
+        pair_reuse_bonus = sum(
+            1 for pair in pairs if 0 < pair_exposure.get(pair, 0) < 3
+        ) * 0.0
+        feature_reuse_bonus = min(feature_exposure.get(feature_key, 0), 2) * 0.0
+        exposure_penalty = sum(
+            max(0, exposure.get(int(n), 0) + 1 - soft_target) for n in row
+        ) * 0.06
+        pair_penalty = sum(
+            max(0, pair_exposure.get(pair, 0) - 1) for pair in pairs
+        ) * 0.01
+        feature_penalty = feature_exposure.get(feature_key, 0) * 0.0
+        cluster_bonus = np.clip(ordered_cooc_z[idx], -1.0, 2.0) * 0.18
+        return (
+            ordered_score_z[idx]
+            + cluster_bonus
+            + number_reuse_bonus
+            + pair_reuse_bonus
+            + feature_reuse_bonus
+            - exposure_penalty
+            - pair_penalty
+            - feature_penalty
+            - _overlap_penalty(row)
+        )
+
+    remaining = set(range(len(ordered)))
+    while len(selected) < quantidade and remaining:
+        best_idx = None
+        best_score = -np.inf
+        for idx in list(remaining):
+            row = ordered[idx]
+            t = tuple(row.tolist())
+            if t in seen or _would_break_hard_caps(row):
+                remaining.discard(idx)
+                continue
+            marginal = _marginal_score(idx, row)
+            if marginal > best_score:
+                best_score = marginal
+                best_idx = idx
+
+        if best_idx is None:
+            break
+
+        row = ordered[best_idx].copy()
+        selected.append(row)
+        seen.add(tuple(row.tolist()))
+        remaining.discard(best_idx)
+        feature_key = _feature_key_from_values(feature_values, best_idx)
+        feature_exposure[feature_key] = feature_exposure.get(feature_key, 0) + 1
+        for n in row:
+            nn = int(n)
+            exposure[nn] = exposure.get(nn, 0) + 1
+        for pair in _pair_keys(row):
+            pair_exposure[pair] = pair_exposure.get(pair, 0) + 1
+
+    if len(selected) < quantidade:
+        for idx, row in enumerate(ordered):
+            if len(selected) >= quantidade:
+                break
+            t = tuple(row.tolist())
+            if t in seen or _would_break_hard_caps(row):
+                continue
+            selected.append(row.copy())
+            seen.add(t)
+            for n in row:
+                nn = int(n)
+                exposure[nn] = exposure.get(nn, 0) + 1
+            for pair in _pair_keys(row):
+                pair_exposure[pair] = pair_exposure.get(pair, 0) + 1
+
+    return [row.tolist() for row in selected[:quantidade]]
+
+
+def portfolio_diagnostics(
+    games: list[list[int]] | np.ndarray,
+    config,
+    matriz_coocorrencia=None,
+) -> dict:
+    """Resume concentração e diversidade de um pacote de jogos."""
+    if games is None or len(games) == 0:
+        return {}
+
+    arr = np.asarray(games, dtype=int)
+    if arr.ndim != 2:
+        return {}
+
+    exposure = {str(n): 0 for n in range(1, config.n_numbers + 1)}
+    for row in arr:
+        for n in row:
+            exposure[str(int(n))] += 1
+    used_counts = np.array([v for v in exposure.values() if v > 0], dtype=float)
+    top_dezenas = sorted(
+        ((int(k), int(v)) for k, v in exposure.items() if v > 0),
+        key=lambda item: (-item[1], item[0]),
+    )[:10]
+
+    overlaps = []
+    pair_counts: dict[tuple[int, int], int] = {}
+    for i, row in enumerate(arr):
+        row_set = set(row.tolist())
+        for other in arr[i + 1 :]:
+            overlaps.append(len(row_set.intersection(set(other.tolist()))))
+        for pair in _pair_keys(row):
+            pair_counts[pair] = pair_counts.get(pair, 0) + 1
+
+    repeated_pairs = [count for count in pair_counts.values() if count > 1]
+    features = extract_ticket_features_batch(arr, config)
+    feature_summary = {}
+    for metric in ("soma", "span", "pares", "gap_medio"):
+        vals = features.get(metric)
+        if vals is None or len(vals) == 0:
+            continue
+        feature_summary[metric] = {
+            "media": round(float(np.mean(vals)), 4),
+            "desvio": round(float(np.std(vals)), 4),
+            "min": round(float(np.min(vals)), 4),
+            "max": round(float(np.max(vals)), 4),
+        }
+
+    cooc_media = 0.0
+    if (
+        matriz_coocorrencia is not None
+        and hasattr(matriz_coocorrencia, "shape")
+        and matriz_coocorrencia.shape == (config.n_numbers, config.n_numbers)
+    ):
+        from app.core.generator_fast import _calcular_scores_coocorrencia_batch
+
+        cooc_scores = _calcular_scores_coocorrencia_batch(arr - 1, matriz_coocorrencia)
+        cooc_media = float(np.mean(cooc_scores)) if len(cooc_scores) else 0.0
+
+    return {
+        "exposicao_dezenas": exposure,
+        "top_dezenas": [{"dezena": n, "vezes": v} for n, v in top_dezenas],
+        "max_exposicao": int(max(exposure.values()) if exposure else 0),
+        "media_exposicao_usadas": round(float(np.mean(used_counts)), 4)
+        if len(used_counts)
+        else 0.0,
+        "desvio_exposicao_usadas": round(float(np.std(used_counts)), 4)
+        if len(used_counts)
+        else 0.0,
+        "overlap_medio": round(float(np.mean(overlaps)), 4) if overlaps else 0.0,
+        "overlap_max": int(max(overlaps) if overlaps else 0),
+        "pares_repetidos": int(len(repeated_pairs)),
+        "pares_repetidos_acima_2": int(
+            sum(1 for count in repeated_pairs if count > 2)
+        ),
+        "max_repeticao_par": int(max(pair_counts.values()) if pair_counts else 0),
+        "coocorrencia_media": round(cooc_media, 4),
+        "dispersao_features": feature_summary,
+    }

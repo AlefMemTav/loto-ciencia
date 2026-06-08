@@ -73,7 +73,7 @@ def render_generator(ctx, svc):
             qtd = st.slider(
                 "Quantidade de Jogos a Minerar:",
                 min_value=1,
-                max_value=10,
+                max_value=20,
                 value=5,
                 step=1,
                 on_change=limpar_sessao,
@@ -82,21 +82,41 @@ def render_generator(ctx, svc):
         with col_strat:
             # Mapas de display para ficar mais amigável
             strat_display = {
-                "balanceada": "⚖️ Balanceada (Recomendada)",
+                "cauda_controlada": "🎯 Cauda Controlada (Experimental)",
+                "balanceada": "⚖️ Balanceada",
                 "conservadora": "🛡️ Conservadora (Frequentes)",
-                "agressiva": "🔥 Agressiva (Atrasados)",
+                "agressiva": "🔥 Agressiva (Recomendada)",
                 "pura": "🎲 Aleatória Pura (Caos)",
             }
+            strategy_options = [
+                "agressiva",
+                "cauda_controlada",
+                "balanceada",
+                "conservadora",
+                "pura",
+            ]
+            if slug != "mega_sena_sorteio":
+                strategy_options = [
+                    "balanceada",
+                    "conservadora",
+                    "agressiva",
+                    "cauda_controlada",
+                    "pura",
+                ]
+                strat_display["balanceada"] = "⚖️ Balanceada (Recomendada)"
+                strat_display["agressiva"] = "🔥 Agressiva (Atrasados)"
+                strat_display["cauda_controlada"] = "🎯 Cauda Controlada"
 
             strat_key = st.selectbox(
                 "Estratégia Matemática:",
-                options=["balanceada", "conservadora", "agressiva", "pura"],
+                options=strategy_options,
                 format_func=lambda x: strat_display[x],
                 on_change=limpar_sessao,
             )
 
         # Explicação dinâmica da estratégia selecionada
         info_strats = {
+            "cauda_controlada": "Parte da agressiva e otimiza o pacote final para concentrar sinal sem perder diversidade.",
             "balanceada": "Mistura frequência, atraso e plausibilidade estrutural sem deixar o portfólio ficar concentrado demais.",
             "conservadora": "Dá mais peso a números historicamente frequentes, mas com controles contra superconcentração.",
             "agressiva": "Dá mais espaço a atrasos e ciclos, mantendo freios contra falácia do apostador e padrões artificiais.",
@@ -104,25 +124,56 @@ def render_generator(ctx, svc):
         }
         st.info(f"💡 **Lógica:** {info_strats[strat_key]}")
 
-        st.markdown("##### Motor de Inteligência")
-
-        col_motor, col_info_motor = st.columns([3, 1])
-        with col_motor:
-            tipo_motor = st.radio(
-                "Escolha o algoritmo:",
-                ["⚡ Vetorial (Alta Performance)", "🧬 Genético (Evolutivo)"],
-                captions=[
-                    "Instantâneo. Amostra muitos candidatos e seleciona um portfólio plausível e diverso.",
-                    "Mais lento (5-10s). Evolui gerações buscando plausibilidade histórica e baixa compressibilidade.",
-                ],
-                index=0,
-                horizontal=True,
+        col_modo, col_esforco = st.columns([2, 1])
+        with col_modo:
+            modo_jogo_real = st.toggle(
+                "🎯 Modo Jogo Real",
+                value=False,
+                help="Roda um torneio de pacotes e compara o pacote escolhido contra Monte Carlo.",
                 on_change=limpar_sessao,
             )
+        with col_esforco:
+            if modo_jogo_real:
+                perfil_esforco = st.selectbox(
+                    "Esforço",
+                    options=["forte", "rapido", "maximo"],
+                    format_func=lambda x: {
+                        "rapido": "Rápido",
+                        "forte": "Forte",
+                        "maximo": "Máximo",
+                    }[x],
+                    on_change=limpar_sessao,
+                )
+            else:
+                perfil_esforco = "forte"
 
-        usar_genetico = "Genético" in tipo_motor
+        if modo_jogo_real:
+            st.caption(
+                "O Modo Jogo Real usa o motor vetorial, escolhe o pacote por torneio e registra seed/Monte Carlo para auditoria."
+            )
+            tipo_motor = "⚡ Vetorial (Modo Jogo Real)"
+            usar_genetico = False
+        else:
+            st.markdown("##### Motor de Inteligência")
+
+            col_motor, col_info_motor = st.columns([3, 1])
+            with col_motor:
+                tipo_motor = st.radio(
+                    "Escolha o algoritmo:",
+                    ["⚡ Vetorial (Alta Performance)", "🧬 Genético (Evolutivo)"],
+                    captions=[
+                        "Instantâneo. Amostra muitos candidatos e seleciona um portfólio plausível e diverso.",
+                        "Mais lento (5-10s). Evolui gerações buscando plausibilidade histórica e baixa compressibilidade.",
+                    ],
+                    index=0,
+                    horizontal=True,
+                    on_change=limpar_sessao,
+                )
+
+            usar_genetico = "Genético" in tipo_motor
 
     # --- RESTRIÇÕES AVANÇADAS ---
+    restrictions_ok = True
     with st.expander("Configurações Avançadas (Opcional)"):
         st.text(
             "Use apenas se souber o que está fazendo. Por padrão, o gerador já está configurado da forma como recomendamos que os jogos sejam gerados."
@@ -255,7 +306,7 @@ def render_generator(ctx, svc):
         # Mostra erro ou status
         if erro_validacao:
             st.error(erro_validacao)
-            can_use = False  # Bloqueia o botão
+            restrictions_ok = False
         else:
             # Feedback visual útil
             if nums_fixos or nums_evitados:
@@ -266,17 +317,21 @@ def render_generator(ctx, svc):
                 )
 
     # --- VERIFICAÇÃO DE ACESSO ---
-    can_use = AUTHClient.check_and_render_access("generator", "Gerador Inteligente")
+    has_access = AUTHClient.check_and_render_access("generator", "Gerador Inteligente")
+    can_use = has_access and restrictions_ok
 
     # --- BOTÃO DE AÇÃO ---
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Texto do botão muda conforme o motor para dar feedback claro
-    texto_botao = (
-        f"🧬 Evoluir {qtd} Jogos de Elite"
-        if usar_genetico
-        else f"⚡ Minerar {qtd} Jogos Rápidos"
-    )
+    if modo_jogo_real:
+        texto_botao = f"🎯 Gerar {qtd} Jogos Reais"
+    else:
+        texto_botao = (
+            f"🧬 Evoluir {qtd} Jogos de Elite"
+            if usar_genetico
+            else f"⚡ Minerar {qtd} Jogos Rápidos"
+        )
 
     btn_gerar = st.button(
         texto_botao,
@@ -294,6 +349,8 @@ def render_generator(ctx, svc):
         payload = {
             "quantidade": qtd,
             "estrategia": strat_key,
+            "estrategia_base": strat_key,
+            "perfil_esforco": perfil_esforco,
             "numeros_fixos": nums_fixos,
             "numeros_evitados": nums_evitados,
             "percentil_min": percentil_min,
@@ -308,9 +365,29 @@ def render_generator(ctx, svc):
         }
 
         try:
+            relatorio_jogo_real = None
             # --- RAMIFICAÇÃO: GENÉTICO vs VETORIAL ---
 
-            if usar_genetico:
+            if modo_jogo_real:
+                steps = [
+                    "Montando pool de candidatos...",
+                    "Pontuando plausibilidade...",
+                    "Disputando pacotes...",
+                    "Rodando Monte Carlo...",
+                    "Escolhendo pacote final...",
+                ]
+                for i, step in enumerate(steps):
+                    bar_text.text(f"🎯 {step}")
+                    bar.progress((i + 1) * 16)
+                    time.sleep(0.15)
+
+                resultado_real = svc.generate_real_game(slug, payload, None)
+                jogos = resultado_real["jogos"]
+                relatorio_jogo_real = resultado_real["relatorio"]
+                bar.progress(100)
+                bar_text.text("✅ Jogo Real concluído!")
+
+            elif usar_genetico:
                 bar_text.text("🧬 Inicializando Sopa Primordial...")
                 bar.progress(10)
 
@@ -362,7 +439,13 @@ def render_generator(ctx, svc):
                 "tempo": tempo_total,
                 "new": True,
                 "slug": slug,
-                "motor": ("Genético" if usar_genetico else "Vetorial"),
+                "motor": (
+                    "Jogo Real"
+                    if modo_jogo_real
+                    else ("Genético" if usar_genetico else "Vetorial")
+                ),
+                "modo_jogo_real": modo_jogo_real,
+                "relatorio_jogo_real": relatorio_jogo_real,
             }
             st.rerun()
 
@@ -383,7 +466,12 @@ def render_generator(ctx, svc):
             res["new"] = False
 
         _render_generated_games(
-            res["jogos"], res["estrategia"], config, svc, main_color
+            res["jogos"],
+            res["estrategia"],
+            config,
+            svc,
+            main_color,
+            relatorio_jogo_real=res.get("relatorio_jogo_real"),
         )
 
     st.markdown(
@@ -397,7 +485,14 @@ def render_generator(ctx, svc):
     )
 
 
-def _render_generated_games(jogos, estrategia, config, svc, color_theme):
+def _render_generated_games(
+    jogos,
+    estrategia,
+    config,
+    svc,
+    color_theme,
+    relatorio_jogo_real=None,
+):
     slug = config.slug
 
     st.markdown("---")
@@ -405,7 +500,48 @@ def _render_generated_games(jogos, estrategia, config, svc, color_theme):
 
     txt_out = f"LotoScience - Jogos Otimizados {config.name}\n"
     txt_out += f"Estratégia: {estrategia.upper()} | Data: {date.today().strftime('%d/%m/%Y')}\n"
+    if relatorio_jogo_real:
+        txt_out += (
+            f"Modo: JOGO REAL | Perfil: {relatorio_jogo_real.get('perfil_esforco')} | "
+            f"Seed: {relatorio_jogo_real.get('seed')}\n"
+        )
+        txt_out += (
+            f"Percentil vs MC: {relatorio_jogo_real.get('percentil_vs_monte_carlo')} | "
+            f"p_emp: {relatorio_jogo_real.get('p_empirico_mc_supera_ou_iguala')}\n"
+        )
     txt_out += "=" * 40 + "\n\n"
+
+    if relatorio_jogo_real:
+        st.markdown("#### 🎯 Relatório do Jogo Real")
+        with st.container(border=True):
+            r1, r2, r3, r4 = st.columns(4)
+            r1.metric(
+                "Percentil vs MC",
+                f"{relatorio_jogo_real.get('percentil_vs_monte_carlo', 0):.1f}",
+            )
+            r2.metric(
+                "p-empírico",
+                f"{relatorio_jogo_real.get('p_empirico_mc_supera_ou_iguala', 0):.3f}",
+            )
+            r3.metric("Seed", relatorio_jogo_real.get("seed", "-"))
+            r4.metric("Perfil", str(relatorio_jogo_real.get("perfil_esforco", "-")))
+
+            r5, r6, r7, r8 = st.columns(4)
+            r5.caption(
+                f"Pool: **{relatorio_jogo_real.get('candidate_pool_size', '-')}**"
+            )
+            r6.caption(
+                f"Torneio: **{relatorio_jogo_real.get('tournament_packages', '-')}**"
+            )
+            r7.caption(
+                f"Monte Carlo: **{relatorio_jogo_real.get('monte_carlo_packages', '-')}**"
+            )
+            r8.caption(
+                f"Modelo nulo: **{relatorio_jogo_real.get('null_model_samples', '-')}**"
+            )
+
+            with st.expander("Ver diagnóstico completo do pacote"):
+                st.json(relatorio_jogo_real)
 
     # Container principal dos resultados
     for i, jogo in enumerate(jogos, 1):

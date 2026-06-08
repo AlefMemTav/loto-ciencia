@@ -79,7 +79,13 @@ def main():
     parser.add_argument(
         "--estrategia",
         default="balanceada",
-        choices=["pura", "balanceada", "conservadora", "agressiva"],
+        choices=[
+            "pura",
+            "balanceada",
+            "conservadora",
+            "agressiva",
+            "cauda_controlada",
+        ],
         help="Estratégia do gerador a ser testada",
     )
 

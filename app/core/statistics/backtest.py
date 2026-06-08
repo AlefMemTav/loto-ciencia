@@ -209,6 +209,75 @@ def _resumir_dist_acertos(dist: Dict[str, float]) -> Dict[str, Any]:
     }
 
 
+def _novo_acumulador_portfolio(config: GameConfig) -> Dict[str, Any]:
+    return {
+        "n": 0,
+        "numeric": {},
+        "exposicao_dezenas": {str(n): 0.0 for n in range(1, config.n_numbers + 1)},
+    }
+
+
+def _flatten_numeric(prefix: str, data: Dict[str, Any], out: Dict[str, float]) -> None:
+    for key, value in data.items():
+        full_key = f"{prefix}.{key}" if prefix else str(key)
+        if key in {"exposicao_dezenas", "top_dezenas"}:
+            continue
+        if isinstance(value, dict):
+            _flatten_numeric(full_key, value, out)
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[full_key] = float(value)
+
+
+def _somar_diagnostico_portfolio(
+    acc: Dict[str, Any], diag: Dict[str, Any], peso: float = 1.0
+) -> None:
+    if not diag:
+        return
+
+    acc["n"] += float(peso)
+    numeric: Dict[str, float] = {}
+    _flatten_numeric("", diag, numeric)
+    for key, value in numeric.items():
+        acc["numeric"][key] = acc["numeric"].get(key, 0.0) + (value * peso)
+
+    for dezena, count in diag.get("exposicao_dezenas", {}).items():
+        acc["exposicao_dezenas"][str(dezena)] = (
+            acc["exposicao_dezenas"].get(str(dezena), 0.0) + (float(count) * peso)
+        )
+
+
+def _resumir_diagnostico_portfolio(acc: Dict[str, Any]) -> Dict[str, Any]:
+    n = float(acc.get("n", 0.0))
+    if n <= 0:
+        return {}
+
+    exposure = {
+        k: round(float(v), 4)
+        for k, v in sorted(
+            acc["exposicao_dezenas"].items(),
+            key=lambda item: int(item[0]),
+        )
+        if float(v) > 0
+    }
+    top_dezenas = sorted(
+        ((int(k), float(v)) for k, v in exposure.items()),
+        key=lambda item: (-item[1], item[0]),
+    )[:10]
+
+    return {
+        "medias": {
+            key: round(value / n, 6)
+            for key, value in sorted(acc.get("numeric", {}).items())
+        },
+        "exposicao_dezenas_total": exposure,
+        "top_dezenas_total": [
+            {"dezena": dezena, "vezes": round(vezes, 4)}
+            for dezena, vezes in top_dezenas
+        ],
+        "n_portfolios": round(n, 4),
+    }
+
+
 def _mc_gerar_jogos_numpy(
     rng: np.random.Generator, n_jogos: int, n_numbers: int, k: int
 ) -> List[List[int]]:
@@ -257,6 +326,7 @@ def executar_backtest_temporal(
     payload_overrides: Dict[str, Any] | None = None,
 ) -> Dict:
     from app.services.lottery_service import LotteryService
+    from app.core.generator_objective import portfolio_diagnostics
 
     logger.info(
         f"⏳ Backtest Científico ({config.name}) - Janelas: {n_janelas}, MC: {n_simulacoes_monte_carlo}"
@@ -318,6 +388,11 @@ def executar_backtest_temporal(
         "Vetorial": _nova_dist_acertos(config),
     }
     dist_acertos_esperado_mc = _nova_dist_acertos(config)
+    diag_portfolio = {
+        "Genetico": _novo_acumulador_portfolio(config),
+        "Vetorial": _novo_acumulador_portfolio(config),
+        "EsperadoMC": _novo_acumulador_portfolio(config),
+    }
 
     detalhes = []
 
@@ -356,6 +431,11 @@ def executar_backtest_temporal(
             _somar_dist_acertos(
                 dist_acertos_reais["Vetorial"], match_vet["distribuicao"]
             )
+            matriz_cooc = getattr(ctx_janela, "matriz_coocorrencia", None)
+            diag_gen = portfolio_diagnostics(jogos_gen, config, matriz_cooc)
+            diag_vet = portfolio_diagnostics(jogos_vet, config, matriz_cooc)
+            _somar_diagnostico_portfolio(diag_portfolio["Genetico"], diag_gen)
+            _somar_diagnostico_portfolio(diag_portfolio["Vetorial"], diag_vet)
 
         except Exception as e:
             logger.error(f"[Backtest] Erro no corte {corte}: {e}")
@@ -387,6 +467,16 @@ def executar_backtest_temporal(
                 mc_hits_janela[k] += h_mc.get(k, 0)
             _somar_dist_acertos(
                 mc_dist_acertos_janela, match_mc["distribuicao"]
+            )
+            diag_mc = portfolio_diagnostics(
+                jogos_mc,
+                config,
+                getattr(ctx_janela, "matriz_coocorrencia", None),
+            )
+            _somar_diagnostico_portfolio(
+                diag_portfolio["EsperadoMC"],
+                diag_mc,
+                peso=1.0 / max(1, n_simulacoes_monte_carlo),
             )
 
         media_mc = float(np.mean(mc_scores))
@@ -451,6 +541,22 @@ def executar_backtest_temporal(
                 "max_acertos_mc_medio": round(float(np.mean(mc_max_acertos)), 4),
                 "p_emp_media_acertos_gen": round(p_media_gen, 4),
                 "p_emp_media_acertos_vet": round(p_media_vet, 4),
+                "portfolio_gen": {
+                    "max_exposicao": diag_gen.get("max_exposicao", 0),
+                    "overlap_medio": diag_gen.get("overlap_medio", 0),
+                    "pares_repetidos": diag_gen.get("pares_repetidos", 0),
+                    "pares_repetidos_acima_2": diag_gen.get(
+                        "pares_repetidos_acima_2", 0
+                    ),
+                },
+                "portfolio_vet": {
+                    "max_exposicao": diag_vet.get("max_exposicao", 0),
+                    "overlap_medio": diag_vet.get("overlap_medio", 0),
+                    "pares_repetidos": diag_vet.get("pares_repetidos", 0),
+                    "pares_repetidos_acima_2": diag_vet.get(
+                        "pares_repetidos_acima_2", 0
+                    ),
+                },
             }
         )
 
@@ -556,6 +662,11 @@ def executar_backtest_temporal(
             "Genetico": _resumir_dist_acertos(dist_acertos_reais["Genetico"]),
             "Vetorial": _resumir_dist_acertos(dist_acertos_reais["Vetorial"]),
             "EsperadoMC": _resumir_dist_acertos(dist_acertos_esperado_mc),
+        },
+        "diagnostico_portfolio": {
+            "Genetico": _resumir_diagnostico_portfolio(diag_portfolio["Genetico"]),
+            "Vetorial": _resumir_diagnostico_portfolio(diag_portfolio["Vetorial"]),
+            "EsperadoMC": _resumir_diagnostico_portfolio(diag_portfolio["EsperadoMC"]),
         },
         "detalhes_janelas": detalhes,
     }
