@@ -7,7 +7,7 @@ Pontuação adaptativa por jogo (Lotomania, Quina, etc).
 
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Tuple
+from typing import Any, List, Dict, Tuple
 
 from app.core.lottery import GameConfig
 from app.core.logger import logger
@@ -41,7 +41,7 @@ def _extrair_draw_cols(df: pd.DataFrame, config: GameConfig) -> List[str]:
 
 def _contar_hits_e_score(
     lista_jogos: List[List[int]], gabarito: np.ndarray, config: GameConfig
-) -> Tuple[int, Dict[str, int]]:
+) -> Tuple[int, Dict[str, int], Dict[str, Any]]:
     """
     Score adaptativo por jogo.
     Retorna Score Total (para cálculo do Delta) e Hits Absolutos.
@@ -69,6 +69,8 @@ def _contar_hits_e_score(
 
     g_sets = [set(row.tolist()) for row in gabarito]
     slug = config.slug
+    match_distribution = {str(i): 0 for i in range(config.bet_size + 1)}
+    max_acertos = 0
 
     is_lotomania = "loto_mania_sorteio" in slug
     is_lotofacil = "loto_facil_sorteio" in slug
@@ -78,6 +80,10 @@ def _contar_hits_e_score(
         s_jogo = set(jogo)
         for s_real in g_sets:
             acertos = len(s_jogo.intersection(s_real))
+            match_distribution[str(acertos)] = (
+                match_distribution.get(str(acertos), 0) + 1
+            )
+            max_acertos = max(max_acertos, acertos)
 
             if is_lotomania:
                 # Lotomania: Paga 20, 19, 18, 17, 16, 15 e 0
@@ -156,7 +162,51 @@ def _contar_hits_e_score(
                     hits["4"] += 1
                     score_total += 100
 
-    return score_total, hits
+    total_comparacoes = max(1, len(lista_jogos) * len(g_sets))
+    soma_acertos = sum(int(k) * v for k, v in match_distribution.items())
+    match_stats = {
+        "distribuicao": match_distribution,
+        "media_acertos": float(soma_acertos / total_comparacoes),
+        "max_acertos": int(max_acertos),
+        "comparacoes": int(total_comparacoes),
+    }
+
+    return score_total, hits, match_stats
+
+
+def _nova_dist_acertos(config: GameConfig) -> Dict[str, float]:
+    return {str(i): 0.0 for i in range(config.bet_size + 1)}
+
+
+def _somar_dist_acertos(destino: Dict[str, float], origem: Dict[str, Any]) -> None:
+    for k, v in origem.items():
+        destino[str(k)] = destino.get(str(k), 0.0) + float(v)
+
+
+def _resumir_dist_acertos(dist: Dict[str, float]) -> Dict[str, Any]:
+    total = float(sum(dist.values()))
+    if total <= 0:
+        return {
+            "distribuicao": {
+                k: round(v, 4)
+                for k, v in sorted(dist.items(), key=lambda x: int(x[0]))
+            },
+            "media_acertos": 0.0,
+            "max_acertos_observado": 0,
+            "comparacoes": 0,
+        }
+
+    soma_acertos = sum(int(k) * float(v) for k, v in dist.items())
+    max_obs = max((int(k) for k, v in dist.items() if float(v) > 0), default=0)
+    return {
+        "distribuicao": {
+            k: round(float(v), 4)
+            for k, v in sorted(dist.items(), key=lambda x: int(x[0]))
+        },
+        "media_acertos": round(float(soma_acertos / total), 6),
+        "max_acertos_observado": int(max_obs),
+        "comparacoes": round(total, 4),
+    }
 
 
 def _mc_gerar_jogos_numpy(
@@ -204,6 +254,7 @@ def executar_backtest_temporal(
     seed: int = 42,
     n_bootstrap: int = 2000,
     estrategia: str = "balanceada",
+    payload_overrides: Dict[str, Any] | None = None,
 ) -> Dict:
     from app.services.lottery_service import LotteryService
 
@@ -222,13 +273,20 @@ def executar_backtest_temporal(
         return {"erro": "Não foi possível gerar janelas de teste."}
 
     rng_global = np.random.default_rng(seed)
+    payload_overrides = dict(payload_overrides or {})
 
     deltas_gen = []
     deltas_vet = []
+    deltas_media_acertos_gen = []
+    deltas_media_acertos_vet = []
     pvals_gen = []
     pvals_vet = []
+    pvals_media_acertos_gen = []
+    pvals_media_acertos_vet = []
     wins_gen = 0
     wins_vet = 0
+    wins_media_acertos_gen = 0
+    wins_media_acertos_vet = 0
     n_janelas_validas = 0
 
     # Inicializa acumuladores de hits (chaves relevantes)
@@ -255,6 +313,11 @@ def executar_backtest_temporal(
         "Vetorial": {k: 0 for k in keys_hits},
     }
     hits_esperado_mc = {k: 0.0 for k in keys_hits}
+    dist_acertos_reais = {
+        "Genetico": _nova_dist_acertos(config),
+        "Vetorial": _nova_dist_acertos(config),
+    }
+    dist_acertos_esperado_mc = _nova_dist_acertos(config)
 
     detalhes = []
 
@@ -269,16 +332,30 @@ def executar_backtest_temporal(
 
         try:
             ctx_janela = service.build_context_from_df(config, df_treino)
-            payload = {"quantidade": jogos_por_janela, "estrategia": estrategia}
+            payload = {
+                "quantidade": jogos_por_janela,
+                "estrategia": estrategia,
+                **payload_overrides,
+            }
             jogos_gen = service.generate_genetic(config.slug, payload, ctx=ctx_janela)
             jogos_vet = service.generate(config.slug, payload, ctx=ctx_janela)
 
-            score_gen, hits_gen = _contar_hits_e_score(jogos_gen, gabarito, config)
-            score_vet, hits_vet = _contar_hits_e_score(jogos_vet, gabarito, config)
+            score_gen, hits_gen, match_gen = _contar_hits_e_score(
+                jogos_gen, gabarito, config
+            )
+            score_vet, hits_vet, match_vet = _contar_hits_e_score(
+                jogos_vet, gabarito, config
+            )
 
             for k in keys_hits:
                 hits_reais["Genetico"][k] += hits_gen.get(k, 0)
                 hits_reais["Vetorial"][k] += hits_vet.get(k, 0)
+            _somar_dist_acertos(
+                dist_acertos_reais["Genetico"], match_gen["distribuicao"]
+            )
+            _somar_dist_acertos(
+                dist_acertos_reais["Vetorial"], match_vet["distribuicao"]
+            )
 
         except Exception as e:
             logger.error(f"[Backtest] Erro no corte {corte}: {e}")
@@ -287,9 +364,12 @@ def executar_backtest_temporal(
         # Monte Carlo
         rng_janela = np.random.default_rng(seed + int(corte))
         mc_scores = np.zeros(n_simulacoes_monte_carlo, dtype=float)
+        mc_media_acertos = np.zeros(n_simulacoes_monte_carlo, dtype=float)
+        mc_max_acertos = np.zeros(n_simulacoes_monte_carlo, dtype=float)
 
         # Buffer temporário para hits MC desta janela
         mc_hits_janela = {k: 0 for k in keys_hits}
+        mc_dist_acertos_janela = _nova_dist_acertos(config)
 
         for i in range(n_simulacoes_monte_carlo):
             jogos_mc = _mc_gerar_jogos_numpy(
@@ -298,31 +378,55 @@ def executar_backtest_temporal(
                 n_numbers=config.n_numbers,
                 k=config.bet_size,
             )
-            s_mc, h_mc = _contar_hits_e_score(jogos_mc, gabarito, config)
+            s_mc, h_mc, match_mc = _contar_hits_e_score(jogos_mc, gabarito, config)
             mc_scores[i] = s_mc
+            mc_media_acertos[i] = match_mc["media_acertos"]
+            mc_max_acertos[i] = match_mc["max_acertos"]
 
             for k in keys_hits:
                 mc_hits_janela[k] += h_mc.get(k, 0)
+            _somar_dist_acertos(
+                mc_dist_acertos_janela, match_mc["distribuicao"]
+            )
 
         media_mc = float(np.mean(mc_scores))
 
         # Atualiza esperança matemática global
         for k in keys_hits:
             hits_esperado_mc[k] += mc_hits_janela[k] / n_simulacoes_monte_carlo
+        for k in dist_acertos_esperado_mc:
+            dist_acertos_esperado_mc[k] += (
+                mc_dist_acertos_janela[k] / n_simulacoes_monte_carlo
+            )
 
         delta_gen = float(score_gen - media_mc)
         delta_vet = float(score_vet - media_mc)
+        media_acertos_mc = float(np.mean(mc_media_acertos))
+        delta_media_acertos_gen = float(match_gen["media_acertos"] - media_acertos_mc)
+        delta_media_acertos_vet = float(match_vet["media_acertos"] - media_acertos_mc)
 
         p_gen = _p_empirico_supera_ou_iguala(mc_scores, score_gen)
         p_vet = _p_empirico_supera_ou_iguala(mc_scores, score_vet)
+        p_media_gen = _p_empirico_supera_ou_iguala(
+            mc_media_acertos, match_gen["media_acertos"]
+        )
+        p_media_vet = _p_empirico_supera_ou_iguala(
+            mc_media_acertos, match_vet["media_acertos"]
+        )
 
         wins_gen += int(score_gen > media_mc)
         wins_vet += int(score_vet > media_mc)
+        wins_media_acertos_gen += int(match_gen["media_acertos"] > media_acertos_mc)
+        wins_media_acertos_vet += int(match_vet["media_acertos"] > media_acertos_mc)
 
         deltas_gen.append(delta_gen)
         deltas_vet.append(delta_vet)
+        deltas_media_acertos_gen.append(delta_media_acertos_gen)
+        deltas_media_acertos_vet.append(delta_media_acertos_vet)
         pvals_gen.append(p_gen)
         pvals_vet.append(p_vet)
+        pvals_media_acertos_gen.append(p_media_gen)
+        pvals_media_acertos_vet.append(p_media_vet)
 
         n_janelas_validas += 1
 
@@ -337,6 +441,16 @@ def executar_backtest_temporal(
                 "delta_vet": round(delta_vet, 2),
                 "p_emp_gen": round(p_gen, 4),
                 "p_emp_vet": round(p_vet, 4),
+                "media_acertos_gen": round(match_gen["media_acertos"], 4),
+                "media_acertos_vet": round(match_vet["media_acertos"], 4),
+                "media_acertos_mc": round(media_acertos_mc, 4),
+                "delta_media_acertos_gen": round(delta_media_acertos_gen, 6),
+                "delta_media_acertos_vet": round(delta_media_acertos_vet, 6),
+                "max_acertos_gen": int(match_gen["max_acertos"]),
+                "max_acertos_vet": int(match_vet["max_acertos"]),
+                "max_acertos_mc_medio": round(float(np.mean(mc_max_acertos)), 4),
+                "p_emp_media_acertos_gen": round(p_media_gen, 4),
+                "p_emp_media_acertos_vet": round(p_media_vet, 4),
             }
         )
 
@@ -345,9 +459,17 @@ def executar_backtest_temporal(
 
     deltas_gen = np.array(deltas_gen)
     deltas_vet = np.array(deltas_vet)
+    deltas_media_acertos_gen = np.array(deltas_media_acertos_gen)
+    deltas_media_acertos_vet = np.array(deltas_media_acertos_vet)
 
     ic_gen = _bootstrap_ic95_media(deltas_gen, n_boot=n_bootstrap, rng=rng_global)
     ic_vet = _bootstrap_ic95_media(deltas_vet, n_boot=n_bootstrap, rng=rng_global)
+    ic_media_gen = _bootstrap_ic95_media(
+        deltas_media_acertos_gen, n_boot=n_bootstrap, rng=rng_global
+    )
+    ic_media_vet = _bootstrap_ic95_media(
+        deltas_media_acertos_vet, n_boot=n_bootstrap, rng=rng_global
+    )
 
     # Limpa keys zeradas do relatório final para não poluir
     def limpar_zeros(d):
@@ -385,6 +507,7 @@ def executar_backtest_temporal(
                 "seed": int(seed),
                 "bootstrap_reps": int(n_bootstrap),
                 "estrategia": estrategia,
+                "opcoes_gerador": payload_overrides,
             },
             "simulacoes_mc": n_simulacoes_monte_carlo,
         },
@@ -394,12 +517,32 @@ def executar_backtest_temporal(
                 "ic95_delta_medio": ic_gen,
                 "mediana_p_emp": round(float(np.median(np.array(pvals_gen))), 6),
                 "win_rate_vs_media_mc": round(wins_gen / n_janelas_validas, 4),
+                "delta_medio_acertos_vs_mc": round(
+                    float(np.mean(deltas_media_acertos_gen)), 6
+                ),
+                "ic95_delta_medio_acertos": ic_media_gen,
+                "mediana_p_emp_media_acertos": round(
+                    float(np.median(np.array(pvals_media_acertos_gen))), 6
+                ),
+                "win_rate_media_acertos_vs_mc": round(
+                    wins_media_acertos_gen / n_janelas_validas, 4
+                ),
             },
             "Vetorial": {
                 "delta_medio_vs_acaso": round(float(np.mean(deltas_vet)), 4),
                 "ic95_delta_medio": ic_vet,
                 "mediana_p_emp": round(float(np.median(np.array(pvals_vet))), 6),
                 "win_rate_vs_media_mc": round(wins_vet / n_janelas_validas, 4),
+                "delta_medio_acertos_vs_mc": round(
+                    float(np.mean(deltas_media_acertos_vet)), 6
+                ),
+                "ic95_delta_medio_acertos": ic_media_vet,
+                "mediana_p_emp_media_acertos": round(
+                    float(np.median(np.array(pvals_media_acertos_vet))), 6
+                ),
+                "win_rate_media_acertos_vs_mc": round(
+                    wins_media_acertos_vet / n_janelas_validas, 4
+                ),
             },
         },
         "hits_absolutos_reais": {
@@ -409,5 +552,10 @@ def executar_backtest_temporal(
         "hits_esperados_mc_media": limpar_zeros(
             {k: round(v, 2) for k, v in hits_esperado_mc.items()}
         ),
+        "diagnostico_acertos": {
+            "Genetico": _resumir_dist_acertos(dist_acertos_reais["Genetico"]),
+            "Vetorial": _resumir_dist_acertos(dist_acertos_reais["Vetorial"]),
+            "EsperadoMC": _resumir_dist_acertos(dist_acertos_esperado_mc),
+        },
         "detalhes_janelas": detalhes,
     }

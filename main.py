@@ -6,7 +6,9 @@ load_dotenv()
 
 from app.ui.views.landing import render_landing_page
 from app.ui.page_config import apply_page_config
+from app.ui.services.auth_client import AUTHClient
 
+AUTHClient.init()
 apply_page_config()
 
 

@@ -9,6 +9,10 @@ Versão 2.2: OTIMIZAÇÕES DE PERFORMANCE
 import numpy as np
 from typing import List
 from app.core.logger import logger
+from app.core.generator_objective import (
+    score_plausibility_batch,
+    select_diverse_portfolio,
+)
 
 
 def _calcular_scores_coocorrencia_batch(
@@ -53,20 +57,26 @@ def gerar_jogos_vetorizado(
     numeros_evitados: List[int] = None,
     buffer_size: int = 50000,
     seed: int = None,
+    temperatura: float = None,
+    usar_quentes: bool = True,
+    usar_atrasados: bool = True,
+    usar_markov: bool = True,
+    usar_ciclo: bool = True,
+    usar_coocorrencia: bool = True,
+    historical_signal_strength: float = 1.0,
+    percentil_min: float = 5.0,
+    percentil_max: float = 95.0,
+    null_model_samples: int = None,
 ) -> List[List[int]]:
 
-    # Reprodutibilidade: define seed se fornecido
-    if seed is not None:
-        import random
-
-        np.random.seed(seed)
-        random.seed(seed)
+    rng = np.random.default_rng(seed)
     config = ctx.config
     n_numbers = config.n_numbers
     k = config.bet_size
+    numeros_fixos = sorted(set(numeros_fixos or []))
+    numeros_evitados = sorted(set(numeros_evitados or []))
 
     # --- 1. CONFIGURAÇÃO DE PESOS ---
-    # Tenta usar pesos calibrados dinamicamente (autópsia dos vencedores)
     if hasattr(ctx, "pesos_dinamicos") and ctx.pesos_dinamicos:
         w_freq = ctx.pesos_dinamicos.get("w_freq", 0.5)
         w_gap = ctx.pesos_dinamicos.get("w_gap", 0.5)
@@ -80,7 +90,7 @@ def gerar_jogos_vetorizado(
     z_freq = np.zeros(n_numbers, dtype=np.float64)
     z_gap = np.zeros(n_numbers, dtype=np.float64)
 
-    df_raw = ctx.tabela.copy()
+    df_raw = ctx.tabela.copy() if getattr(ctx, "tabela", None) is not None else None
 
     # Padronizado: cada coluna já representa a bola 1, 2, ..., N
     bolas_indices = np.arange(1, n_numbers + 1)
@@ -88,24 +98,34 @@ def gerar_jogos_vetorizado(
     if n_numbers >= 100:
         bolas_indices = np.where(bolas_indices == 0, n_numbers, bolas_indices)
 
-    vals_freq = df_raw["Z_Freq"].values
-    vals_gap = df_raw["Z_Gap"].values
+    if df_raw is not None and not getattr(df_raw, "empty", True):
+        vals_freq = df_raw["Z_Freq"].values
+        vals_gap = df_raw["Z_Gap"].values
 
-    mask_safe = (bolas_indices >= 1) & (bolas_indices <= n_numbers)
-    dest_indices = bolas_indices[mask_safe] - 1
+        mask_safe = (bolas_indices >= 1) & (bolas_indices <= n_numbers)
+        dest_indices = bolas_indices[mask_safe] - 1
 
-    z_freq[dest_indices] = vals_freq[mask_safe]
-    z_gap[dest_indices] = vals_gap[mask_safe]
+        z_freq[dest_indices] = vals_freq[mask_safe]
+        z_gap[dest_indices] = vals_gap[mask_safe]
 
     # Aplica estratégia
     if estrategia == "agressiva":
-        scores_final = (z_gap * 0.7) + (z_freq * 0.3)
+        scores_final = (z_gap * 0.55 * usar_atrasados) + (
+            z_freq * 0.45 * usar_quentes
+        )
     elif estrategia == "conservadora":
-        scores_final = (z_freq * 0.7) + (z_gap * 0.3)
+        scores_final = (z_freq * 0.65 * usar_quentes) + (
+            z_gap * 0.35 * usar_atrasados
+        )
     elif estrategia == "pura":
         scores_final = np.ones(n_numbers)
     else:  # Balanceada
-        scores_final = (z_freq * w_freq) + (z_gap * w_gap)
+        scores_final = (z_freq * w_freq * usar_quentes) + (
+            z_gap * w_gap * usar_atrasados
+        )
+
+    if estrategia != "pura":
+        scores_final *= float(np.clip(historical_signal_strength, 0.0, 2.0))
 
     # ============================================================
     # INJEÇÃO DE INTELIGÊNCIA TEMPORAL (MARKOV + CICLO)
@@ -113,7 +133,12 @@ def gerar_jogos_vetorizado(
 
     # 1. Bônus Markov (O Efeito Dominó)
     # Aumenta score dos números que o Markov diz que virão após o último sorteio
-    if hasattr(ctx, "matriz_transicao") and ctx.matriz_transicao is not None:
+    if (
+        estrategia != "pura"
+        and usar_markov
+        and hasattr(ctx, "matriz_transicao")
+        and ctx.matriz_transicao is not None
+    ):
         last_draw = ctx.df.iloc[-1][config.draw_cols].values
         z_markov = np.zeros(n_numbers)
         # Soma a probabilidade de transição de cada número do último sorteio
@@ -124,16 +149,21 @@ def gerar_jogos_vetorizado(
         # Normaliza e adiciona peso (0.3 é um peso seguro)
         if z_markov.max() > 0:
             z_markov /= z_markov.max()
-            scores_final += z_markov * 0.3
+            scores_final += z_markov * 0.15
 
     # 2. Bônus de Ciclo (A Gravidade)
     # Empurra números que faltam para fechar o ciclo
-    if hasattr(ctx, "ciclo_atual") and ctx.ciclo_atual:
+    if (
+        estrategia != "pura"
+        and usar_ciclo
+        and hasattr(ctx, "ciclo_atual")
+        and ctx.ciclo_atual
+    ):
         faltam = ctx.ciclo_atual.get("faltam_sair", [])
         if faltam:
             # Jogos densos (Lotofácil) respeitam muito o ciclo -> Bônus alto
             # Jogos esparsos (Mega) respeitam pouco -> Bônus baixo
-            peso_ciclo = 2.0 if config.is_dense else 0.5
+            peso_ciclo = 0.8 if config.is_dense else 0.25
             indices_faltam = np.array(faltam) - 1
             # Filtra índices válidos para evitar crash
             indices_validos = indices_faltam[
@@ -141,39 +171,55 @@ def gerar_jogos_vetorizado(
             ]
             scores_final[indices_validos] += peso_ciclo
 
-    scores_final = np.nan_to_num(scores_final, nan=-10.0)  # NaN vira muito negativo
+    scores_final = np.nan_to_num(scores_final, nan=0.0)
+    if estrategia != "pura":
+        scores_final = np.clip(scores_final, -2.5, 2.5)
 
-    # Softmax robusto (evita overflow numérico)
-    scores_exp = np.exp(scores_final - scores_final.max())  # Shift para estabilidade
+    if temperatura is None:
+        temperatura = {
+            "conservadora": 1.15,
+            "balanceada": 1.35,
+            "agressiva": 1.45,
+            "pura": 2.0,
+        }.get(estrategia, 1.35)
+    temperatura = max(float(temperatura), 0.2)
+
+    # Softmax com temperatura: mantém intenção estatística sem colapsar em poucos números.
+    logits = scores_final / temperatura
+    scores_exp = np.exp(logits - logits.max())
     probs = scores_exp / scores_exp.sum()
 
-    # Filtro de Evitados
     pool = np.arange(1, n_numbers + 1)
-    if numeros_evitados:
-        mask_evitados = np.isin(pool, numeros_evitados)
-        probs[mask_evitados] = 0
-        if probs.sum() > 0:
-            probs /= probs.sum()
+    bloqueados = set(numeros_evitados) | set(numeros_fixos)
+    if bloqueados:
+        mask_bloqueados = np.isin(pool, list(bloqueados))
+        probs[mask_bloqueados] = 0
+    if probs.sum() <= 0:
+        probs = np.ones(n_numbers, dtype=float)
+        if bloqueados:
+            probs[np.isin(pool, list(bloqueados))] = 0
+    if probs.sum() <= 0:
+        return []
+    probs /= probs.sum()
 
     # --- 3. GERAÇÃO MASSIVA (GUMBEL-MAX) ---
-    n_fixos = len(numeros_fixos) if numeros_fixos else 0
+    n_fixos = len(numeros_fixos)
     k_to_gen = k - n_fixos
 
     if k_to_gen <= 0:
-        return [sorted(numeros_fixos)] * quantidade
+        jogo = sorted(numeros_fixos)
+        return [jogo] if len(jogo) == k else []
 
-    jogos_aceitos = []
+    candidatos_acumulados = []
     attempts = 0
-    max_attempts = 20
+    max_attempts = 8
+    batch = max(buffer_size, quantidade * 4000)
 
-    # Matriz de Co-ocorrência para informação
-    matriz_cooc = getattr(ctx, "matriz_coocorrencia", None)
-
-    while len(jogos_aceitos) < quantidade and attempts < max_attempts:
+    while attempts < max_attempts:
         attempts += 1
 
         # Gera ruído Gumbel
-        u_noise = np.random.rand(buffer_size, n_numbers)
+        u_noise = rng.random((batch, n_numbers))
         gumbel_noise = -np.log(-np.log(u_noise + 1e-10))
         weighted_scores = np.log(probs.reshape(1, -1) + 1e-10) + gumbel_noise
 
@@ -186,97 +232,42 @@ def gerar_jogos_vetorizado(
         # Adiciona fixos se houver
         if n_fixos > 0:
             fixos_arr = np.array(numeros_fixos)
-            fixos_grid = np.tile(fixos_arr, (buffer_size, 1))
+            fixos_grid = np.tile(fixos_arr, (batch, 1))
             candidatos = np.hstack([candidatos, fixos_grid])
 
         candidatos.sort(axis=1)
+        candidatos_acumulados.append(candidatos)
 
-        # --- 4. FILTRAGEM VETORIAL RÁPIDA (Alinhada com Validador) ---
-        mask_valid = np.ones(buffer_size, dtype=bool)
+        total = sum(len(c) for c in candidatos_acumulados)
+        if total >= max(quantidade * 1500, quantidade):
+            break
 
-        # Filtro A: Soma (IC95)
-        somas = candidatos.sum(axis=1)
-        ic_raw = ctx.ic_info.get("ic_95", [k * n_numbers * 0.15, k * n_numbers * 0.85])
-        if config.bet_size != config.k:
-            fator = config.bet_size / config.k
-            ic_min, ic_max = ic_raw[0] * fator, ic_raw[1] * fator
-        else:
-            ic_min, ic_max = ic_raw[0], ic_raw[1]
+    if not candidatos_acumulados:
+        return []
 
-        mask_valid &= (somas >= ic_min) & (somas <= ic_max)
-
-        # Filtro B: Paridade (evita extremos)
-        n_pares = (candidatos % 2 == 0).sum(axis=1)
-        # Rejeita todos pares ou todos ímpares
-        mask_valid &= (n_pares > 0) & (n_pares < k)
-        # Rejeita desequilíbrio extremo (< 20% ou > 80%)
-        mask_valid &= (n_pares >= k * 0.2) & (n_pares <= k * 0.8)
-
-        # Filtro C: Span mínimo (evita números muito concentrados)
-        spans = candidatos[:, -1] - candidatos[:, 0]  # já ordenado
-        span_minimo = n_numbers * 0.25  # pelo menos 25% do volante
-        mask_valid &= spans >= span_minimo
-
-        # Filtro D: Metades (evita desequilíbrio total)
-        meio = n_numbers // 2
-        superior = (candidatos <= meio).sum(axis=1)
-        inferior = k - superior
-        # Rejeita se todos numa metade
-        mask_valid &= (superior > 0) & (inferior > 0)
-
-        # Filtro E: Detecta PA perfeita (gaps iguais = padrão óbvio)
-        if k >= 4:
-            gaps = np.diff(candidatos, axis=1)  # (buffer_size, k-1)
-            # PA perfeita: todos os gaps são iguais
-            is_pa = np.all(gaps == gaps[:, [0]], axis=1)
-            mask_valid &= ~is_pa
-
-        # ══════════════════════════════════════════════════════════════════════
-        # Co-ocorrência como Reranking (Classificação)
-        # ══════════════════════════════════════════════════════════════════════
-
-        validos_batch = candidatos[mask_valid]
-
-        # Se temos a matriz de inteligência, usamos para ORDENAR os jogos (melhores primeiro)
-        # Em vez de filtrar/deletar, nós apenas priorizamos.
-        if matriz_cooc is not None and len(validos_batch) > 0:
-            # Performance: Limitamos o reranking se o batch for gigante para não travar
-            limit_rerank = 5000
-            if len(validos_batch) > limit_rerank:
-                # Se tivermos muitos jogos, pegamos uma amostra aleatória primeiro para ser rápido
-                indices_random = np.random.choice(
-                    len(validos_batch), limit_rerank, replace=False
-                )
-                validos_batch = validos_batch[indices_random]
-
-            # Ajusta para índice 0-based para consultar a matriz
-            idx_0based = validos_batch - 1
-
-            # VETORIZADO: Calcula scores de co-ocorrência para todo o batch de uma vez
-            struct_scores = _calcular_scores_coocorrencia_batch(idx_0based, matriz_cooc)
-
-            # RERANKING: Ordena do maior score para o menor
-            # argsort dá os índices do menor pro maior, então invertemos [::-1]
-            ordem_inteligente = np.argsort(struct_scores)[::-1]
-
-            # Aplica a nova ordem ao batch
-            validos_batch = validos_batch[ordem_inteligente]
-
-        # --- 5. SELEÇÃO FINAL E HAMMING ---
-        # NOTA: Não recriar validos_batch aqui - já foi processado pelo reranking acima
-
-        # Remove duplicatas dentro do batch (mantém a ordem do reranking)
-        _, unique_indices = np.unique(validos_batch, axis=0, return_index=True)
-        validos_batch = validos_batch[np.sort(unique_indices)]
-
-        for row in validos_batch:
-            lista = row.tolist()
-            if _passa_hamming(lista, jogos_aceitos, config):
-                jogos_aceitos.append(lista)
-                if len(jogos_aceitos) >= quantidade:
-                    break
-
-    return jogos_aceitos
+    candidatos = np.vstack(candidatos_acumulados)
+    _, unique_indices = np.unique(candidatos, axis=0, return_index=True)
+    candidatos = candidatos[np.sort(unique_indices)]
+    scores = score_plausibility_batch(
+        candidatos,
+        ctx,
+        estrategia=estrategia,
+        percentil_min=percentil_min,
+        percentil_max=percentil_max,
+        null_model_samples=null_model_samples,
+        usar_quentes=usar_quentes,
+        usar_atrasados=usar_atrasados,
+        usar_coocorrencia=usar_coocorrencia,
+        historical_signal_strength=historical_signal_strength,
+    )
+    return select_diverse_portfolio(
+        candidatos,
+        scores,
+        config,
+        quantidade,
+        rng,
+        estrategia=estrategia,
+    )
 
 
 def _passa_hamming(jogo, lista_aceitos, config):

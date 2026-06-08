@@ -17,5 +17,6 @@ def generate(slug: str, body: GenerateRequest, svc=Depends(get_service)):
 
     out = []
     for g in games:
-        out.append(GeneratedGame(numbers=g, validation=svc.validate(slug, g)))
+        validation = svc.validate(slug, g) if body.validar_resultado else None
+        out.append(GeneratedGame(numbers=g, validation=validation))
     return {"games": out, "meta": body.model_dump()}

@@ -43,7 +43,7 @@ from app.core.statistics import (
     calibrar_pesos_dinamicos,
 )
 from app.core.matrices import gerar_fechamento
-from app.core.validator import validar_jogo, calcular_score_rapido
+from app.core.validator import validar_jogo
 
 
 @dataclass(frozen=True)
@@ -152,41 +152,6 @@ class LotteryService:
             matriz_coocorrencia=matriz_cooc,
             matriz_transicao=matriz_transicao,
         )
-
-    def _validar_lote_com_cache(
-        self, candidatos, ctx, score_cache, threshold, jogos_existentes
-    ):
-        """
-        Valida um lote de jogos usando score rápido para filtragem.
-
-        Usa calcular_score_rapido() em vez de validar_jogo() completo,
-        resultando em ~10-20x mais velocidade na filtragem interna.
-
-        O relatório completo (validar_jogo) será gerado apenas para os
-        jogos finais selecionados via svc.validate().
-
-        Retorna lista de (score, jogo) aprovados e atualiza jogos_existentes.
-        """
-        jogos_aprovados = []
-        for jogo in candidatos:
-            jogo_tuple = tuple(jogo)
-            if jogo_tuple in jogos_existentes:
-                continue
-            if jogo_tuple in score_cache:
-                score = score_cache[jogo_tuple]
-            else:
-                # Usa score rápido para filtragem interna (muito mais rápido)
-                score = calcular_score_rapido(
-                    jogo,
-                    ctx.config,
-                    ic_info=ctx.ic_info,
-                    historico_jogos=ctx.historico_set,
-                )
-                score_cache[jogo_tuple] = score
-            if score >= threshold:
-                jogos_aprovados.append((score, jogo))
-                jogos_existentes.add(jogo_tuple)
-        return jogos_aprovados
 
     """
     Serviço centralizado para lógica de loteria.
@@ -384,78 +349,59 @@ class LotteryService:
         fixos = payload.get("numeros_fixos")
         evitados = payload.get("numeros_evitados")
         seed = payload.get("seed", None)
+        temperatura = payload.get("temperatura", None)
+        usar_quentes = bool(payload.get("usar_quentes", True)) and bool(
+            payload.get("frequencia_recente", True)
+        )
+        usar_atrasados = bool(payload.get("usar_atrasados", True))
+        usar_markov = bool(payload.get("usar_markov", True))
+        usar_ciclo = bool(payload.get("usar_ciclo", True))
+        usar_coocorrencia = bool(payload.get("usar_coocorrencia", True))
+        historical_signal_strength = float(
+            payload.get("historical_signal_strength", 1.0)
+        )
+        percentil_min = float(payload.get("percentil_min", 5.0))
+        percentil_max = float(payload.get("percentil_max", 95.0))
+        null_model_samples = payload.get("null_model_samples", None)
+        if not (0 <= percentil_min < percentil_max <= 100):
+            raise ValueError("Faixa de percentis deve satisfazer 0 <= min < max <= 100.")
+
+        fixos = sorted(set(fixos or []))
+        evitados = sorted(set(evitados or []))
 
         if fixos and len(fixos) > ctx.config.bet_size:
             raise ValueError(f"Quantidade de fixos maior que o tamanho do jogo.")
+        fora_range = [n for n in fixos + evitados if n < 1 or n > ctx.config.n_numbers]
+        if fora_range:
+            raise ValueError(f"Números fora do intervalo permitido: {fora_range}")
+        conflito = sorted(set(fixos) & set(evitados))
+        if conflito:
+            raise ValueError(f"Números não podem ser fixos e evitados: {conflito}")
+        vagas = ctx.config.bet_size - len(fixos)
+        disponiveis = ctx.config.n_numbers - len(fixos) - len(evitados)
+        if disponiveis < vagas:
+            raise ValueError("Restrições impossibilitam preencher o jogo.")
 
-        fator_excesso = 10
-        batch_size = min(qtd * fator_excesso, 500)
-        max_candidatos = min(qtd * fator_excesso * 4, 2000)
-        jogos_avaliados = []
-        score_cache = {}
-        jogos_existentes = set()
-        total_gerados = 0
-        threshold = 70
-        relax_threshold = 55
+        jogos = gerar_jogos_vetorizado(
+            ctx=ctx,
+            quantidade=qtd,
+            estrategia=estrategia,
+            numeros_fixos=fixos,
+            numeros_evitados=evitados,
+            seed=seed,
+            temperatura=temperatura,
+            usar_quentes=usar_quentes,
+            usar_atrasados=usar_atrasados,
+            usar_markov=usar_markov,
+            usar_ciclo=usar_ciclo,
+            usar_coocorrencia=usar_coocorrencia,
+            historical_signal_strength=historical_signal_strength,
+            percentil_min=percentil_min,
+            percentil_max=percentil_max,
+            null_model_samples=null_model_samples,
+        )
 
-        while len(jogos_avaliados) < qtd and total_gerados < max_candidatos:
-            candidatos = gerar_jogos_vetorizado(
-                ctx=ctx,
-                quantidade=batch_size,
-                estrategia=estrategia,
-                numeros_fixos=fixos,
-                numeros_evitados=evitados,
-                seed=seed,
-            )
-            total_gerados += len(candidatos)
-            aprovados = self._validar_lote_com_cache(
-                candidatos, ctx, score_cache, threshold, jogos_existentes
-            )
-            jogos_avaliados.extend(aprovados)
-            if len(jogos_avaliados) >= qtd:
-                break
-
-        jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
-        melhores_jogos = [j[1] for j in jogos_avaliados[:qtd]]
-
-        # RELAXAMENTO: garantir unicidade mínima (não duplicar histórico ou já aceitos)
-        if len(melhores_jogos) < qtd:
-            logger.warning(
-                f"⚠️ Apenas {len(melhores_jogos)} jogos passaram no filtro score>={threshold}. "
-                f"Relaxando para score>={relax_threshold}..."
-            )
-            set_melhores = set(tuple(j) for j in melhores_jogos)
-            sorted_cache = sorted(
-                score_cache.items(), key=lambda kv: kv[1], reverse=True
-            )
-            for jogo_tuple, score in sorted_cache:
-                if len(melhores_jogos) >= qtd:
-                    break
-                if jogo_tuple in set_melhores:
-                    continue
-                # Unicidade mínima: não duplicar histórico nem já aceitos
-                if jogo_tuple in ctx.historico_set:
-                    continue
-                if score >= relax_threshold:
-                    melhores_jogos.append(list(jogo_tuple))
-                    set_melhores.add(jogo_tuple)
-
-            logger.info(f"✅ Após relaxamento: {len(melhores_jogos)} jogos disponíveis")
-
-        if not melhores_jogos:
-            if score_cache:
-                top_from_cache = [
-                    j
-                    for j in sorted(
-                        score_cache.items(), key=lambda kv: kv[1], reverse=True
-                    )
-                    if j[0] not in ctx.historico_set
-                ][:qtd]
-                return [list(j[0]) for j in top_from_cache]
-            logger.warning(f"⚠️ Validador rejeitou todos os candidatos. Usando brutos.")
-            return candidatos[:qtd]
-
-        return melhores_jogos
+        return jogos[:qtd]
 
     # Substitua apenas o método generate_genetic existente por este trecho.
     def generate_genetic(
@@ -464,65 +410,49 @@ class LotteryService:
         if ctx is None:
             ctx = self.get_context(slug)
 
-        """
-        Motor Evolutivo com Validação e cache, unificado com generate.
-        """
-        logger.info(f"🧬 Iniciando Mineração Genética para {slug}")
+        logger.info(f"🧬 Iniciando geração genética plausível para {slug}")
 
         qtd_alvo = int(payload.get("quantidade", 1))
         fixos = payload.get("numeros_fixos")
         estrategia = payload.get("estrategia", "balanceada")
         seed = payload.get("seed", None)
+        objective_options = {
+            "percentil_min": float(payload.get("percentil_min", 5.0)),
+            "percentil_max": float(payload.get("percentil_max", 95.0)),
+            "null_model_samples": payload.get("null_model_samples", None),
+            "usar_quentes": bool(payload.get("usar_quentes", True))
+            and bool(payload.get("frequencia_recente", True)),
+            "usar_atrasados": bool(payload.get("usar_atrasados", True)),
+            "usar_coocorrencia": bool(payload.get("usar_coocorrencia", True)),
+            "historical_signal_strength": float(
+                payload.get("historical_signal_strength", 1.0)
+            ),
+        }
+        if not (
+            0
+            <= objective_options["percentil_min"]
+            < objective_options["percentil_max"]
+            <= 100
+        ):
+            raise ValueError("Faixa de percentis deve satisfazer 0 <= min < max <= 100.")
 
-        qtd_bruta = min(qtd_alvo * 5, 100)
-        threshold = payload.get("threshold", 70)
-        relax_threshold = payload.get("relax_threshold", 55)
-        score_cache = {}
-        jogos_existentes = set()
-        jogos_avaliados = []
+        fixos = sorted(set(fixos or []))
+        if len(fixos) > ctx.config.bet_size:
+            raise ValueError(f"Quantidade de fixos maior que o tamanho do jogo.")
+        fora_range = [n for n in fixos if n < 1 or n > ctx.config.n_numbers]
+        if fora_range:
+            raise ValueError(f"Números fora do intervalo permitido: {fora_range}")
 
         try:
-            candidatos = gerar_jogos_geneticos(
+            jogos = gerar_jogos_geneticos(
                 ctx=ctx,
-                quantidade=qtd_bruta,
+                quantidade=qtd_alvo,
                 estrategia=estrategia,
                 fixos=fixos,
                 seed=seed,
+                objective_options=objective_options,
             )
-            aprovados = self._validar_lote_com_cache(
-                candidatos, ctx, score_cache, threshold, jogos_existentes
-            )
-            jogos_avaliados.extend(aprovados)
-
-            jogos_avaliados.sort(key=lambda x: x[0], reverse=True)
-            melhores = [j[1] for j in jogos_avaliados[:qtd_alvo]]
-
-            if len(melhores) < qtd_alvo:
-                logger.warning(
-                    f"⚠️ Apenas {len(melhores)} jogos genéticos passaram no filtro score>={threshold}. "
-                    f"Relaxando para score>={relax_threshold}..."
-                )
-                set_melhores = set(tuple(j) for j in melhores)
-                # ordena cache por score decrescente e tenta completar com revalidação mínima
-                for jogo_tuple, score in sorted(
-                    score_cache.items(), key=lambda kv: kv[1], reverse=True
-                ):
-                    if len(melhores) >= qtd_alvo:
-                        break
-                    if jogo_tuple in set_melhores:
-                        continue
-                    if score >= relax_threshold:
-                        # Revalidação mínima: evitar duplicatas no histórico
-                        if jogo_tuple in jogos_existentes:
-                            continue
-                        melhores.append(list(jogo_tuple))
-                        set_melhores.add(jogo_tuple)
-
-                logger.info(
-                    f"✅ Após relaxamento: {len(melhores)} jogos genéticos disponíveis"
-                )
-
-            return melhores
+            return jogos[:qtd_alvo]
 
         except Exception as e:
             logger.error(f"❌ Erro no Algoritmo Genético: {e}")

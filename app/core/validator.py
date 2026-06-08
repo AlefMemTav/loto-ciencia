@@ -4,6 +4,8 @@ import numpy as np
 from app.core.logger import logger
 from collections import Counter
 from app.core.lottery import GameConfig
+from app.core.ticket_features import extract_ticket_features
+from app.core.statistics.feature_percentiles import summarize_feature_percentiles
 
 from app.core.statistics import (
     avaliar_jogo_geometria_estatistica,
@@ -1302,15 +1304,21 @@ def validar_jogo(
     # ============================================
     # 12. MÉTRICAS ADICIONAIS
     # ============================================
+    features = extract_ticket_features(numeros, config)
+    percentil_info = summarize_feature_percentiles(numeros, config)
     report["metricas"].update(
         {
-            "soma": sum(numeros),
+            "soma": features.soma,
             "entropia": round(_calcular_entropia_shannon(numeros), 3),
             "gini": round(_calcular_coeficiente_gini(numeros, config), 3),
-            "pares": sum(1 for n in numeros if n % 2 == 0),
-            "sequencias": sum(
-                1 for i in range(len(numeros) - 1) if numeros[i + 1] == numeros[i] + 1
-            ),
+            "pares": features.pares,
+            "sequencias": features.sequencias,
+            "span": features.span,
+            "span_relativo": round(features.span_relativo, 3),
+            "max_sequencia": features.max_sequencia,
+            "max_final_repetido": features.max_final_repetido,
+            "compressibilidade_simples": features.compressibilidade_simples,
+            **percentil_info,
         }
     )
 

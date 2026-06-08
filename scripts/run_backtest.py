@@ -7,9 +7,9 @@ Script de Backtest Científico (Walk-Forward + Monte Carlo).
 Uso:
   python scripts/run_backtest.py --jogo mega_sena_sorteio --janelas 24 --jogos 20
 
-Opcional (se você expôs esses parâmetros na função):
-  --mc 500
-  --seed 42
+Teste rápido do novo gerador calibrado:
+  python scripts/run_backtest.py --jogo mega_sena_sorteio --janelas 2 --jogos 5 \
+    --mc 50 --null-model-samples 5000 --estrategia pura
 """
 
 import sys
@@ -24,6 +24,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.core.lottery import GAMES
 from app.services.lottery_service import LotteryService
 from app.core.statistics.backtest import executar_backtest_temporal
+
+
+def _build_payload_overrides(args):
+    overrides = {
+        "percentil_min": args.percentil_min,
+        "percentil_max": args.percentil_max,
+        "historical_signal_strength": args.historical_strength,
+        "usar_quentes": not args.sem_quentes,
+        "usar_atrasados": not args.sem_atrasados,
+        "usar_markov": not args.sem_markov,
+        "usar_ciclo": not args.sem_ciclo,
+        "usar_coocorrencia": not args.sem_coocorrencia,
+        "frequencia_recente": not args.sem_frequencia_recente,
+    }
+    if args.null_model_samples is not None:
+        overrides["null_model_samples"] = args.null_model_samples
+    return overrides
 
 
 def main():
@@ -60,18 +77,120 @@ def main():
     )
 
     parser.add_argument(
+        "--estrategia",
+        default="balanceada",
+        choices=["pura", "balanceada", "conservadora", "agressiva"],
+        help="Estratégia do gerador a ser testada",
+    )
+
+    parser.add_argument(
+        "--tamanho-teste",
+        type=int,
+        default=10,
+        help="Quantidade de sorteios futuros usados como gabarito em cada janela",
+    )
+
+    parser.add_argument(
+        "--step",
+        type=int,
+        default=20,
+        help="Distância entre cortes temporais do walk-forward",
+    )
+
+    parser.add_argument(
+        "--bootstrap",
+        type=int,
+        default=2000,
+        help="Reamostragens bootstrap para IC95 do delta médio",
+    )
+
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
         help="Semente aleatória para reprodutibilidade",
     )
 
+    parser.add_argument(
+        "--percentil-min",
+        type=float,
+        default=5.0,
+        help="Percentil mínimo combinatório aceito pelo objetivo do gerador",
+    )
+
+    parser.add_argument(
+        "--percentil-max",
+        type=float,
+        default=95.0,
+        help="Percentil máximo combinatório aceito pelo objetivo do gerador",
+    )
+
+    parser.add_argument(
+        "--null-model-samples",
+        type=int,
+        default=None,
+        help="Amostras do modelo nulo combinatório. Use menor para smoke test.",
+    )
+
+    parser.add_argument(
+        "--historical-strength",
+        type=float,
+        default=1.0,
+        help="Força dos sinais históricos opcionais, limitada internamente pelo gerador",
+    )
+
+    parser.add_argument(
+        "--sem-quentes",
+        action="store_true",
+        help="Desliga inclinação por números quentes/frequência recente",
+    )
+    parser.add_argument(
+        "--sem-atrasados",
+        action="store_true",
+        help="Desliga inclinação por atraso",
+    )
+    parser.add_argument(
+        "--sem-markov",
+        action="store_true",
+        help="Desliga inclinação por transição Markov no gerador vetorial",
+    )
+    parser.add_argument(
+        "--sem-ciclo",
+        action="store_true",
+        help="Desliga inclinação por ciclo no gerador vetorial",
+    )
+    parser.add_argument(
+        "--sem-coocorrencia",
+        action="store_true",
+        help="Desliga inclinação por coocorrência",
+    )
+    parser.add_argument(
+        "--sem-frequencia-recente",
+        action="store_true",
+        help="Desliga o portão de frequência recente usado junto com quentes",
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        default="backtest_results",
+        help="Diretório onde o relatório JSON será salvo",
+    )
+
     args = parser.parse_args()
+    payload_overrides = _build_payload_overrides(args)
 
     print(f"\n🚀 Iniciando Backtest para: {args.jogo}")
     print(f"📅 Janelas Temporais (solicitadas): {args.janelas}")
     print(f"🎲 Jogos por Janela: {args.jogos}")
     print(f"🎯 Monte Carlo por Janela: {args.mc}")
+    print(f"🧭 Estratégia: {args.estrategia}")
+    print(
+        f"📊 Percentis combinatórios: {args.percentil_min:.1f} a {args.percentil_max:.1f}"
+    )
+    print(
+        "🧪 Amostras do modelo nulo: "
+        f"{args.null_model_samples if args.null_model_samples is not None else 'padrão'}"
+    )
     print(f"🔁 Seed: {args.seed}")
     print("-" * 60)
 
@@ -92,7 +211,12 @@ def main():
         n_janelas=args.janelas,
         jogos_por_janela=args.jogos,
         n_simulacoes_monte_carlo=args.mc,
+        tamanho_teste=args.tamanho_teste,
+        step=args.step,
         seed=args.seed,
+        n_bootstrap=args.bootstrap,
+        estrategia=args.estrategia,
+        payload_overrides=payload_overrides,
     )
     fim = datetime.now()
 
@@ -108,6 +232,7 @@ def main():
     print("🏆 RESULTADOS (Walk-Forward + Monte Carlo):")
     print(f" Jogo: {meta.get('jogo', args.jogo)}")
     print(f" Janelas válidas: {meta.get('n_janelas_validas', 'N/A')}")
+    print(f" Duração: {fim - inicio}")
     print("-" * 60)
 
     print("🧬 Genético:")
@@ -138,22 +263,31 @@ def main():
 
     # Salva relatório JSON
     data_hoje = datetime.now().strftime("%Y-%m-%d")
-    # output_dir = Path("relatorios_backtest")
-    output_dir = Path("/app/data/relatorios_backtest")
-    output_dir.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%H%M%S")
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    nome_arquivo = f"backtest_{args.jogo}_{data_hoje}.json"
+    nome_arquivo = f"backtest_{args.jogo}_{args.estrategia}_{data_hoje}_{timestamp}.json"
     caminho_arquivo = output_dir / nome_arquivo
 
     relatorio_final = {
         "meta_execucao": {
             "data_execucao": data_hoje,
+            "inicio": inicio.isoformat(),
+            "fim": fim.isoformat(),
+            "duracao": str(fim - inicio),
             "jogo": args.jogo,
             "configuracao_cli": {
                 "janelas": args.janelas,
                 "jogos_por_janela": args.jogos,
                 "mc_por_janela": args.mc,
                 "seed": args.seed,
+                "estrategia": args.estrategia,
+                "tamanho_teste": args.tamanho_teste,
+                "step": args.step,
+                "bootstrap": args.bootstrap,
+                "output_dir": str(output_dir),
+                "opcoes_gerador": payload_overrides,
             },
         },
         "resultado": resultado,

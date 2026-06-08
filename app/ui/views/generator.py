@@ -55,7 +55,7 @@ def render_generator(ctx, svc):
             <h2 style="color: #1e293b; margin:0;">⛏️ Mineração de Jogos: <span style="color: {main_color};">{config.name}</span></h2>
             <p style="color: #475569; font-size: 1rem; margin-top: 5px;">
                 Esta engine utiliza algoritmos e filtros estatísticos para encontrar combinações 
-                que respeitam a <strong>Lei dos Grandes Números</strong> e possuem alta probabilidade matemática.
+                plausíveis, diversas e menos contaminadas por vícios humanos de escolha.
             </p>
         </div>
         """,
@@ -97,10 +97,10 @@ def render_generator(ctx, svc):
 
         # Explicação dinâmica da estratégia selecionada
         info_strats = {
-            "balanceada": "Busca o equilíbrio perfeito: 60% de números quentes e 40% de atrasados. Maximiza a chance de pegar padrões mistos.",
-            "conservadora": "Aposta pesado na tendência. Usa números que estão saindo muito nos últimos concursos.",
-            "agressiva": "Caça às zebras. Foca em números que não saem há muito tempo (Regresso à Média). Risco maior.",
-            "pura": "Sem viés histórico (todos os números têm peso igual), mas validado matematicamente. Ideal para buscar surpresas estatisticamente viáveis.",
+            "balanceada": "Mistura frequência, atraso e plausibilidade estrutural sem deixar o portfólio ficar concentrado demais.",
+            "conservadora": "Dá mais peso a números historicamente frequentes, mas com controles contra superconcentração.",
+            "agressiva": "Dá mais espaço a atrasos e ciclos, mantendo freios contra falácia do apostador e padrões artificiais.",
+            "pura": "Reduz o viés histórico dos números, mas ainda evita combinações humanas óbvias e estruturalmente pobres.",
         }
         st.info(f"💡 **Lógica:** {info_strats[strat_key]}")
 
@@ -112,8 +112,8 @@ def render_generator(ctx, svc):
                 "Escolha o algoritmo:",
                 ["⚡ Vetorial (Alta Performance)", "🧬 Genético (Evolutivo)"],
                 captions=[
-                    "Instantâneo. Foca em probabilidades estatísticas puras.",
-                    "Mais lento (5-10s). Evolui gerações de jogos buscando perfeição matemática.",
+                    "Instantâneo. Amostra muitos candidatos e seleciona um portfólio plausível e diverso.",
+                    "Mais lento (5-10s). Evolui gerações buscando plausibilidade histórica e baixa compressibilidade.",
                 ],
                 index=0,
                 horizontal=True,
@@ -148,6 +148,86 @@ def render_generator(ctx, svc):
                 options=opcoes_exclusao,
                 help="Estes números serão banidos da geração.",
                 on_change=limpar_sessao,
+            )
+
+        st.markdown("##### Calibração Estatística")
+        col_pct_min, col_pct_max, col_forca = st.columns(3)
+        with col_pct_min:
+            percentil_min = st.number_input(
+                "Percentil mínimo",
+                min_value=0.0,
+                max_value=49.0,
+                value=5.0,
+                step=1.0,
+                help="Limite inferior das faixas plausíveis do modelo combinatório.",
+                on_change=limpar_sessao,
+            )
+        with col_pct_max:
+            percentil_max = st.number_input(
+                "Percentil máximo",
+                min_value=51.0,
+                max_value=100.0,
+                value=95.0,
+                step=1.0,
+                help="Limite superior das faixas plausíveis do modelo combinatório.",
+                on_change=limpar_sessao,
+            )
+        with col_forca:
+            historical_signal_strength = st.slider(
+                "Força histórica",
+                min_value=0.0,
+                max_value=2.0,
+                value=1.0,
+                step=0.1,
+                help="Controla a intensidade dos sinais históricos habilitados.",
+                on_change=limpar_sessao,
+            )
+
+        st.markdown("##### Sinais Históricos")
+        col_s1, col_s2, col_s3 = st.columns(3)
+        with col_s1:
+            usar_quentes = st.toggle(
+                "Quentes",
+                value=True,
+                help="Inclui frequência histórica como inclinação fraca.",
+                on_change=limpar_sessao,
+            )
+            usar_atrasados = st.toggle(
+                "Atrasados",
+                value=True,
+                help="Inclui atraso/gap histórico como inclinação fraca.",
+                on_change=limpar_sessao,
+            )
+        with col_s2:
+            usar_markov = st.toggle(
+                "Markov",
+                value=True,
+                help="Inclui transições entre concursos como inclinação fraca.",
+                on_change=limpar_sessao,
+            )
+            usar_ciclo = st.toggle(
+                "Ciclo",
+                value=True,
+                help="Inclui números faltantes do ciclo atual como inclinação fraca.",
+                on_change=limpar_sessao,
+            )
+        with col_s3:
+            usar_coocorrencia = st.toggle(
+                "Coocorrência",
+                value=True,
+                help="Inclui pares históricos como inclinação fraca.",
+                on_change=limpar_sessao,
+            )
+            frequencia_recente = st.toggle(
+                "Freq. recente",
+                value=True,
+                help="Mantém o sinal de frequência ativo no backend.",
+                on_change=limpar_sessao,
+            )
+
+        if strat_key == "pura":
+            st.caption(
+                "No modo Pura, os sinais históricos são ignorados; ficam apenas os controles estruturais."
             )
 
         # --- VALIDAÇÃO MATEMÁTICA EM TEMPO REAL ---
@@ -216,6 +296,15 @@ def render_generator(ctx, svc):
             "estrategia": strat_key,
             "numeros_fixos": nums_fixos,
             "numeros_evitados": nums_evitados,
+            "percentil_min": percentil_min,
+            "percentil_max": percentil_max,
+            "historical_signal_strength": historical_signal_strength,
+            "usar_quentes": usar_quentes,
+            "usar_atrasados": usar_atrasados,
+            "usar_markov": usar_markov,
+            "usar_ciclo": usar_ciclo,
+            "usar_coocorrencia": usar_coocorrencia,
+            "frequencia_recente": frequencia_recente,
         }
 
         try:
@@ -300,7 +389,7 @@ def render_generator(ctx, svc):
     st.markdown(
         """
     <div style="text-align: center; margin-top: 15px; color: #94a3b8; font-size: 0.8rem;">
-    O LotoScience não garante prêmios. Estes jogos são estatisticamente equilibrados para concetrar seus jogos em probabilidades matemáticas mais altas e evitar divisões de prêmio. Loterias são jogos de azar. Jogue com responsabilidade.
+    O LotoScience não garante prêmios. Estes jogos buscam plausibilidade estatística, diversidade e menor risco de escolhas humanas óbvias. Loterias são jogos de azar. Jogue com responsabilidade.
     Aposte somente o que você pode perder.
     </div>
         """,

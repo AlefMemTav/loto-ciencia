@@ -96,6 +96,18 @@ from app.core.statistics.monte_carlo import (
     monte_carlo_probabilidade_acerto,
 )
 
+from app.core.statistics.null_model import (
+    NullModel,
+    get_null_model,
+    build_null_model,
+    NULL_MODEL_VERSION,
+)
+
+from app.core.statistics.feature_percentiles import (
+    batch_feature_percentiles,
+    summarize_feature_percentiles,
+)
+
 from app.core.statistics.temporal import (
     calcular_ciclo_atual,
     analise_temporal_somas,
@@ -211,6 +223,13 @@ __all__ = [
     # monte_carlo
     "bootstrap_ic_soma",
     "monte_carlo_probabilidade_acerto",
+    # null model / percentiles
+    "NullModel",
+    "get_null_model",
+    "build_null_model",
+    "NULL_MODEL_VERSION",
+    "batch_feature_percentiles",
+    "summarize_feature_percentiles",
     # bootstrap iC
     "avaliar_soma_com_bootstrap",
     "calcular_bootstrap_ic_com_cache",

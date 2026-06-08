@@ -10,11 +10,17 @@ import numpy as np
 import random
 from typing import List, Optional
 from app.core.logger import logger
-from app.core.generator_fast import _calcular_scores_coocorrencia_batch
+from app.core.generator_objective import score_plausibility_batch
 
 
 class GeneticMiner:
-    def __init__(self, ctx, estrategia: str = "balanceada", seed: int = None):
+    def __init__(
+        self,
+        ctx,
+        estrategia: str = "balanceada",
+        seed: int = None,
+        objective_options: dict | None = None,
+    ):
         # Reprodutibilidade: define seed se fornecido
         if seed is not None:
             import random
@@ -23,6 +29,8 @@ class GeneticMiner:
             random.seed(seed)
         self.ctx = ctx
         self.config = ctx.config
+        self.estrategia = estrategia
+        self.objective_options = objective_options or {}
 
         self.bet_k = self.config.bet_size
         self.n_numbers = self.config.n_numbers
@@ -61,24 +69,6 @@ class GeneticMiner:
         # Modo pura: fitness caótico + penalidades atenuadas
         self.modo_pura = estrategia == "pura"
 
-        # Intervalo de Confiança
-        icinfo = getattr(self.ctx, "ic_info", None) or {}
-        ic95 = icinfo.get("ic_95")
-        if not ic95 or len(ic95) != 2:
-            logger.warning(
-                "[GA] 'ic_95' ausente/inválido; penalidade de soma desativada."
-            )
-            self.ic_min, self.ic_max = 0, 999999
-        else:
-            self.ic_min, self.ic_max = float(ic95[0]), float(ic95[1])
-            bet_size = self.config.bet_size
-            k_sorteio = self.config.k
-
-            if bet_size != k_sorteio:
-                fator = bet_size / k_sorteio
-                self.ic_min = self.ic_min * fator
-                self.ic_max = self.ic_max * fator
-
         # Blindagem de Alinhamento (Scatter)
         self.z_freq_aligned = np.zeros(self.n_numbers, dtype=np.float64)
         self.z_gap_aligned = np.zeros(self.n_numbers, dtype=np.float64)
@@ -116,122 +106,32 @@ class GeneticMiner:
                 validos = indices[(indices >= 0) & (indices < self.n_numbers)]
                 self.z_ciclo[validos] = peso
 
-    def _fitness(self, populacao: np.ndarray) -> np.ndarray:
+    def _fitness(
+        self, populacao: np.ndarray, fixos: Optional[List[int]] = None
+    ) -> np.ndarray:
         """
-        Fitness v2.2: Alinhado com validador completo.
-        Inclui verificações de entropia, span, finais, metades e múltiplos.
+        Fitness própria do gerador.
+
+        Mede plausibilidade estatística e intenção de acerto responsável sem
+        chamar o validador nem tentar maximizar o score exibido ao usuário.
         """
-        n_pop = len(populacao)
-        k = self.bet_k
+        if len(populacao) == 0:
+            return np.array([], dtype=float)
 
-        # 1. Score Linear Base
-        indices = populacao - 1
-        score_freq = self.z_freq_aligned[indices].sum(axis=1)
-        score_gap = self.z_gap_aligned[indices].sum(axis=1)
-        score_markov = self.z_markov[indices].sum(axis=1)
-        score_ciclo = self.z_ciclo[indices].sum(axis=1)
+        if fixos:
+            fixos_arr = np.tile(np.array(sorted(fixos), dtype=int), (len(populacao), 1))
+            completos = np.hstack([populacao, fixos_arr])
+            completos.sort(axis=1)
+        else:
+            completos = populacao.copy()
+            completos.sort(axis=1)
 
-        linear_score = (
-            (score_freq * self.pesos["w_freq"])
-            + (score_gap * self.pesos["w_gap"])
-            + (score_markov * 0.3)
-            + score_ciclo
+        return score_plausibility_batch(
+            completos,
+            self.ctx,
+            estrategia=self.estrategia,
+            **self.objective_options,
         )
-
-        # 2. Score Estrutural (Co-ocorrência) - VETORIZADO
-        cooc_score = np.zeros(n_pop)
-        if hasattr(self.ctx, "matriz_coocorrencia") and self.ctx.matriz_coocorrencia is not None:
-            matriz = self.ctx.matriz_coocorrencia
-            cooc_score = _calcular_scores_coocorrencia_batch(indices, matriz)
-
-        # 3. Penalidades (Alinhadas com validador)
-        penalties = np.zeros(n_pop)
-
-        # 3.1 Penalidade Soma (Proporcional à distância do IC)
-        somas = populacao.sum(axis=1)
-        dist_soma = np.zeros(n_pop)
-        mask_abaixo = somas < self.ic_min
-        mask_acima = somas > self.ic_max
-
-        if mask_abaixo.any():
-            dist_soma[mask_abaixo] = (self.ic_min - somas[mask_abaixo]) / self.ic_min
-        if mask_acima.any():
-            dist_soma[mask_acima] = (somas[mask_acima] - self.ic_max) / self.ic_max
-
-        penalties += dist_soma * 5.0
-
-        # 3.2 Penalidade Paridade
-        n_pares = (populacao % 2 == 0).sum(axis=1)
-        ideal_pares = k / 2.0
-        dist_parity = np.abs(n_pares - ideal_pares) / ideal_pares
-        penalties += dist_parity * 3.0
-
-        # Penalidade extrema para todos pares ou todos ímpares
-        extremo_paridade = (n_pares == 0) | (n_pares == k)
-        penalties[extremo_paridade] += 5.0
-
-        # 3.3 Penalidade Span (números muito concentrados)
-        spans = populacao[:, -1] - populacao[:, 0]  # já ordenado
-        span_minimo = self.n_numbers * 0.3
-        span_baixo = spans < span_minimo
-        penalties[span_baixo] += 3.0
-
-        span_muito_baixo = spans < self.n_numbers * 0.2
-        penalties[span_muito_baixo] += 2.0  # adicional
-
-        # 3.4 Penalidade Entropia/PA (gaps uniformes = padrão óbvio)
-        # Calcula gaps para toda a população de forma vetorizada
-        gaps = np.diff(populacao, axis=1)  # (n_pop, k-1)
-
-        # Conta gaps únicos por jogo
-        unique_gaps_count = np.array([len(np.unique(g)) for g in gaps])
-
-        # PA perfeita (todos gaps iguais)
-        pa_perfeita = unique_gaps_count == 1
-        penalties[pa_perfeita] += 5.0
-
-        # Poucos gaps únicos
-        poucos_gaps = (unique_gaps_count <= 2) & (k >= 6) & (~pa_perfeita)
-        penalties[poucos_gaps] += 3.0
-
-        # 3.5 Penalidade Metades (superior/inferior)
-        meio = self.n_numbers // 2
-        superior = (populacao <= meio).sum(axis=1)
-        inferior = k - superior
-
-        # Desequilíbrio extremo
-        extremo_metades = (superior == 0) | (inferior == 0)
-        penalties[extremo_metades] += 4.0
-
-        # Desequilíbrio alto
-        deseq_metades = np.abs(superior - inferior) >= k * 0.6
-        penalties[deseq_metades & ~extremo_metades] += 2.0
-
-        # 3.6 Penalidade Finais Repetidos (vício de terminal)
-        # Calcula finais para toda a população
-        finais = populacao % 10  # (n_pop, k)
-
-        # Conta o máximo de repetições por jogo
-        max_finais = np.zeros(n_pop)
-        for i in range(n_pop):
-            _, counts = np.unique(finais[i], return_counts=True)
-            max_finais[i] = counts.max()
-
-        limite_final = max(4, int(k * 0.4))
-        finais_altos = max_finais >= limite_final
-        penalties[finais_altos] += 3.0
-
-        # 3.7 Penalidade Múltiplos Dominantes
-        for d in [5, 10]:
-            mult = (populacao % d == 0).sum(axis=1)
-            fracao = mult / k
-            dominante = fracao >= 0.6
-            penalties[dominante] += 2.0
-
-        # Fórmula Final: balanceia linear, estrutural e penalidades
-        raw_fitness = (linear_score * 0.3) + (cooc_score * 0.5) - (penalties * 2.0)
-
-        return raw_fitness
 
     def _crossover_set(
         self, pai1: np.ndarray, pai2: np.ndarray, pool_livre: np.ndarray
@@ -294,7 +194,7 @@ class GeneticMiner:
 
         # Loop evolutivo
         for _ in range(geracoes):
-            scores = self._fitness(populacao)
+            scores = self._fitness(populacao, fixos=fixos)
             ranking = np.argsort(scores)[::-1]
             populacao = populacao[ranking]
 
@@ -331,7 +231,7 @@ class GeneticMiner:
 
         # Seleção final
         populacao.sort(axis=1)
-        scores_finais = self._fitness(populacao)
+        scores_finais = self._fitness(populacao, fixos=fixos)
         ranking_final = np.argsort(scores_finais)[::-1]
 
         best_score = float(scores_finais[ranking_final[0]])
@@ -381,7 +281,8 @@ class GeneticMiner:
 
                 if t not in hashes_vistos:
                     min_score = -9999 if self.modo_pura else (best_score - 40)
-                    if float(self._fitness(np.array([arr], dtype=int))[0]) > min_score:
+                    score_arr = self._fitness(np.array([arr], dtype=int), fixos=fixos)
+                    if float(score_arr[0]) > min_score:
                         if self._passa_overlap(
                             arr, jogos_unicos_livres, limite_comum=limite_comum
                         ):
@@ -414,9 +315,19 @@ class GeneticMiner:
 
 
 def gerar_jogos_geneticos(
-    ctx, quantidade=10, estrategia="balanceada", fixos=None, seed=None
+    ctx,
+    quantidade=10,
+    estrategia="balanceada",
+    fixos=None,
+    seed=None,
+    objective_options: dict | None = None,
 ):
-    miner = GeneticMiner(ctx, estrategia=estrategia, seed=seed)
+    miner = GeneticMiner(
+        ctx,
+        estrategia=estrategia,
+        seed=seed,
+        objective_options=objective_options,
+    )
     n_gens = 60 if ctx.config.n_numbers >= 60 else 30
     return miner.evoluir(
         tamanho_populacao=300,
