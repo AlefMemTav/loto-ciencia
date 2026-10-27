@@ -274,6 +274,113 @@ def _resumir_diagnostico_portfolio(acc: Dict[str, Any]) -> Dict[str, Any]:
             {"dezena": dezena, "vezes": round(vezes, 4)}
             for dezena, vezes in top_dezenas
         ],
+    }
+
+
+def _novo_acumulador_calibracao() -> Dict[str, Any]:
+    return {"n": 0.0, "numeric": {}}
+
+
+def _somar_diagnostico_calibracao(
+    acc: Dict[str, Any], diag: Dict[str, Any], peso: float = 1.0
+) -> None:
+    if not diag:
+        return
+    acc["n"] += float(peso)
+    for key in (
+        "score_medio",
+        "score_min",
+        "score_max",
+        "js_vs_alvo",
+        "js_vs_historico",
+        "js_vs_nulo",
+        "chi_square_vs_alvo",
+    ):
+        value = diag.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            acc["numeric"][key] = acc["numeric"].get(key, 0.0) + (float(value) * peso)
+
+
+def _resumir_diagnostico_calibracao(acc: Dict[str, Any]) -> Dict[str, Any]:
+    n = float(acc.get("n", 0.0))
+    if n <= 0:
+        return {}
+    return {
+        "medias": {
+            key: round(value / n, 6)
+            for key, value in sorted(acc.get("numeric", {}).items())
+        }
+    }
+
+
+def _novo_acumulador_financeiro() -> Dict[str, Any]:
+    return {
+        "n": 0.0,
+        "custo_total": 0.0,
+        "receita_bruta": 0.0,
+        "lucro_liquido": 0.0,
+        "paid_hits": {},
+        "numeric": {},
+        "tabela_premios": {},
+    }
+
+
+def _somar_diagnostico_financeiro(
+    acc: Dict[str, Any], diag: Dict[str, Any], peso: float = 1.0
+) -> None:
+    if not diag:
+        return
+    acc["n"] += float(peso)
+    acc["custo_total"] += float(diag.get("custo_total", 0.0)) * peso
+    acc["receita_bruta"] += float(diag.get("receita_bruta", 0.0)) * peso
+    acc["lucro_liquido"] += float(diag.get("lucro_liquido", 0.0)) * peso
+    acc["tabela_premios"] = dict(diag.get("tabela_premios", {}) or acc["tabela_premios"])
+    for hit, count in (diag.get("hits_pagos", {}) or {}).items():
+        acc["paid_hits"][str(hit)] = acc["paid_hits"].get(str(hit), 0.0) + (
+            float(count) * peso
+        )
+    for key in ("roi", "fator_retorno"):
+        value = diag.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            acc["numeric"][key] = acc["numeric"].get(key, 0.0) + (float(value) * peso)
+
+
+def _resumir_diagnostico_financeiro(acc: Dict[str, Any]) -> Dict[str, Any]:
+    cost = float(acc.get("custo_total", 0.0))
+    gross = float(acc.get("receita_bruta", 0.0))
+    net = float(acc.get("lucro_liquido", gross - cost))
+    return {
+        "custo_total": round(cost, 2),
+        "receita_bruta": round(gross, 2),
+        "lucro_liquido": round(net, 2),
+        "roi": round(net / cost, 6) if cost > 0 else 0.0,
+        "fator_retorno": round(gross / cost, 6) if cost > 0 else 0.0,
+        "hits_pagos": {
+            k: round(float(v), 4)
+            for k, v in sorted(acc.get("paid_hits", {}).items(), key=lambda item: int(item[0]))
+            if float(v) > 0
+        },
+        "tabela_premios": acc.get("tabela_premios", {}),
+        "medias_janela": {
+            key: round(value / max(1.0, float(acc.get("n", 0.0))), 6)
+            for key, value in sorted(acc.get("numeric", {}).items())
+        },
+    }
+    top_dezenas = sorted(
+        ((int(k), float(v)) for k, v in exposure.items()),
+        key=lambda item: (-item[1], item[0]),
+    )[:10]
+
+    return {
+        "medias": {
+            key: round(value / n, 6)
+            for key, value in sorted(acc.get("numeric", {}).items())
+        },
+        "exposicao_dezenas_total": exposure,
+        "top_dezenas_total": [
+            {"dezena": dezena, "vezes": round(vezes, 4)}
+            for dezena, vezes in top_dezenas
+        ],
         "n_portfolios": round(n, 4),
     }
 
@@ -324,9 +431,16 @@ def executar_backtest_temporal(
     n_bootstrap: int = 2000,
     estrategia: str = "balanceada",
     payload_overrides: Dict[str, Any] | None = None,
+    prize_table: Dict[int, float] | None = None,
 ) -> Dict:
     from app.services.lottery_service import LotteryService
     from app.core.generator_objective import portfolio_diagnostics
+    from app.core.statistics.score_calibration import score_calibration_diagnostics
+    from app.core.statistics.prize_model import (
+        diagnostics_to_dict,
+        financial_diagnostics,
+        resolve_prize_table,
+    )
 
     logger.info(
         f"⏳ Backtest Científico ({config.name}) - Janelas: {n_janelas}, MC: {n_simulacoes_monte_carlo}"
@@ -349,14 +463,20 @@ def executar_backtest_temporal(
     deltas_vet = []
     deltas_media_acertos_gen = []
     deltas_media_acertos_vet = []
+    deltas_receita_gen = []
+    deltas_receita_vet = []
     pvals_gen = []
     pvals_vet = []
     pvals_media_acertos_gen = []
     pvals_media_acertos_vet = []
+    pvals_receita_gen = []
+    pvals_receita_vet = []
     wins_gen = 0
     wins_vet = 0
     wins_media_acertos_gen = 0
     wins_media_acertos_vet = 0
+    wins_receita_gen = 0
+    wins_receita_vet = 0
     n_janelas_validas = 0
 
     # Inicializa acumuladores de hits (chaves relevantes)
@@ -392,6 +512,17 @@ def executar_backtest_temporal(
         "Genetico": _novo_acumulador_portfolio(config),
         "Vetorial": _novo_acumulador_portfolio(config),
         "EsperadoMC": _novo_acumulador_portfolio(config),
+    }
+    diag_calibracao = {
+        "Genetico": _novo_acumulador_calibracao(),
+        "Vetorial": _novo_acumulador_calibracao(),
+        "EsperadoMC": _novo_acumulador_calibracao(),
+    }
+    resolved_prize_table = resolve_prize_table(config, prize_table)
+    diag_financeiro = {
+        "Genetico": _novo_acumulador_financeiro(),
+        "Vetorial": _novo_acumulador_financeiro(),
+        "EsperadoMC": _novo_acumulador_financeiro(),
     }
 
     detalhes = []
@@ -436,6 +567,42 @@ def executar_backtest_temporal(
             diag_vet = portfolio_diagnostics(jogos_vet, config, matriz_cooc)
             _somar_diagnostico_portfolio(diag_portfolio["Genetico"], diag_gen)
             _somar_diagnostico_portfolio(diag_portfolio["Vetorial"], diag_vet)
+            cal_target = payload_overrides.get("calibration_target", "historico_nulo")
+            cal_samples = payload_overrides.get("null_model_samples")
+            cal_gen = score_calibration_diagnostics(
+                jogos_gen,
+                config,
+                df_historico=ctx_janela.df,
+                n_samples=cal_samples,
+                target=cal_target,
+            )
+            cal_vet = score_calibration_diagnostics(
+                jogos_vet,
+                config,
+                df_historico=ctx_janela.df,
+                n_samples=cal_samples,
+                target=cal_target,
+            )
+            _somar_diagnostico_calibracao(diag_calibracao["Genetico"], cal_gen)
+            _somar_diagnostico_calibracao(diag_calibracao["Vetorial"], cal_vet)
+            fin_gen = diagnostics_to_dict(
+                financial_diagnostics(
+                    jogos_gen,
+                    gabarito,
+                    config,
+                    prize_table=resolved_prize_table,
+                )
+            )
+            fin_vet = diagnostics_to_dict(
+                financial_diagnostics(
+                    jogos_vet,
+                    gabarito,
+                    config,
+                    prize_table=resolved_prize_table,
+                )
+            )
+            _somar_diagnostico_financeiro(diag_financeiro["Genetico"], fin_gen)
+            _somar_diagnostico_financeiro(diag_financeiro["Vetorial"], fin_vet)
 
         except Exception as e:
             logger.error(f"[Backtest] Erro no corte {corte}: {e}")
@@ -446,6 +613,7 @@ def executar_backtest_temporal(
         mc_scores = np.zeros(n_simulacoes_monte_carlo, dtype=float)
         mc_media_acertos = np.zeros(n_simulacoes_monte_carlo, dtype=float)
         mc_max_acertos = np.zeros(n_simulacoes_monte_carlo, dtype=float)
+        mc_receitas = np.zeros(n_simulacoes_monte_carlo, dtype=float)
 
         # Buffer temporário para hits MC desta janela
         mc_hits_janela = {k: 0 for k in keys_hits}
@@ -478,6 +646,32 @@ def executar_backtest_temporal(
                 diag_mc,
                 peso=1.0 / max(1, n_simulacoes_monte_carlo),
             )
+            cal_mc = score_calibration_diagnostics(
+                jogos_mc,
+                config,
+                df_historico=ctx_janela.df,
+                n_samples=payload_overrides.get("null_model_samples"),
+                target=payload_overrides.get("calibration_target", "historico_nulo"),
+            )
+            _somar_diagnostico_calibracao(
+                diag_calibracao["EsperadoMC"],
+                cal_mc,
+                peso=1.0 / max(1, n_simulacoes_monte_carlo),
+            )
+            fin_mc = diagnostics_to_dict(
+                financial_diagnostics(
+                    jogos_mc,
+                    gabarito,
+                    config,
+                    prize_table=resolved_prize_table,
+                )
+            )
+            mc_receitas[i] = fin_mc["receita_bruta"]
+            _somar_diagnostico_financeiro(
+                diag_financeiro["EsperadoMC"],
+                fin_mc,
+                peso=1.0 / max(1, n_simulacoes_monte_carlo),
+            )
 
         media_mc = float(np.mean(mc_scores))
 
@@ -494,6 +688,9 @@ def executar_backtest_temporal(
         media_acertos_mc = float(np.mean(mc_media_acertos))
         delta_media_acertos_gen = float(match_gen["media_acertos"] - media_acertos_mc)
         delta_media_acertos_vet = float(match_vet["media_acertos"] - media_acertos_mc)
+        media_receita_mc = float(np.mean(mc_receitas))
+        delta_receita_gen = float(fin_gen["receita_bruta"] - media_receita_mc)
+        delta_receita_vet = float(fin_vet["receita_bruta"] - media_receita_mc)
 
         p_gen = _p_empirico_supera_ou_iguala(mc_scores, score_gen)
         p_vet = _p_empirico_supera_ou_iguala(mc_scores, score_vet)
@@ -503,20 +700,34 @@ def executar_backtest_temporal(
         p_media_vet = _p_empirico_supera_ou_iguala(
             mc_media_acertos, match_vet["media_acertos"]
         )
+        p_receita_gen = _p_empirico_supera_ou_iguala(
+            mc_receitas,
+            fin_gen["receita_bruta"],
+        )
+        p_receita_vet = _p_empirico_supera_ou_iguala(
+            mc_receitas,
+            fin_vet["receita_bruta"],
+        )
 
         wins_gen += int(score_gen > media_mc)
         wins_vet += int(score_vet > media_mc)
         wins_media_acertos_gen += int(match_gen["media_acertos"] > media_acertos_mc)
         wins_media_acertos_vet += int(match_vet["media_acertos"] > media_acertos_mc)
+        wins_receita_gen += int(fin_gen["receita_bruta"] > media_receita_mc)
+        wins_receita_vet += int(fin_vet["receita_bruta"] > media_receita_mc)
 
         deltas_gen.append(delta_gen)
         deltas_vet.append(delta_vet)
         deltas_media_acertos_gen.append(delta_media_acertos_gen)
         deltas_media_acertos_vet.append(delta_media_acertos_vet)
+        deltas_receita_gen.append(delta_receita_gen)
+        deltas_receita_vet.append(delta_receita_vet)
         pvals_gen.append(p_gen)
         pvals_vet.append(p_vet)
         pvals_media_acertos_gen.append(p_media_gen)
         pvals_media_acertos_vet.append(p_media_vet)
+        pvals_receita_gen.append(p_receita_gen)
+        pvals_receita_vet.append(p_receita_vet)
 
         n_janelas_validas += 1
 
@@ -541,21 +752,60 @@ def executar_backtest_temporal(
                 "max_acertos_mc_medio": round(float(np.mean(mc_max_acertos)), 4),
                 "p_emp_media_acertos_gen": round(p_media_gen, 4),
                 "p_emp_media_acertos_vet": round(p_media_vet, 4),
+                "receita_gen": round(float(fin_gen["receita_bruta"]), 2),
+                "receita_vet": round(float(fin_vet["receita_bruta"]), 2),
+                "receita_mc_media": round(media_receita_mc, 2),
+                "delta_receita_gen": round(delta_receita_gen, 2),
+                "delta_receita_vet": round(delta_receita_vet, 2),
+                "roi_gen": round(float(fin_gen["roi"]), 6),
+                "roi_vet": round(float(fin_vet["roi"]), 6),
+                "p_emp_receita_gen": round(p_receita_gen, 4),
+                "p_emp_receita_vet": round(p_receita_vet, 4),
                 "portfolio_gen": {
                     "max_exposicao": diag_gen.get("max_exposicao", 0),
                     "overlap_medio": diag_gen.get("overlap_medio", 0),
+                    "overlap_max": diag_gen.get("overlap_max", 0),
                     "pares_repetidos": diag_gen.get("pares_repetidos", 0),
                     "pares_repetidos_acima_2": diag_gen.get(
                         "pares_repetidos_acima_2", 0
                     ),
+                    "max_repeticao_par": diag_gen.get("max_repeticao_par", 0),
+                    "trincas_repetidas": diag_gen.get("trincas_repetidas", 0),
+                    "max_repeticao_trinca": diag_gen.get(
+                        "max_repeticao_trinca", 0
+                    ),
+                    "quadras_repetidas": diag_gen.get("quadras_repetidas", 0),
+                    "max_repeticao_quadra": diag_gen.get(
+                        "max_repeticao_quadra", 0
+                    ),
+                },
+                "calibracao_gen": {
+                    "score_medio": cal_gen.get("score_medio", 0),
+                    "js_vs_alvo": cal_gen.get("js_vs_alvo", 0),
+                    "chi_square_vs_alvo": cal_gen.get("chi_square_vs_alvo", 0),
                 },
                 "portfolio_vet": {
                     "max_exposicao": diag_vet.get("max_exposicao", 0),
                     "overlap_medio": diag_vet.get("overlap_medio", 0),
+                    "overlap_max": diag_vet.get("overlap_max", 0),
                     "pares_repetidos": diag_vet.get("pares_repetidos", 0),
                     "pares_repetidos_acima_2": diag_vet.get(
                         "pares_repetidos_acima_2", 0
                     ),
+                    "max_repeticao_par": diag_vet.get("max_repeticao_par", 0),
+                    "trincas_repetidas": diag_vet.get("trincas_repetidas", 0),
+                    "max_repeticao_trinca": diag_vet.get(
+                        "max_repeticao_trinca", 0
+                    ),
+                    "quadras_repetidas": diag_vet.get("quadras_repetidas", 0),
+                    "max_repeticao_quadra": diag_vet.get(
+                        "max_repeticao_quadra", 0
+                    ),
+                },
+                "calibracao_vet": {
+                    "score_medio": cal_vet.get("score_medio", 0),
+                    "js_vs_alvo": cal_vet.get("js_vs_alvo", 0),
+                    "chi_square_vs_alvo": cal_vet.get("chi_square_vs_alvo", 0),
                 },
             }
         )
@@ -567,6 +817,8 @@ def executar_backtest_temporal(
     deltas_vet = np.array(deltas_vet)
     deltas_media_acertos_gen = np.array(deltas_media_acertos_gen)
     deltas_media_acertos_vet = np.array(deltas_media_acertos_vet)
+    deltas_receita_gen = np.array(deltas_receita_gen)
+    deltas_receita_vet = np.array(deltas_receita_vet)
 
     ic_gen = _bootstrap_ic95_media(deltas_gen, n_boot=n_bootstrap, rng=rng_global)
     ic_vet = _bootstrap_ic95_media(deltas_vet, n_boot=n_bootstrap, rng=rng_global)
@@ -575,6 +827,16 @@ def executar_backtest_temporal(
     )
     ic_media_vet = _bootstrap_ic95_media(
         deltas_media_acertos_vet, n_boot=n_bootstrap, rng=rng_global
+    )
+    ic_receita_gen = _bootstrap_ic95_media(
+        deltas_receita_gen,
+        n_boot=n_bootstrap,
+        rng=rng_global,
+    )
+    ic_receita_vet = _bootstrap_ic95_media(
+        deltas_receita_vet,
+        n_boot=n_bootstrap,
+        rng=rng_global,
     )
 
     # Limpa keys zeradas do relatório final para não poluir
@@ -614,6 +876,10 @@ def executar_backtest_temporal(
                 "bootstrap_reps": int(n_bootstrap),
                 "estrategia": estrategia,
                 "opcoes_gerador": payload_overrides,
+                "tabela_premios": {
+                    str(k): round(float(v), 2)
+                    for k, v in sorted(resolved_prize_table.items())
+                },
             },
             "simulacoes_mc": n_simulacoes_monte_carlo,
         },
@@ -633,6 +899,16 @@ def executar_backtest_temporal(
                 "win_rate_media_acertos_vs_mc": round(
                     wins_media_acertos_gen / n_janelas_validas, 4
                 ),
+                "delta_medio_receita_vs_mc": round(
+                    float(np.mean(deltas_receita_gen)), 6
+                ),
+                "ic95_delta_medio_receita": ic_receita_gen,
+                "mediana_p_emp_receita": round(
+                    float(np.median(np.array(pvals_receita_gen))), 6
+                ),
+                "win_rate_receita_vs_mc": round(
+                    wins_receita_gen / n_janelas_validas, 4
+                ),
             },
             "Vetorial": {
                 "delta_medio_vs_acaso": round(float(np.mean(deltas_vet)), 4),
@@ -648,6 +924,16 @@ def executar_backtest_temporal(
                 ),
                 "win_rate_media_acertos_vs_mc": round(
                     wins_media_acertos_vet / n_janelas_validas, 4
+                ),
+                "delta_medio_receita_vs_mc": round(
+                    float(np.mean(deltas_receita_vet)), 6
+                ),
+                "ic95_delta_medio_receita": ic_receita_vet,
+                "mediana_p_emp_receita": round(
+                    float(np.median(np.array(pvals_receita_vet))), 6
+                ),
+                "win_rate_receita_vs_mc": round(
+                    wins_receita_vet / n_janelas_validas, 4
                 ),
             },
         },
@@ -667,6 +953,16 @@ def executar_backtest_temporal(
             "Genetico": _resumir_diagnostico_portfolio(diag_portfolio["Genetico"]),
             "Vetorial": _resumir_diagnostico_portfolio(diag_portfolio["Vetorial"]),
             "EsperadoMC": _resumir_diagnostico_portfolio(diag_portfolio["EsperadoMC"]),
+        },
+        "diagnostico_calibracao_score": {
+            "Genetico": _resumir_diagnostico_calibracao(diag_calibracao["Genetico"]),
+            "Vetorial": _resumir_diagnostico_calibracao(diag_calibracao["Vetorial"]),
+            "EsperadoMC": _resumir_diagnostico_calibracao(diag_calibracao["EsperadoMC"]),
+        },
+        "diagnostico_financeiro": {
+            "Genetico": _resumir_diagnostico_financeiro(diag_financeiro["Genetico"]),
+            "Vetorial": _resumir_diagnostico_financeiro(diag_financeiro["Vetorial"]),
+            "EsperadoMC": _resumir_diagnostico_financeiro(diag_financeiro["EsperadoMC"]),
         },
         "detalhes_janelas": detalhes,
     }

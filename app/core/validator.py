@@ -6,6 +6,7 @@ from collections import Counter
 from app.core.lottery import GameConfig
 from app.core.ticket_features import extract_ticket_features
 from app.core.statistics.feature_percentiles import summarize_feature_percentiles
+from app.core.statistics.score_calibration import summarize_score_calibration
 
 from app.core.statistics import (
     avaliar_jogo_geometria_estatistica,
@@ -1306,6 +1307,11 @@ def validar_jogo(
     # ============================================
     features = extract_ticket_features(numeros, config)
     percentil_info = summarize_feature_percentiles(numeros, config)
+    calibracao_score = summarize_score_calibration(
+        numeros,
+        config,
+        df_historico=df_historico,
+    )
     report["metricas"].update(
         {
             "soma": features.soma,
@@ -1318,6 +1324,7 @@ def validar_jogo(
             "max_sequencia": features.max_sequencia,
             "max_final_repetido": features.max_final_repetido,
             "compressibilidade_simples": features.compressibilidade_simples,
+            "calibracao_score": calibracao_score,
             **percentil_info,
         }
     )

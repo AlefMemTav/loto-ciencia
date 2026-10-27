@@ -3,9 +3,16 @@ from pydantic import BaseModel
 from typing import List, Optional, Literal, Any, Dict
 
 Strategy = Literal[
-    "balanceada", "conservadora", "agressiva", "cauda_controlada", "pura"
+    "balanceada",
+    "conservadora",
+    "agressiva",
+    "cauda_controlada",
+    "cauda_agressiva",
+    "cauda_convexa",
+    "pura",
 ]
 EffortProfile = Literal["rapido", "forte", "maximo"]
+CalibrationTarget = Literal["historico_nulo", "historico", "nulo"]
 
 
 class GenerateRequest(BaseModel):
@@ -27,6 +34,9 @@ class GenerateRequest(BaseModel):
     percentil_min: float = 5.0
     percentil_max: float = 95.0
     null_model_samples: Optional[int] = None
+    usar_calibracao_score: bool = True
+    calibration_strength: float = 1.0
+    calibration_target: CalibrationTarget = "historico_nulo"
 
 
 class GeneratedGame(BaseModel):
@@ -58,6 +68,9 @@ class RealGameRequest(BaseModel):
     percentil_min: float = 5.0
     percentil_max: float = 95.0
     null_model_samples: Optional[int] = None
+    usar_calibracao_score: bool = True
+    calibration_strength: float = 1.0
+    calibration_target: CalibrationTarget = "historico_nulo"
     candidate_pool_size: Optional[int] = None
     tournament_packages: Optional[int] = None
     monte_carlo_packages: Optional[int] = None

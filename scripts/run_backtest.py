@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from app.core.lottery import GAMES
 from app.services.lottery_service import LotteryService
 from app.core.statistics.backtest import executar_backtest_temporal
+from app.core.statistics.prize_model import parse_prize_table, resolve_prize_table
 
 
 def _build_payload_overrides(args):
@@ -37,6 +38,9 @@ def _build_payload_overrides(args):
         "usar_ciclo": not args.sem_ciclo,
         "usar_coocorrencia": not args.sem_coocorrencia,
         "frequencia_recente": not args.sem_frequencia_recente,
+        "usar_calibracao_score": not args.sem_calibracao_score,
+        "calibration_strength": args.calibration_strength,
+        "calibration_target": args.calibration_target,
     }
     if args.null_model_samples is not None:
         overrides["null_model_samples"] = args.null_model_samples
@@ -85,6 +89,8 @@ def main():
             "conservadora",
             "agressiva",
             "cauda_controlada",
+            "cauda_agressiva",
+            "cauda_convexa",
         ],
         help="Estratégia do gerador a ser testada",
     )
@@ -144,6 +150,23 @@ def main():
         default=1.0,
         help="Força dos sinais históricos opcionais, limitada internamente pelo gerador",
     )
+    parser.add_argument(
+        "--sem-calibracao-score",
+        action="store_true",
+        help="Desliga a calibracao de score estrutural no gerador",
+    )
+    parser.add_argument(
+        "--calibration-strength",
+        type=float,
+        default=1.0,
+        help="Forca da calibracao de buckets de score estrutural (0 a 2)",
+    )
+    parser.add_argument(
+        "--calibration-target",
+        choices=["historico_nulo", "historico", "nulo"],
+        default="historico_nulo",
+        help="Distribuicao alvo para calibracao de score estrutural",
+    )
 
     parser.add_argument(
         "--sem-quentes",
@@ -181,9 +204,19 @@ def main():
         default="backtest_results",
         help="Diretório onde o relatório JSON será salvo",
     )
+    parser.add_argument(
+        "--premio",
+        action="append",
+        default=[],
+        help=(
+            "Sobrescreve/adiciona premio por faixa no ROI: acertos=valor. "
+            "Ex: --premio 14=1500 --premio 15=1500000"
+        ),
+    )
 
     args = parser.parse_args()
     payload_overrides = _build_payload_overrides(args)
+    prize_overrides = parse_prize_table(args.premio)
 
     print(f"\n🚀 Iniciando Backtest para: {args.jogo}")
     print(f"📅 Janelas Temporais (solicitadas): {args.janelas}")
@@ -196,6 +229,16 @@ def main():
     print(
         "🧪 Amostras do modelo nulo: "
         f"{args.null_model_samples if args.null_model_samples is not None else 'padrão'}"
+    )
+    print(
+        "🧩 Calibracao estrutural: "
+        f"{'desligada' if args.sem_calibracao_score else args.calibration_target} "
+        f"(forca {args.calibration_strength:.2f})"
+    )
+    prize_table_preview = resolve_prize_table(GAMES[args.jogo], prize_overrides)
+    print(
+        "💰 Tabela de premios ROI: "
+        f"{prize_table_preview if prize_table_preview else 'sem premios configurados'}"
     )
     print(f"🔁 Seed: {args.seed}")
     print("-" * 60)
@@ -223,6 +266,7 @@ def main():
         n_bootstrap=args.bootstrap,
         estrategia=args.estrategia,
         payload_overrides=payload_overrides,
+        prize_table=prize_overrides,
     )
     fim = datetime.now()
 
@@ -267,6 +311,20 @@ def main():
     print(formatar_linha("Vetorial", hits["Vetorial"]))
     print(formatar_linha("Esperado", exp))
 
+    financeiro = resultado.get("diagnostico_financeiro", {})
+    if financeiro:
+        print("\n💰 ROI / PRÊMIOS (modelo configurado):")
+        for label in ("Genetico", "Vetorial", "EsperadoMC"):
+            dados = financeiro.get(label, {})
+            if not dados:
+                continue
+            print(
+                f" {label:<10}: retorno={dados.get('receita_bruta', 0):.2f} | "
+                f"custo={dados.get('custo_total', 0):.2f} | "
+                f"lucro={dados.get('lucro_liquido', 0):.2f} | "
+                f"ROI={dados.get('roi', 0):.4f}"
+            )
+
     # Salva relatório JSON
     data_hoje = datetime.now().strftime("%Y-%m-%d")
     timestamp = datetime.now().strftime("%H%M%S")
@@ -294,6 +352,10 @@ def main():
                 "bootstrap": args.bootstrap,
                 "output_dir": str(output_dir),
                 "opcoes_gerador": payload_overrides,
+                "tabela_premios": {
+                    str(k): round(float(v), 2)
+                    for k, v in sorted(resolve_prize_table(ctx.config, prize_overrides).items())
+                },
             },
         },
         "resultado": resultado,

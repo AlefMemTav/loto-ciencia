@@ -44,7 +44,12 @@ class GeneticMiner:
         if not raw_pesos:
             raw_pesos = {"w_freq": 0.5, "w_gap": 0.5}
 
-        if estrategia in ("agressiva", "cauda_controlada"):
+        if estrategia in (
+            "agressiva",
+            "cauda_controlada",
+            "cauda_agressiva",
+            "cauda_convexa",
+        ):
             w_freq_temp, w_gap_temp = 0.2, 0.8
         elif estrategia == "conservadora":
             w_freq_temp, w_gap_temp = 0.8, 0.2

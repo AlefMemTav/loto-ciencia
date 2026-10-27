@@ -22,6 +22,7 @@ from app.core.generator_objective import (
     portfolio_diagnostics,
     score_plausibility_batch,
 )
+from app.core.statistics.score_calibration import score_calibration_diagnostics
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,12 @@ def _generate_candidate_pool(
             percentil_min=payload_options.get("percentil_min", 5.0),
             percentil_max=payload_options.get("percentil_max", 95.0),
             null_model_samples=null_model_samples,
+            usar_calibracao_score=payload_options.get("usar_calibracao_score", True),
+            calibration_strength=payload_options.get("calibration_strength", 1.0),
+            calibration_target=payload_options.get(
+                "calibration_target",
+                "historico_nulo",
+            ),
             candidate_multiplier=250,
         )
         for jogo in jogos:
@@ -268,7 +275,14 @@ def _package_score(
         0.0,
         float(diag.get("overlap_max", 0)) - config.get_overlap_limit(),
     )
-    pair_over = max(0, int(diag.get("max_repeticao_par", 0)) - 3)
+    if getattr(config, "is_dense", False):
+        expected_pair_reuse = (
+            n_games * comb(config.bet_size, 2) / max(1, comb(config.n_numbers, 2))
+        )
+        pair_limit = max(4, int(np.ceil(expected_pair_reuse * 1.45)))
+    else:
+        pair_limit = 3
+    pair_over = max(0, int(diag.get("max_repeticao_par", 0)) - pair_limit)
 
     score = (
         score_mean
@@ -365,6 +379,12 @@ def generate_real_game_package(
             "historical_signal_strength",
             1.0,
         ),
+        usar_calibracao_score=payload_options.get("usar_calibracao_score", True),
+        calibration_strength=payload_options.get("calibration_strength", 1.0),
+        calibration_target=payload_options.get(
+            "calibration_target",
+            "historico_nulo",
+        ),
     )
 
     package_idxs = _package_index_matrix(
@@ -406,6 +426,12 @@ def generate_real_game_package(
             "historical_signal_strength",
             1.0,
         ),
+        usar_calibracao_score=payload_options.get("usar_calibracao_score", True),
+        calibration_strength=payload_options.get("calibration_strength", 1.0),
+        calibration_target=payload_options.get(
+            "calibration_target",
+            "historico_nulo",
+        ),
     )
     mc_pool = mc_games.reshape(monte_carlo_packages, quantidade, ctx.config.bet_size)
     mc_score_pool = mc_scores_games.reshape(monte_carlo_packages, quantidade)
@@ -427,6 +453,13 @@ def generate_real_game_package(
     p_empirical = float(
         (np.sum(mc_package_scores >= selected_score) + 1.0)
         / (monte_carlo_packages + 1.0)
+    )
+    calibration_diag = score_calibration_diagnostics(
+        selected_games,
+        ctx.config,
+        df_historico=getattr(ctx, "df", None),
+        n_samples=null_model_samples,
+        target=payload_options.get("calibration_target", "historico_nulo"),
     )
 
     return {
@@ -452,5 +485,6 @@ def generate_real_game_package(
                 "numeros_evitados": payload_options.get("numeros_evitados") or [],
             },
             "diagnostico_portfolio": package_diags[best_idx],
+            "diagnostico_calibracao_score": calibration_diag,
         },
     }

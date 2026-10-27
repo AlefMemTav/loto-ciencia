@@ -16,6 +16,7 @@ enableCORS = false
 enableXsrfProtection = false
 port = 8501
 enableStaticServing = true
+fileWatcherType = "poll"
 
 [runner]
 magicEnabled = true

@@ -8,13 +8,24 @@ chamar o validador nem perseguir o score exibido ao usuário.
 from __future__ import annotations
 
 from itertools import combinations
+from math import comb
 import numpy as np
 
 from app.core.ticket_features import extract_ticket_features_batch
 from app.core.statistics.feature_percentiles import batch_feature_percentiles
+from app.core.statistics.score_calibration import (
+    BUCKET_LABELS,
+    bucket_indices,
+    get_score_calibration_model,
+    score_structural_batch,
+    score_structural_from_percentiles,
+)
 
 
 TAIL_CONTROLLED = "cauda_controlada"
+TAIL_AGGRESSIVE = "cauda_agressiva"
+TAIL_CONVEX = "cauda_convexa"
+TAIL_STRATEGIES = {TAIL_CONTROLLED, TAIL_AGGRESSIVE, TAIL_CONVEX}
 
 
 def score_plausibility_batch(
@@ -28,6 +39,9 @@ def score_plausibility_batch(
     usar_atrasados: bool = True,
     usar_coocorrencia: bool = True,
     historical_signal_strength: float = 1.0,
+    usar_calibracao_score: bool = True,
+    calibration_strength: float = 1.0,
+    calibration_target: str = "historico_nulo",
 ) -> np.ndarray:
     """
     Score vetorial de plausibilidade para candidatos já ordenados.
@@ -73,6 +87,10 @@ def score_plausibility_batch(
     }
 
     def _bounds_for(metric: str) -> tuple[float, float]:
+        if estrategia == TAIL_AGGRESSIVE and metric in {"soma", "span", "gap_medio"}:
+            return 3.0, 97.0
+        if estrategia == TAIL_CONVEX and metric in {"soma", "span", "gap_medio"}:
+            return 4.0, 96.0
         if estrategia == TAIL_CONTROLLED and metric in {"soma", "span", "gap_medio"}:
             return 4.0, 96.0
         return percentil_min, percentil_max
@@ -100,6 +118,26 @@ def score_plausibility_batch(
         pct = percentiles.get(metric)
         if pct is not None:
             scores -= np.maximum(0.0, percentil_min - pct) * weight / 5.0
+
+    if usar_calibracao_score:
+        calibration_strength = float(np.clip(calibration_strength, 0.0, 2.0))
+        if calibration_strength > 0:
+            structural_scores = score_structural_from_percentiles(
+                features,
+                percentiles,
+                len(candidates),
+            )
+            model = get_score_calibration_model(
+                config,
+                df_historico=getattr(ctx, "df", None),
+                n_samples=null_model_samples,
+                target=calibration_target,
+            )
+            buckets = bucket_indices(structural_scores)
+            target_probs = np.clip(model.target_probabilities, 1e-6, 1.0)
+            uniform = 1.0 / len(BUCKET_LABELS)
+            prior = np.clip(np.log(target_probs[buckets] / uniform), -1.5, 1.5)
+            scores += prior * 0.35 * calibration_strength
 
     lucky = np.array([3, 7, 9, 11, 13, 21, 27, 33])
     lucky = lucky[lucky <= n]
@@ -135,7 +173,29 @@ def score_plausibility_batch(
             cooc = _calcular_scores_coocorrencia_batch(indices, matriz)
             std = cooc.std()
             cooc_z = np.zeros_like(cooc) if std < 1e-9 else (cooc - cooc.mean()) / std
-            if estrategia == TAIL_CONTROLLED:
+            if estrategia == TAIL_AGGRESSIVE:
+                scores += (
+                    np.clip(cooc_z, -1.0, 2.5)
+                    * 0.42
+                    * historical_signal_strength
+                )
+                scores -= (
+                    np.maximum(0.0, cooc_z - 2.5)
+                    * 0.35
+                    * historical_signal_strength
+                )
+            elif estrategia == TAIL_CONVEX:
+                scores += (
+                    np.clip(cooc_z, -1.0, 2.3)
+                    * 0.34
+                    * historical_signal_strength
+                )
+                scores -= (
+                    np.maximum(0.0, cooc_z - 2.3)
+                    * 0.40
+                    * historical_signal_strength
+                )
+            elif estrategia == TAIL_CONTROLLED:
                 scores += (
                     np.clip(cooc_z, -1.0, 2.0)
                     * 0.25
@@ -170,6 +230,10 @@ def select_diverse_portfolio(
     rng: np.random.Generator | None = None,
     estrategia: str = "balanceada",
     ctx=None,
+    usar_calibracao_score: bool = True,
+    calibration_strength: float = 1.0,
+    calibration_target: str = "historico_nulo",
+    null_model_samples: int | None = None,
 ) -> list[list[int]]:
     """Seleciona os melhores candidatos preservando diversidade do portfólio."""
     if rng is None:
@@ -184,7 +248,7 @@ def select_diverse_portfolio(
     if len(candidates) == 0:
         return []
 
-    if estrategia == TAIL_CONTROLLED:
+    if estrategia in TAIL_STRATEGIES:
         return _select_tail_controlled_portfolio(
             candidates=candidates,
             scores=scores,
@@ -192,6 +256,12 @@ def select_diverse_portfolio(
             quantidade=quantidade,
             rng=rng,
             ctx=ctx,
+            aggressive=estrategia == TAIL_AGGRESSIVE,
+            convex=estrategia == TAIL_CONVEX,
+            usar_calibracao_score=usar_calibracao_score,
+            calibration_strength=calibration_strength,
+            calibration_target=calibration_target,
+            null_model_samples=null_model_samples,
         )
 
     noise_scale = {
@@ -276,7 +346,7 @@ def select_diverse_portfolio(
             feature_exposure[key] = feature_exposure.get(key, 0) + 1
 
     if len(selected) < quantidade:
-        for row in ordered:
+        for idx, row in enumerate(ordered):
             if len(selected) >= quantidade:
                 break
             t = tuple(row.tolist())
@@ -299,6 +369,11 @@ def _feature_key_from_values(feature_values: dict[str, np.ndarray], idx: int) ->
 def _pair_keys(row: np.ndarray) -> list[tuple[int, int]]:
     nums = [int(n) for n in row.tolist()]
     return [tuple(pair) for pair in combinations(nums, 2)]
+
+
+def _group_keys(row: np.ndarray, size: int) -> list[tuple[int, ...]]:
+    nums = [int(n) for n in row.tolist()]
+    return [tuple(group) for group in combinations(nums, size)]
 
 
 def _cooccurrence_z(candidates: np.ndarray, ctx) -> np.ndarray:
@@ -331,6 +406,12 @@ def _select_tail_controlled_portfolio(
     quantidade: int,
     rng: np.random.Generator,
     ctx=None,
+    aggressive: bool = False,
+    convex: bool = False,
+    usar_calibracao_score: bool = True,
+    calibration_strength: float = 1.0,
+    calibration_target: str = "historico_nulo",
+    null_model_samples: int | None = None,
 ) -> list[list[int]]:
     """
     Seleciona o portfólio como conjunto.
@@ -339,7 +420,16 @@ def _select_tail_controlled_portfolio(
     marginal por cluster controlado e penaliza redundância que não aumenta
     cobertura real do pacote.
     """
-    noise = rng.gumbel(0.0, 0.65, size=len(scores))
+    if aggressive:
+        noise_scale = 0.85
+        base_cooc_weight = 0.18
+    elif convex:
+        noise_scale = 0.75
+        base_cooc_weight = 0.18
+    else:
+        noise_scale = 0.65
+        base_cooc_weight = 0.20
+    noise = rng.gumbel(0.0, noise_scale, size=len(scores))
     score_std = scores.std()
     score_z = (
         np.zeros_like(scores)
@@ -347,7 +437,7 @@ def _select_tail_controlled_portfolio(
         else (scores - scores.mean()) / score_std
     )
     cooc_z = _cooccurrence_z(candidates, ctx)
-    base_rank = score_z + np.clip(cooc_z, -1.0, 2.0) * 0.20 + noise
+    base_rank = score_z + np.clip(cooc_z, -1.0, 2.0) * base_cooc_weight + noise
     order = np.argsort(base_rank)[::-1]
 
     pool_size = min(len(order), max(quantidade * 350, 1200))
@@ -356,63 +446,184 @@ def _select_tail_controlled_portfolio(
     ordered_score_z = score_z[order]
     ordered_cooc_z = cooc_z[order]
     feature_values = extract_ticket_features_batch(ordered, config)
+    calibration_bucket_idx = None
+    calibration_target_probs = None
+    calibration_counts = None
+    calibration_strength = float(np.clip(calibration_strength, 0.0, 2.0))
+    if usar_calibracao_score and calibration_strength > 0:
+        from app.core.statistics.score_calibration import (
+            bucket_indices,
+            get_score_calibration_model,
+        )
+
+        calibration_scores = score_structural_batch(
+            ordered,
+            config,
+            n_samples=null_model_samples,
+        )
+        model = get_score_calibration_model(
+            config,
+            df_historico=getattr(ctx, "df", None),
+            n_samples=null_model_samples,
+            target=calibration_target,
+        )
+        calibration_bucket_idx = bucket_indices(calibration_scores)
+        calibration_target_probs = model.target_probabilities
+        calibration_counts = np.zeros(len(BUCKET_LABELS), dtype=float)
 
     selected: list[np.ndarray] = []
     seen: set[tuple[int, ...]] = set()
     exposure: dict[int, int] = {}
     pair_exposure: dict[tuple[int, int], int] = {}
+    triple_exposure: dict[tuple[int, int, int], int] = {}
+    quad_exposure: dict[tuple[int, int, int, int], int] = {}
     feature_exposure: dict[tuple, int] = {}
 
-    overlap_limit = config.get_overlap_limit()
+    dense_game = bool(getattr(config, "is_dense", False))
+    sparse_game = bool(getattr(config, "is_sparse", False))
+    overlap_limit = (
+        min(config.get_overlap_limit(), 2)
+        if convex and sparse_game
+        else config.get_overlap_limit()
+    )
     expected_exposure = quantidade * config.bet_size / max(1, config.n_numbers)
-    soft_target = max(2, int(np.ceil(expected_exposure * 1.25)))
-    hard_cap = max(2, int(np.ceil(expected_exposure * 2.5)))
+    if aggressive:
+        soft_multiplier = 1.60
+        hard_multiplier = 3.00
+    elif convex:
+        soft_multiplier = 1.45
+        hard_multiplier = 2.50
+    else:
+        soft_multiplier = 1.25
+        hard_multiplier = 2.50
+    soft_target = max(2, int(np.ceil(expected_exposure * soft_multiplier)))
+    hard_cap = max(2, int(np.ceil(expected_exposure * hard_multiplier)))
     if getattr(config, "slug", "") == "mega_sena_sorteio" and quantidade >= 20:
-        hard_cap = 5
+        hard_cap = 6 if aggressive else 5
+    total_pairs = max(1, comb(config.n_numbers, 2))
+    expected_pair_reuse = quantidade * comb(config.bet_size, 2) / total_pairs
+    if dense_game:
+        pair_multiplier = 1.8 if aggressive else 1.45 if convex else 1.35
+        pair_hard_cap = max(4, int(np.ceil(expected_pair_reuse * pair_multiplier)))
+    else:
+        pair_hard_cap = 4 if aggressive else 3
+
+    total_triples = max(1, comb(config.n_numbers, 3)) if config.bet_size >= 3 else 1
+    total_quads = max(1, comb(config.n_numbers, 4)) if config.bet_size >= 4 else 1
+    expected_triple_reuse = (
+        quantidade * comb(config.bet_size, 3) / total_triples
+        if config.bet_size >= 3
+        else 0.0
+    )
+    expected_quad_reuse = (
+        quantidade * comb(config.bet_size, 4) / total_quads
+        if config.bet_size >= 4
+        else 0.0
+    )
+    triple_hard_cap = (
+        1
+        if convex and sparse_game
+        else max(3, int(np.ceil(expected_triple_reuse * (2.50 if convex else 2.0))))
+    )
+    quad_hard_cap = (
+        1
+        if convex and sparse_game
+        else max(3, int(np.ceil(expected_quad_reuse * (2.50 if convex else 2.0))))
+    )
 
     def _would_break_hard_caps(row: np.ndarray) -> bool:
         if any(exposure.get(int(n), 0) >= hard_cap for n in row):
             return True
-        return any(pair_exposure.get(pair, 0) >= 3 for pair in _pair_keys(row))
+        if any(pair_exposure.get(pair, 0) >= pair_hard_cap for pair in _pair_keys(row)):
+            return True
+        if convex and any(
+            triple_exposure.get(t, 0) >= triple_hard_cap
+            for t in _group_keys(row, 3)
+        ):
+            return True
+        if convex and any(
+            quad_exposure.get(q, 0) >= quad_hard_cap
+            for q in _group_keys(row, 4)
+        ):
+            return True
+        return False
+
+    def _calibration_marginal(idx: int) -> float:
+        if (
+            calibration_bucket_idx is None
+            or calibration_target_probs is None
+            or calibration_counts is None
+        ):
+            return 0.0
+        bucket = int(calibration_bucket_idx[idx])
+        selected_now = len(selected)
+        expected_next = calibration_target_probs[bucket] * max(1, selected_now + 1)
+        under = max(0.0, expected_next - calibration_counts[bucket])
+        over = max(0.0, calibration_counts[bucket] + 1.0 - expected_next - 0.75)
+        if quantidade <= 2:
+            return under * 0.08 * calibration_strength
+        return (under * 0.16 - over * 0.24) * calibration_strength
 
     def _overlap_penalty(row: np.ndarray) -> float:
         if not selected:
             return 0.0
         s = set(row.tolist())
         penalty = 0.0
+        overlap_floor = max(2, int(config.bet_size * 0.55)) if dense_game else 2
         for prev in selected:
             common = len(s.intersection(set(prev.tolist())))
             if common > overlap_limit:
                 return 1e6
-            penalty += max(0, common - 2) ** 2
-        return penalty * 0.0
+            penalty += max(0, common - overlap_floor) ** 2
+        if aggressive:
+            return penalty * 0.04
+        if convex:
+            return penalty * 0.06
+        return 0.0
 
     def _marginal_score(idx: int, row: np.ndarray) -> float:
         feature_key = _feature_key_from_values(feature_values, idx)
         pairs = _pair_keys(row)
+        triples = _group_keys(row, 3) if convex else []
         number_reuse_bonus = sum(
             min(exposure.get(int(n), 0), 2) for n in row
-        ) * 0.0
+        ) * (0.045 if aggressive else 0.035 if convex else 0.0)
         pair_reuse_bonus = sum(
-            1 for pair in pairs if 0 < pair_exposure.get(pair, 0) < 3
-        ) * 0.0
-        feature_reuse_bonus = min(feature_exposure.get(feature_key, 0), 2) * 0.0
+            1 for pair in pairs if 0 < pair_exposure.get(pair, 0) < pair_hard_cap
+        ) * (0.11 if aggressive else 0.085 if convex else 0.0)
+        feature_reuse_bonus = min(feature_exposure.get(feature_key, 0), 2) * (
+            0.015 if aggressive else 0.01 if convex else 0.0
+        )
         exposure_penalty = sum(
             max(0, exposure.get(int(n), 0) + 1 - soft_target) for n in row
-        ) * 0.06
-        pair_penalty = sum(
-            max(0, pair_exposure.get(pair, 0) - 1) for pair in pairs
-        ) * 0.01
+        ) * (0.035 if aggressive else 0.045 if convex else 0.06)
+        if aggressive:
+            pair_penalty = sum(
+                max(0, pair_exposure.get(pair, 0) - 2) for pair in pairs
+            ) * 0.16
+        elif convex:
+            pair_penalty = sum(
+                max(0, pair_exposure.get(pair, 0) - 1) for pair in pairs
+            ) * 0.085
+        else:
+            pair_penalty = sum(
+                max(0, pair_exposure.get(pair, 0) - 1) for pair in pairs
+            ) * 0.01
+        triple_penalty = sum(triple_exposure.get(t, 0) for t in triples) * 1e6
         feature_penalty = feature_exposure.get(feature_key, 0) * 0.0
-        cluster_bonus = np.clip(ordered_cooc_z[idx], -1.0, 2.0) * 0.18
+        cluster_bonus = np.clip(ordered_cooc_z[idx], -1.0, 2.0) * (
+            0.12 if aggressive else 0.14 if convex else 0.18
+        )
         return (
             ordered_score_z[idx]
             + cluster_bonus
             + number_reuse_bonus
             + pair_reuse_bonus
             + feature_reuse_bonus
+            + _calibration_marginal(idx)
             - exposure_penalty
             - pair_penalty
+            - triple_penalty
             - feature_penalty
             - _overlap_penalty(row)
         )
@@ -446,6 +657,13 @@ def _select_tail_controlled_portfolio(
             exposure[nn] = exposure.get(nn, 0) + 1
         for pair in _pair_keys(row):
             pair_exposure[pair] = pair_exposure.get(pair, 0) + 1
+        if convex:
+            for triple in _group_keys(row, 3):
+                triple_exposure[triple] = triple_exposure.get(triple, 0) + 1
+            for quad in _group_keys(row, 4):
+                quad_exposure[quad] = quad_exposure.get(quad, 0) + 1
+        if calibration_counts is not None and calibration_bucket_idx is not None:
+            calibration_counts[int(calibration_bucket_idx[best_idx])] += 1
 
     if len(selected) < quantidade:
         for idx, row in enumerate(ordered):
@@ -461,6 +679,13 @@ def _select_tail_controlled_portfolio(
                 exposure[nn] = exposure.get(nn, 0) + 1
             for pair in _pair_keys(row):
                 pair_exposure[pair] = pair_exposure.get(pair, 0) + 1
+            if convex:
+                for triple in _group_keys(row, 3):
+                    triple_exposure[triple] = triple_exposure.get(triple, 0) + 1
+                for quad in _group_keys(row, 4):
+                    quad_exposure[quad] = quad_exposure.get(quad, 0) + 1
+            if calibration_counts is not None and calibration_bucket_idx is not None:
+                calibration_counts[int(calibration_bucket_idx[idx])] += 1
 
     return [row.tolist() for row in selected[:quantidade]]
 
@@ -490,14 +715,24 @@ def portfolio_diagnostics(
 
     overlaps = []
     pair_counts: dict[tuple[int, int], int] = {}
+    triple_counts: dict[tuple[int, int, int], int] = {}
+    quad_counts: dict[tuple[int, int, int, int], int] = {}
     for i, row in enumerate(arr):
         row_set = set(row.tolist())
         for other in arr[i + 1 :]:
             overlaps.append(len(row_set.intersection(set(other.tolist()))))
         for pair in _pair_keys(row):
             pair_counts[pair] = pair_counts.get(pair, 0) + 1
+        if config.bet_size >= 3:
+            for triple in _group_keys(row, 3):
+                triple_counts[triple] = triple_counts.get(triple, 0) + 1
+        if config.bet_size >= 4:
+            for quad in _group_keys(row, 4):
+                quad_counts[quad] = quad_counts.get(quad, 0) + 1
 
     repeated_pairs = [count for count in pair_counts.values() if count > 1]
+    repeated_triples = [count for count in triple_counts.values() if count > 1]
+    repeated_quads = [count for count in quad_counts.values() if count > 1]
     features = extract_ticket_features_batch(arr, config)
     feature_summary = {}
     for metric in ("soma", "span", "pares", "gap_medio"):
@@ -539,6 +774,12 @@ def portfolio_diagnostics(
             sum(1 for count in repeated_pairs if count > 2)
         ),
         "max_repeticao_par": int(max(pair_counts.values()) if pair_counts else 0),
+        "trincas_repetidas": int(len(repeated_triples)),
+        "max_repeticao_trinca": int(
+            max(triple_counts.values()) if triple_counts else 0
+        ),
+        "quadras_repetidas": int(len(repeated_quads)),
+        "max_repeticao_quadra": int(max(quad_counts.values()) if quad_counts else 0),
         "coocorrencia_media": round(cooc_media, 4),
         "dispersao_features": feature_summary,
     }

@@ -83,6 +83,8 @@ def render_generator(ctx, svc):
             # Mapas de display para ficar mais amigável
             strat_display = {
                 "cauda_controlada": "🎯 Cauda Controlada (Experimental)",
+                "cauda_agressiva": "🚀 Cauda Agressiva (Experimental)",
+                "cauda_convexa": "🔶 Cauda Convexa (Experimental)",
                 "balanceada": "⚖️ Balanceada",
                 "conservadora": "🛡️ Conservadora (Frequentes)",
                 "agressiva": "🔥 Agressiva (Recomendada)",
@@ -90,6 +92,8 @@ def render_generator(ctx, svc):
             }
             strategy_options = [
                 "agressiva",
+                "cauda_convexa",
+                "cauda_agressiva",
                 "cauda_controlada",
                 "balanceada",
                 "conservadora",
@@ -100,12 +104,16 @@ def render_generator(ctx, svc):
                     "balanceada",
                     "conservadora",
                     "agressiva",
+                    "cauda_convexa",
+                    "cauda_agressiva",
                     "cauda_controlada",
                     "pura",
                 ]
                 strat_display["balanceada"] = "⚖️ Balanceada (Recomendada)"
                 strat_display["agressiva"] = "🔥 Agressiva (Atrasados)"
                 strat_display["cauda_controlada"] = "🎯 Cauda Controlada"
+                strat_display["cauda_agressiva"] = "🚀 Cauda Agressiva"
+                strat_display["cauda_convexa"] = "🔶 Cauda Convexa"
 
             strat_key = st.selectbox(
                 "Estratégia Matemática:",
@@ -117,6 +125,8 @@ def render_generator(ctx, svc):
         # Explicação dinâmica da estratégia selecionada
         info_strats = {
             "cauda_controlada": "Parte da agressiva e otimiza o pacote final para concentrar sinal sem perder diversidade.",
+            "cauda_agressiva": "Busca cauda premiável com núcleos de pares/dezenas mais densos, mantendo tetos de exposição.",
+            "cauda_convexa": "Permite núcleo moderado por pares, mas protege o pacote contra repetição de trincas e quadras.",
             "balanceada": "Mistura frequência, atraso e plausibilidade estrutural sem deixar o portfólio ficar concentrado demais.",
             "conservadora": "Dá mais peso a números historicamente frequentes, mas com controles contra superconcentração.",
             "agressiva": "Dá mais espaço a atrasos e ciclos, mantendo freios contra falácia do apostador e padrões artificiais.",
@@ -231,6 +241,36 @@ def render_generator(ctx, svc):
                 value=1.0,
                 step=0.1,
                 help="Controla a intensidade dos sinais históricos habilitados.",
+                on_change=limpar_sessao,
+            )
+
+        col_cal1, col_cal2, col_cal3 = st.columns(3)
+        with col_cal1:
+            usar_calibracao_score = st.toggle(
+                "Calibração de score",
+                value=True,
+                help="Controla a distribuição de perfis estruturais para evitar jogos perfeitos demais ou artificiais.",
+                on_change=limpar_sessao,
+            )
+        with col_cal2:
+            calibration_strength = st.slider(
+                "Força da calibração",
+                min_value=0.0,
+                max_value=2.0,
+                value=1.0,
+                step=0.1,
+                help="Peso do controle por buckets de score estrutural.",
+                on_change=limpar_sessao,
+            )
+        with col_cal3:
+            calibration_target = st.selectbox(
+                "Alvo de calibração",
+                options=["historico_nulo", "historico", "nulo"],
+                format_func=lambda x: {
+                    "historico_nulo": "Histórico + nulo",
+                    "historico": "Histórico",
+                    "nulo": "Modelo nulo",
+                }[x],
                 on_change=limpar_sessao,
             )
 
@@ -362,6 +402,9 @@ def render_generator(ctx, svc):
             "usar_ciclo": usar_ciclo,
             "usar_coocorrencia": usar_coocorrencia,
             "frequencia_recente": frequencia_recente,
+            "usar_calibracao_score": usar_calibracao_score,
+            "calibration_strength": calibration_strength,
+            "calibration_target": calibration_target,
         }
 
         try:

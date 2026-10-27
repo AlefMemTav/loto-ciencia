@@ -364,8 +364,15 @@ class LotteryService:
         percentil_min = float(payload.get("percentil_min", 5.0))
         percentil_max = float(payload.get("percentil_max", 95.0))
         null_model_samples = payload.get("null_model_samples", None)
+        usar_calibracao_score = bool(payload.get("usar_calibracao_score", True))
+        calibration_strength = float(payload.get("calibration_strength", 1.0))
+        calibration_target = payload.get("calibration_target", "historico_nulo")
         if not (0 <= percentil_min < percentil_max <= 100):
             raise ValueError("Faixa de percentis deve satisfazer 0 <= min < max <= 100.")
+        if not (0 <= calibration_strength <= 2):
+            raise ValueError("calibration_strength deve estar entre 0 e 2.")
+        if calibration_target not in {"historico_nulo", "historico", "nulo"}:
+            raise ValueError("calibration_target inválido.")
 
         fixos = sorted(set(fixos or []))
         evitados = sorted(set(evitados or []))
@@ -400,6 +407,9 @@ class LotteryService:
             percentil_min=percentil_min,
             percentil_max=percentil_max,
             null_model_samples=null_model_samples,
+            usar_calibracao_score=usar_calibracao_score,
+            calibration_strength=calibration_strength,
+            calibration_target=calibration_target,
         )
 
         return jogos[:qtd]
@@ -437,6 +447,12 @@ class LotteryService:
         percentil_max = float(payload.get("percentil_max", 95.0))
         if not (0 <= percentil_min < percentil_max <= 100):
             raise ValueError("Faixa de percentis deve satisfazer 0 <= min < max <= 100.")
+        calibration_strength = float(payload.get("calibration_strength", 1.0))
+        calibration_target = payload.get("calibration_target", "historico_nulo")
+        if not (0 <= calibration_strength <= 2):
+            raise ValueError("calibration_strength deve estar entre 0 e 2.")
+        if calibration_target not in {"historico_nulo", "historico", "nulo"}:
+            raise ValueError("calibration_target inválido.")
 
         if estrategia_base == "pura":
             usar_quentes = False
@@ -473,6 +489,9 @@ class LotteryService:
             "percentil_min": percentil_min,
             "percentil_max": percentil_max,
             "null_model_samples": payload.get("null_model_samples", None),
+            "usar_calibracao_score": bool(payload.get("usar_calibracao_score", True)),
+            "calibration_strength": calibration_strength,
+            "calibration_target": calibration_target,
             "candidate_pool_size": payload.get("candidate_pool_size", None),
             "tournament_packages": payload.get("tournament_packages", None),
             "monte_carlo_packages": payload.get("monte_carlo_packages", None),
@@ -510,6 +529,9 @@ class LotteryService:
             "historical_signal_strength": float(
                 payload.get("historical_signal_strength", 1.0)
             ),
+            "usar_calibracao_score": bool(payload.get("usar_calibracao_score", True)),
+            "calibration_strength": float(payload.get("calibration_strength", 1.0)),
+            "calibration_target": payload.get("calibration_target", "historico_nulo"),
         }
         if not (
             0
@@ -518,6 +540,14 @@ class LotteryService:
             <= 100
         ):
             raise ValueError("Faixa de percentis deve satisfazer 0 <= min < max <= 100.")
+        if not (0 <= objective_options["calibration_strength"] <= 2):
+            raise ValueError("calibration_strength deve estar entre 0 e 2.")
+        if objective_options["calibration_target"] not in {
+            "historico_nulo",
+            "historico",
+            "nulo",
+        }:
+            raise ValueError("calibration_target inválido.")
 
         fixos = sorted(set(fixos or []))
         if len(fixos) > ctx.config.bet_size:

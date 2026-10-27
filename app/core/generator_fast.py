@@ -67,6 +67,9 @@ def gerar_jogos_vetorizado(
     percentil_min: float = 5.0,
     percentil_max: float = 95.0,
     null_model_samples: int = None,
+    usar_calibracao_score: bool = True,
+    calibration_strength: float = 1.0,
+    calibration_target: str = "historico_nulo",
     candidate_multiplier: int = 4000,
 ) -> List[List[int]]:
 
@@ -110,7 +113,12 @@ def gerar_jogos_vetorizado(
         z_gap[dest_indices] = vals_gap[mask_safe]
 
     # Aplica estratégia
-    if estrategia in ("agressiva", "cauda_controlada"):
+    if estrategia in (
+        "agressiva",
+        "cauda_controlada",
+        "cauda_agressiva",
+        "cauda_convexa",
+    ):
         scores_final = (z_gap * 0.55 * usar_atrasados) + (
             z_freq * 0.45 * usar_quentes
         )
@@ -182,6 +190,8 @@ def gerar_jogos_vetorizado(
             "balanceada": 1.35,
             "agressiva": 1.45,
             "cauda_controlada": 1.55,
+            "cauda_agressiva": 1.60,
+            "cauda_convexa": 1.55,
             "pura": 2.0,
         }.get(estrategia, 1.35)
     temperatura = max(float(temperatura), 0.2)
@@ -262,6 +272,9 @@ def gerar_jogos_vetorizado(
         usar_atrasados=usar_atrasados,
         usar_coocorrencia=usar_coocorrencia,
         historical_signal_strength=historical_signal_strength,
+        usar_calibracao_score=usar_calibracao_score,
+        calibration_strength=calibration_strength,
+        calibration_target=calibration_target,
     )
     return select_diverse_portfolio(
         candidatos,
@@ -271,6 +284,10 @@ def gerar_jogos_vetorizado(
         rng,
         estrategia=estrategia,
         ctx=ctx,
+        usar_calibracao_score=usar_calibracao_score,
+        calibration_strength=calibration_strength,
+        calibration_target=calibration_target,
+        null_model_samples=null_model_samples,
     )
 
 

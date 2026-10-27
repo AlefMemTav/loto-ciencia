@@ -107,6 +107,18 @@ from app.core.statistics.feature_percentiles import (
     batch_feature_percentiles,
     summarize_feature_percentiles,
 )
+from app.core.statistics.score_calibration import (
+    get_score_calibration_model,
+    score_calibration_diagnostics,
+    score_structural_batch,
+    summarize_score_calibration,
+)
+from app.core.statistics.prize_model import (
+    diagnostics_to_dict,
+    financial_diagnostics,
+    parse_prize_table,
+    resolve_prize_table,
+)
 
 from app.core.statistics.temporal import (
     calcular_ciclo_atual,
@@ -230,6 +242,14 @@ __all__ = [
     "NULL_MODEL_VERSION",
     "batch_feature_percentiles",
     "summarize_feature_percentiles",
+    "get_score_calibration_model",
+    "score_calibration_diagnostics",
+    "score_structural_batch",
+    "summarize_score_calibration",
+    "diagnostics_to_dict",
+    "financial_diagnostics",
+    "parse_prize_table",
+    "resolve_prize_table",
     # bootstrap iC
     "avaliar_soma_com_bootstrap",
     "calcular_bootstrap_ic_com_cache",
