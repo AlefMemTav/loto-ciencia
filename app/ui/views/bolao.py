@@ -4,7 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from app.core.logger import logger
 from app.core.lottery import GameConfig
-from app.ui.services.auth_client import AUTHClient
 
 
 def render_bolao(ctx, svc):
@@ -63,16 +62,12 @@ def render_bolao(ctx, svc):
                 help="O sistema limpará espaços extras e caracteres estranhos automaticamente.",
             )
 
-    # Verificação de Acesso
-    can_use = AUTHClient.check_and_render_access("bolao", "Análise de Bolão")
-
     # Botão de Ação
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button(
         "🔍 Auditar Qualidade do Grupo",
         type="primary",
         width="stretch",
-        disabled=not can_use,
     ):
         if not texto_bolao.strip():
             st.warning("⚠️ A caixa de texto está vazia.")

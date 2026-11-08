@@ -15,7 +15,6 @@
   <a href="#-instalação">Instalação</a> •
   <a href="#-uso">Uso</a> •
   <a href="#-arquitetura">Arquitetura</a> •
-  <a href="#-api">API</a> •
   <a href="#-contribuição">Contribuição</a>
 </p>
 
@@ -46,7 +45,6 @@
 - [Instalação](#-instalação)
 - [Uso](#-uso)
 - [Arquitetura](#-arquitetura)
-- [API REST](#-api-rest)
 - [Tecnologias](#-tecnologias)
 - [Estrutura do Projeto](#-estrutura-do-projeto)
 - [Contribuição](#-contribuição)
@@ -209,14 +207,6 @@ streamlit run main.py
 
 Acesse: `http://localhost:8501`
 
-### API REST (FastAPI)
-
-```bash
-python run_api.py
-```
-
-Acesse: `http://localhost:8000/docs` (Swagger UI)
-
 ### Exemplos de Uso
 
 #### Validar um Jogo (Python)
@@ -232,14 +222,6 @@ print(f"Score: {report['score']}")
 print(f"Risco de Divisão: {report['risco_divisao']}")
 ```
 
-#### Validar via API
-
-```bash
-curl -X POST "http://localhost:8000/games/mega_sena/validate" \
-  -H "Content-Type: application/json" \
-  -d '{"numeros": [5, 17, 28, 35, 48, 59]}'
-```
-
 ---
 
 ## 🏗️ Arquitetura
@@ -247,10 +229,10 @@ curl -X POST "http://localhost:8000/games/mega_sena/validate" \
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      PRESENTATION LAYER                      │
-├─────────────────────────────┬───────────────────────────────┤
-│      Streamlit UI           │         FastAPI REST          │
-│    (pages/, app/ui/)        │        (app/api/)             │
-└─────────────────────────────┴───────────────────────────────┘
+├──────────────────────────────────────────────────────────────┤
+│                       Streamlit UI                           │
+│                  (pages/, app/ui/)                           │
+└──────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -288,43 +270,6 @@ curl -X POST "http://localhost:8000/games/mega_sena/validate" \
 
 ---
 
-## 🔌 API REST
-
-### Endpoints Principais
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET` | `/games` | Lista todos os jogos disponíveis |
-| `GET` | `/games/{slug}/config` | Configuração de um jogo |
-| `GET` | `/games/{slug}/stats` | Estatísticas do jogo |
-| `POST` | `/games/{slug}/validate` | Valida uma aposta |
-| `POST` | `/games/{slug}/generate` | Gera apostas |
-| `POST` | `/games/{slug}/closures` | Gera fechamentos |
-
-### Exemplo de Response (Validação)
-
-```json
-{
-  "score": 85,
-  "status": "Bom",
-  "risco_divisao": "Baixo",
-  "msgs": [
-    "✅ Soma (192) equilibrada",
-    "✅ Distribuição Par/Ímpar equilibrada",
-    "✅ Finais bem distribuídos",
-    "🛡️ Aposta Blindada: Padrão único"
-  ],
-  "metricas": {
-    "soma": 192,
-    "pares": 3,
-    "impares": 3,
-    "span": 54
-  }
-}
-```
-
----
-
 ## 🛠️ Tecnologias
 
 ### Core
@@ -338,10 +283,6 @@ curl -X POST "http://localhost:8000/games/mega_sena/validate" \
 - **Plotly** - Gráficos interativos
 - **Altair** - Visualizações declarativas
 
-### Backend
-- **FastAPI** - API REST de alta performance
-- **Pydantic** - Validação de dados
-
 ### DevOps
 - **Docker** - Containerização
 - **pytest** - Testes automatizados
@@ -353,9 +294,6 @@ curl -X POST "http://localhost:8000/games/mega_sena/validate" \
 ```
 loto-science/
 ├── app/
-│   ├── api/                    # FastAPI endpoints
-│   │   ├── routers/            # Rotas por domínio
-│   │   └── schemas/            # DTOs Pydantic
 │   ├── core/                   # Lógica de negócio
 │   │   ├── lottery/            # Modelos e catálogo de jogos
 │   │   ├── statistics/         # Módulos estatísticos
@@ -368,7 +306,6 @@ loto-science/
 ├── tests/                      # Testes automatizados
 ├── assets/                     # Imagens e recursos
 ├── main.py                     # Entry point Streamlit
-├── run_api.py                  # Entry point FastAPI
 ├── requirements.txt            # Dependências
 ├── Dockerfile                  # Container config
 └── README.md                   # Documentação
@@ -437,7 +374,6 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 - [Caixa Econômica Federal](https://loterias.caixa.gov.br/) - Dados históricos oficiais
 - [Streamlit](https://streamlit.io/) - Framework de UI
-- [FastAPI](https://fastapi.tiangolo.com/) - Framework de API
 
 ---
 

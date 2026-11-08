@@ -1,11 +1,8 @@
 # app/ui/views/validator.py
-from datetime import date
 import streamlit as st
 import pandas as pd
 from app.core.logger import logger
-from app.services import auth_service
 from app.ui.views.board import render_volante_marcado
-from app.ui.services.auth_client import AUTHClient
 
 
 def render_validator(ctx, svc):
@@ -57,15 +54,11 @@ def render_validator(ctx, svc):
         st.session_state.validator_result = None
         st.session_state.last_validator_input = current_input_hash
 
-    # Verifica acesso
-    can_use = AUTHClient.check_and_render_access("validator", "Validador Profissional")
-
     # Botão de Ação
     if st.button(
         "🚀 Auditar Meu Jogo Agora",
         type="primary",
         width="stretch",
-        disabled=not can_use,
     ):
         try:
             texto = entrada.replace(",", " ").replace("-", " ").replace("\n", " ")
@@ -94,11 +87,7 @@ def render_validator(ctx, svc):
                 # 1. Gera o relatório
                 relatorio = svc.validate(slug, nums)
 
-                # 2. Marca o uso
-                if AUTHClient.get_plan() != "pro":
-                    AUTHClient.mark_resource_used("validator")
-
-                # 3. Salva no Estado
+                # 2. Salva no Estado
                 st.session_state.validator_result = {
                     "relatorio": relatorio,
                     "nums": nums,

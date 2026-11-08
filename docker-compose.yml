@@ -1,39 +1,11 @@
-version: "3.8"
-
 services:
-  backend:
+  app:
     build: .
-    container_name: lotoscience_backend
-    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --workers 4
-    volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
-    env_file:
-      - .env
-    restart: unless-stopped
-    networks:
-      - lotoscience_network
-
-  frontend:
-    build: .
-    container_name: lotoscience_frontend
+    container_name: lotoscience
     command: streamlit run main.py --server.port 8501 --server.address 0.0.0.0
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
-    env_file:
-      - .env
-    environment:
-      - API_URL=http://backend:8000
-      - ENVIRONMENT=production
     ports:
       - "8501:8501"
-    depends_on:
-      - backend
     restart: unless-stopped
-    networks:
-      - lotoscience_network
-
-networks:
-  lotoscience_network:
-    driver: bridge

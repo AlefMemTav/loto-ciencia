@@ -16,7 +16,7 @@ def render_como_funciona():
 
     # NAVEGAÇÃO
     if st.button("← Voltar para Início", key="back_button"):
-        st.switch_page("pages/0_Inicio.py")
+        st.switch_page("pages/2_Painel.py")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
