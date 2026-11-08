@@ -90,14 +90,67 @@ def test_salvar_ordena_colunas_e_nao_duplica(tmp_path, monkeypatch):
     assert cols[-1] == "localGanhadores"
 
 
-def test_backfill_respeita_limite_e_prioriza_recentes(tmp_path, monkeypatch):
+def _excel_com(tmp_path, monkeypatch, concursos):
     data = tmp_path / "data"
     data.mkdir()
-    pd.DataFrame({"Concurso": [5, 4, 3, 2, 1]}).to_excel(data / "x.xlsx", index=False)
+    pd.DataFrame({"Concurso": concursos}).to_excel(data / "x.xlsx", index=False)
     monkeypatch.setattr(al, "DATA_DIR", str(data))
     monkeypatch.setattr(al, "DETALHES_DIR", str(data / "detalhes"))
-    monkeypatch.setattr(al, "LIMITE_BACKFILL", 2)
     monkeypatch.setattr(al.time, "sleep", lambda *_: None)
+
+
+def test_historico_completo_numa_chamada(tmp_path, monkeypatch):
+    _excel_com(tmp_path, monkeypatch, [5, 4, 3, 2, 1])
+    chamadas = {"massa": 0, "unitaria": 0}
+
+    def massa(loteria):
+        chamadas["massa"] += 1
+        # chave 0 = último sorteio, como na API real
+        return {c: {**MEGA_3082, "concurso": c} for c in [5, 4, 3, 2, 1]}
+
+    def unitaria(loteria, concurso):
+        chamadas["unitaria"] += 1
+
+    monkeypatch.setattr(al, "buscar_todos_resultados", massa)
+    monkeypatch.setattr(al, "buscar_resultado_concurso", unitaria)
+    al.atualizar_detalhes("megasena", "x.xlsx", [])
+    assert chamadas == {"massa": 1, "unitaria": 0}
+    assert list(al.ler_detalhes("megasena")["Concurso"]) == [5, 4, 3, 2, 1]
+
+    # já completo: nenhuma chamada nova
+    al.atualizar_detalhes("megasena", "x.xlsx", [])
+    assert chamadas == {"massa": 1, "unitaria": 0}
+
+
+def test_buscar_todos_converte_lista_em_dict(monkeypatch):
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [{"concurso": 3082}, {"concurso": 3081}]
+
+    monkeypatch.setattr(al.requests, "get", lambda *a, **k: Resp())
+    assert set(al.buscar_todos_resultados("megasena")) == {3082, 3081}
+
+
+def test_buscar_todos_rejeita_resposta_que_nao_e_lista(monkeypatch):
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"erro": "x"}
+
+    monkeypatch.setattr(al.requests, "get", lambda *a, **k: Resp())
+    monkeypatch.setattr(al.time, "sleep", lambda *_: None)
+    assert al.buscar_todos_resultados("megasena", max_tentativas=2) is None
+
+
+def test_reserva_gradual_respeita_limite_e_prioriza_recentes(tmp_path, monkeypatch):
+    _excel_com(tmp_path, monkeypatch, [5, 4, 3, 2, 1])
+    monkeypatch.setattr(al, "LIMITE_BACKFILL", 2)
+    monkeypatch.setattr(al, "buscar_todos_resultados", lambda l: None)
     buscados = []
 
     def falso(loteria, concurso):
@@ -107,20 +160,14 @@ def test_backfill_respeita_limite_e_prioriza_recentes(tmp_path, monkeypatch):
     monkeypatch.setattr(al, "buscar_resultado_concurso", falso)
     al.atualizar_detalhes("megasena", "x.xlsx", [])
     assert buscados == [5, 4]
-    assert set(al.ler_detalhes("megasena")["Concurso"]) == {5, 4}
-
     buscados.clear()
     al.atualizar_detalhes("megasena", "x.xlsx", [])
     assert buscados == [3, 2]
 
 
-def test_backfill_para_apos_falhas_seguidas(tmp_path, monkeypatch):
-    data = tmp_path / "data"
-    data.mkdir()
-    pd.DataFrame({"Concurso": list(range(1, 21))}).to_excel(data / "x.xlsx", index=False)
-    monkeypatch.setattr(al, "DATA_DIR", str(data))
-    monkeypatch.setattr(al, "DETALHES_DIR", str(data / "detalhes"))
-    monkeypatch.setattr(al.time, "sleep", lambda *_: None)
+def test_reserva_para_apos_falhas_seguidas(tmp_path, monkeypatch):
+    _excel_com(tmp_path, monkeypatch, list(range(1, 21)))
+    monkeypatch.setattr(al, "buscar_todos_resultados", lambda l: None)
     chamadas = []
     monkeypatch.setattr(al, "buscar_resultado_concurso", lambda l, c: chamadas.append(c))
     al.atualizar_detalhes("megasena", "x.xlsx", [])

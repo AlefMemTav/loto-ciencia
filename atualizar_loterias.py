@@ -8,8 +8,8 @@ import time
 BASE_URL = "https://loteriascaixa-api.herokuapp.com/api"
 DATA_DIR = "data"
 DETALHES_DIR = os.path.join(DATA_DIR, "detalhes")
-# Quantos concursos antigos (sem detalhes) buscar por execução, por loteria.
-# O histórico é preenchido aos poucos para caber no tempo do workflow.
+# Só vale no modo de reserva (concurso a concurso): quantos concursos antigos
+# buscar por execução, por loteria. O caminho normal traz tudo numa chamada.
 LIMITE_BACKFILL = int(os.getenv("LIMITE_BACKFILL", "100"))
 MAX_FALHAS_SEGUIDAS = 5
 
@@ -42,6 +42,24 @@ def buscar_resultado_concurso(loteria, concurso):
     except requests.exceptions.RequestException as e:
         print(f"   ⚠️  Erro ao buscar concurso {concurso}: {e}")
         return None
+
+
+def buscar_todos_resultados(loteria, max_tentativas=3):
+    """Busca o histórico completo de uma vez (a chave 0 é o último sorteio).
+    Devolve um dict {concurso: dados}; None se a chamada falhar."""
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            response = requests.get(f"{BASE_URL}/{loteria}", timeout=60)
+            response.raise_for_status()
+            dados = response.json()
+            if not isinstance(dados, list):
+                raise ValueError("resposta inesperada (não é uma lista)")
+            return {int(d["concurso"]): d for d in dados if "concurso" in d}
+        except (requests.exceptions.RequestException, ValueError, KeyError) as e:
+            print(f"   ⚠️  Histórico completo, tentativa {tentativa}/{max_tentativas}: {e}")
+            if tentativa < max_tentativas:
+                time.sleep(10)
+    return None
 
 
 def buscar_ultimo_resultado(loteria, max_tentativas=3):
@@ -171,20 +189,30 @@ def atualizar_detalhes(loteria, arquivo_nome, detalhes_novos):
 
     arquivo_excel = os.path.join(DATA_DIR, arquivo_nome)
     concursos_excel = set(pd.read_excel(arquivo_excel)["Concurso"].astype(int))
-    pendentes = sorted(concursos_excel - conhecidos, reverse=True)[:LIMITE_BACKFILL]
+    pendentes = sorted(concursos_excel - conhecidos, reverse=True)
 
-    falhas_seguidas = 0
-    for concurso in pendentes:
-        dados_api = buscar_resultado_concurso(loteria, concurso)
-        if dados_api:
-            linhas.append(criar_linha_detalhes(dados_api))
-            falhas_seguidas = 0
+    if pendentes:
+        # Caminho principal: uma única chamada traz o histórico inteiro.
+        todos = buscar_todos_resultados(loteria)
+        if todos is not None:
+            for concurso in pendentes:
+                if concurso in todos:
+                    linhas.append(criar_linha_detalhes(todos[concurso]))
         else:
-            falhas_seguidas += 1
-            if falhas_seguidas >= MAX_FALHAS_SEGUIDAS:
-                print("   ⚠️  Muitas falhas seguidas; o resto fica para a próxima execução")
-                break
-        time.sleep(0.3)
+            # Reserva: busca concurso a concurso, aos poucos.
+            print("   ↪ Usando o modo gradual (concurso a concurso)")
+            falhas_seguidas = 0
+            for concurso in pendentes[:LIMITE_BACKFILL]:
+                dados_api = buscar_resultado_concurso(loteria, concurso)
+                if dados_api:
+                    linhas.append(criar_linha_detalhes(dados_api))
+                    falhas_seguidas = 0
+                else:
+                    falhas_seguidas += 1
+                    if falhas_seguidas >= MAX_FALHAS_SEGUIDAS:
+                        print("   ⚠️  Muitas falhas seguidas; o resto fica para a próxima execução")
+                        break
+                time.sleep(0.3)
 
     gravados = salvar_detalhes(loteria, df_detalhes, linhas)
     salvos = set(ler_detalhes(loteria)["Concurso"].astype(int))
