@@ -185,6 +185,15 @@ pip install -r requirements.txt
 streamlit run main.py
 ```
 
+### Atualização dos resultados e detalhes de premiação
+
+`python atualizar_loterias.py` (também roda no GitHub Actions) atualiza os `.xlsx` com os
+novos sorteios e grava, em `data/detalhes/<loteria>_detalhes.csv`, os dados que o Excel não
+tem: ganhadores e prêmio por faixa, valor arrecadado, acumulado, estimativa do próximo
+concurso e local dos ganhadores. Concursos antigos são completados na primeira execução, com uma única chamada ao histórico
+completo da API; se essa chamada falhar, o script volta ao modo gradual
+(`LIMITE_BACKFILL`, padrão 100 por loteria a cada execução).
+
 ### Usando Docker
 
 ```bash
