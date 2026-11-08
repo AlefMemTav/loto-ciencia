@@ -1,7 +1,6 @@
 # app/ui/components/sidebar.py
 import streamlit as st
 from app.core.lottery import GAMES
-from app.ui.services.auth_client import AUTHClient
 from app.ui.core.state import GLOBAL_KEY, WIDGET_KEY, sync_widget_to_global
 
 

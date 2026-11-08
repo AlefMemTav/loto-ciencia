@@ -10,29 +10,17 @@ authors = [
 ]
 
 dependencies = [
-    "fastapi>=0.115.5",
-    "uvicorn[standard]>=0.32.1",
     "streamlit>=1.52.2",
-    "extra-streamlit-components>=0.1.71",
     "pandas>=2.2.3",
     "numpy>=2.1.3",
-    "pydantic>=2.10.5",
+    "scipy>=1.14.1",
+    "scikit-learn>=1.5.0",
     "requests>=2.32.3",
-    "python-dotenv>=1.0.1",
-    "stripe>=14.1.0",
     "openpyxl>=3.1.5",
     "plotly>=5.24.1",
 ]
 
 [project.optional-dependencies]
-api = [
-    "python-multipart>=0.0.18",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "bcrypt==4.0.1",
-    "email-validator>=2.2.0",
-]
-
 dev = [
     "pytest>=8.3.0",
     "black>=24.10.0",

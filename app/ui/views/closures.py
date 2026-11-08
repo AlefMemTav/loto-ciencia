@@ -2,7 +2,6 @@
 import streamlit as st
 import math
 from app.core.logger import logger
-from app.ui.services.auth_client import AUTHClient
 from app.core.matrices import get_matriz_fechamento
 
 
@@ -100,18 +99,11 @@ def render_closures(ctx, svc):
     with col_info:
         st.info(exemplo_texto)
 
-    # Verifica Plano
-    can_use = AUTHClient.check_and_render_access("closures", "Matrizes Científicas")
-
     if st.button(
         "⚡ Gerar Matriz Econômica Agora",
         width="stretch",
         type="primary",
-        disabled=not can_use,
     ):
-        if not can_use:
-            return
-
         try:
             # Tratamento de input robusto
             raw_text = (

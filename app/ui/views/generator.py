@@ -3,7 +3,6 @@ from datetime import date
 import streamlit as st
 import time
 from app.core.logger import logger
-from app.ui.services.auth_client import AUTHClient
 from app.ui.core.styles import apply_custom_css
 
 
@@ -356,9 +355,7 @@ def render_generator(ctx, svc):
                     f"Disponíveis para sorteio **{numeros_restantes_no_pool}**"
                 )
 
-    # --- VERIFICAÇÃO DE ACESSO ---
-    has_access = AUTHClient.check_and_render_access("generator", "Gerador Inteligente")
-    can_use = has_access and restrictions_ok
+    can_use = restrictions_ok
 
     # --- BOTÃO DE AÇÃO ---
     st.markdown("<br>", unsafe_allow_html=True)
@@ -464,15 +461,6 @@ def render_generator(ctx, svc):
                 jogos = svc.generate(slug, payload, None)
 
             # --- PÓS-PROCESSAMENTO (MANTIDO IGUAL) ---
-
-            # Marca uso (se não for PRO)
-            if jogos and AUTHClient.get_plan() != "pro":
-                today = date.today().isoformat()
-                if st.session_state.get("generator_marked_date") != today:
-                    success, msg = AUTHClient.mark_resource_used("generator")
-                    if success:
-                        st.session_state.generator_marked_date = today
-                        logger.info(f"✅ Geração marcada para {AUTHClient.get_plan()}")
 
             # Salva resultado na sessão
             tempo_total = time.time() - start_time
