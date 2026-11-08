@@ -1,3 +1,4 @@
+import json
 import requests
 import pandas as pd
 from datetime import datetime
@@ -6,6 +7,23 @@ import time
 
 BASE_URL = "https://loteriascaixa-api.herokuapp.com/api"
 DATA_DIR = "data"
+DETALHES_DIR = os.path.join(DATA_DIR, "detalhes")
+# Quantos concursos antigos (sem detalhes) buscar por execução, por loteria.
+# O histórico é preenchido aos poucos para caber no tempo do workflow.
+LIMITE_BACKFILL = int(os.getenv("LIMITE_BACKFILL", "100"))
+MAX_FALHAS_SEGUIDAS = 5
+
+COLUNAS_FIXAS_DETALHES = [
+    "Concurso",
+    "Data",
+    "acumulou",
+    "valorArrecadado",
+    "valorAcumuladoProximoConcurso",
+    "valorEstimadoProximoConcurso",
+    "valorAcumuladoConcursoEspecial",
+    "concursoEspecial",
+    "local",
+]
 
 LOTERIAS_CONFIG = {
     "megasena": {"arquivo": "mega_sena_sorteio.xlsx", "num_bolas": 6},
@@ -60,7 +78,125 @@ def criar_linha_dados(dados_api, num_bolas):
     return linha
 
 
-def atualizar_excel(loteria, arquivo_nome, num_bolas):
+def _numero(valor):
+    """Converte para float; devolve None se vier vazio ou inválido."""
+    if valor is None or isinstance(valor, bool):
+        return None
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return None
+
+
+def criar_linha_detalhes(dados_api):
+    """Extrai da resposta da API os campos que não existem no Excel:
+    ganhadores e prêmio por faixa, arrecadação, acumulado e local dos ganhadores.
+    Tolerante a concursos antigos, em que alguns campos podem faltar."""
+
+    linha = {
+        "Concurso": dados_api["concurso"],
+        "Data": dados_api.get("data"),
+        "acumulou": dados_api.get("acumulou"),
+        "valorArrecadado": _numero(dados_api.get("valorArrecadado")),
+        "valorAcumuladoProximoConcurso": _numero(
+            dados_api.get("valorAcumuladoProximoConcurso")
+        ),
+        "valorEstimadoProximoConcurso": _numero(
+            dados_api.get("valorEstimadoProximoConcurso")
+        ),
+        "valorAcumuladoConcursoEspecial": _numero(
+            dados_api.get("valorAcumuladoConcursoEspecial")
+        ),
+        "concursoEspecial": dados_api.get("concursoEspecial"),
+        "local": dados_api.get("local"),
+    }
+
+    for premio in dados_api.get("premiacoes") or []:
+        faixa = premio.get("faixa")
+        if faixa is None:
+            continue
+        linha[f"faixa{int(faixa)}_ganhadores"] = premio.get("ganhadores")
+        linha[f"faixa{int(faixa)}_premio"] = _numero(premio.get("valorPremio"))
+
+    linha["localGanhadores"] = json.dumps(
+        dados_api.get("localGanhadores") or [], ensure_ascii=False
+    )
+    return linha
+
+
+def _ordenar_colunas(df):
+    faixas = sorted(
+        (c for c in df.columns if c.startswith("faixa")),
+        key=lambda c: (int(c[5 : c.index("_")]), c),
+    )
+    ordem = [c for c in COLUNAS_FIXAS_DETALHES if c in df.columns] + faixas
+    if "localGanhadores" in df.columns:
+        ordem.append("localGanhadores")
+    return df[ordem]
+
+
+def caminho_detalhes(loteria):
+    return os.path.join(DETALHES_DIR, f"{loteria}_detalhes.csv")
+
+
+def ler_detalhes(loteria):
+    caminho = caminho_detalhes(loteria)
+    if os.path.exists(caminho):
+        return pd.read_csv(caminho)
+    return pd.DataFrame(columns=COLUNAS_FIXAS_DETALHES)
+
+
+def salvar_detalhes(loteria, df_existente, novas_linhas):
+    """Junta as linhas novas ao CSV (mais recente primeiro, sem duplicar concurso)."""
+    if not novas_linhas:
+        return 0
+    os.makedirs(DETALHES_DIR, exist_ok=True)
+    df_novas = pd.DataFrame(novas_linhas)
+    df = pd.concat([df_novas, df_existente], ignore_index=True)
+    df = df.drop_duplicates(subset="Concurso", keep="first")
+    df = df.sort_values("Concurso", ascending=False)
+    _ordenar_colunas(df).to_csv(caminho_detalhes(loteria), index=False)
+    return len(df_novas)
+
+
+def atualizar_detalhes(loteria, arquivo_nome, detalhes_novos):
+    """Grava os detalhes dos concursos que acabaram de entrar no Excel e
+    completa, aos poucos, os concursos antigos que ainda não têm detalhes."""
+
+    df_detalhes = ler_detalhes(loteria)
+    conhecidos = set(df_detalhes["Concurso"].astype(int))
+    conhecidos.update(int(l["Concurso"]) for l in detalhes_novos)
+
+    linhas = list(detalhes_novos)
+
+    arquivo_excel = os.path.join(DATA_DIR, arquivo_nome)
+    concursos_excel = set(pd.read_excel(arquivo_excel)["Concurso"].astype(int))
+    pendentes = sorted(concursos_excel - conhecidos, reverse=True)[:LIMITE_BACKFILL]
+
+    falhas_seguidas = 0
+    for concurso in pendentes:
+        dados_api = buscar_resultado_concurso(loteria, concurso)
+        if dados_api:
+            linhas.append(criar_linha_detalhes(dados_api))
+            falhas_seguidas = 0
+        else:
+            falhas_seguidas += 1
+            if falhas_seguidas >= MAX_FALHAS_SEGUIDAS:
+                print("   ⚠️  Muitas falhas seguidas; o resto fica para a próxima execução")
+                break
+        time.sleep(0.3)
+
+    gravados = salvar_detalhes(loteria, df_detalhes, linhas)
+    salvos = set(ler_detalhes(loteria)["Concurso"].astype(int))
+    restantes = len(concursos_excel - salvos)
+    print(
+        f"📊 {loteria}: {gravados} detalhe(s) gravado(s); "
+        f"faltam {restantes} concurso(s) antigo(s)"
+    )
+    return gravados
+
+
+def atualizar_excel(loteria, arquivo_nome, num_bolas, detalhes_novos=None):
     """Atualiza o Excel de uma loteria específica, preenchendo lacunas se necessário"""
 
     # 1. Verifica se o arquivo existe
@@ -113,6 +249,8 @@ def atualizar_excel(loteria, arquivo_nome, num_bolas):
         if dados_api:
             nova_linha = criar_linha_dados(dados_api, num_bolas)
             novas_linhas.append(nova_linha)
+            if detalhes_novos is not None:
+                detalhes_novos.append(criar_linha_detalhes(dados_api))
             print(f"   ✓ Concurso {concurso} encontrado")
         else:
             print(
@@ -154,8 +292,15 @@ def atualizar_todas_loterias():
     atualizacoes = 0
     for loteria, config in LOTERIAS_CONFIG.items():
         print(f"🎰 Processando {loteria.upper()}...")
-        if atualizar_excel(loteria, config["arquivo"], config["num_bolas"]):
+        detalhes_novos = []
+        if atualizar_excel(
+            loteria, config["arquivo"], config["num_bolas"], detalhes_novos
+        ):
             atualizacoes += 1
+        try:
+            atualizar_detalhes(loteria, config["arquivo"], detalhes_novos)
+        except Exception as e:  # os detalhes nunca devem derrubar a atualização
+            print(f"   ⚠️  Detalhes de {loteria} não atualizados: {e}")
         print()
 
     print(f"{'='*60}")
