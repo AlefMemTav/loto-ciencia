@@ -6,7 +6,6 @@
 
 # Streamlit framework
 streamlit==1.52.2
-extra-streamlit-components==0.1.81
 
 # Análise de dados
 pandas==2.2.3
@@ -15,7 +14,6 @@ scipy==1.14.1
 scikit-learn==1.8.0
 
 # Visualização
-plotly==5.24.1
 matplotlib==3.10.8
 
 # Manipulação de arquivos Excel
@@ -25,8 +23,6 @@ openpyxl==3.1.5
 requests==2.32.3
 
 # Utilitários
-python-dotenv==1.0.1
 
 # Dependências extras do Streamlit
 altair==6.0.0  # Gráficos alternativos
-pillow==11.0.0  # Manipulação de imagens

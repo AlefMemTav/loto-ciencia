@@ -194,15 +194,19 @@ concurso e local dos ganhadores. Concursos antigos são completados na primeira 
 completo da API; se essa chamada falhar, o script volta ao modo gradual
 (`LIMITE_BACKFILL`, padrão 100 por loteria a cada execução).
 
-### Usando Docker
+### Novos critérios de pontuação (ordem de saída e popularidade medida)
 
-```bash
-# Build da imagem
-docker build -t lotoscience .
+- **Ordem de saída** (`app/core/statistics/ordem_saida.py`): usa a ordem real em que as bolas
+  saíram (colunas `D1..Dk`). Descarta automaticamente trechos ordenados da planilha (ex.: Quina
+  antiga), audita a uniformidade das posições (Benjamini-Hochberg) e dá uma preferência leve
+  contra jogos de números que só saem cedo ou só tarde. Não altera a chance de acerto.
+- **Popularidade medida** (`app/core/statistics/popularidade_medida.py`): com os ganhadores
+  reais em `data/detalhes/`, estima quanto cada número divide o prêmio e penaliza jogos que
+  tendem a dividir mais. Só entra se passar numa validação cruzada temporal; sem dados ou sem
+  ganho comprovado, é ignorado.
 
-# Executar container
-docker run -p 8501:8501 lotoscience
-```
+Os dois entram no validador (`validar_jogo`) e no score do gerador
+(`score_plausibility_batch`), junto com todos os critérios que já existiam.
 
 ---
 
@@ -289,11 +293,9 @@ print(f"Risco de Divisão: {report['risco_divisao']}")
 
 ### Frontend
 - **Streamlit** - Interface web interativa
-- **Plotly** - Gráficos interativos
 - **Altair** - Visualizações declarativas
 
-### DevOps
-- **Docker** - Containerização
+### Testes
 - **pytest** - Testes automatizados
 
 ---
@@ -316,7 +318,6 @@ loto-science/
 ├── assets/                     # Imagens e recursos
 ├── main.py                     # Entry point Streamlit
 ├── requirements.txt            # Dependências
-├── Dockerfile                  # Container config
 └── README.md                   # Documentação
 ```
 

@@ -73,6 +73,32 @@ class GameContext:
     pesos_dinamicos: Optional[dict] = None
     matriz_coocorrencia: Optional[Any] = None
     matriz_transicao: Optional[Any] = None
+    perfil_posicional: Optional[Any] = None
+    modelo_popularidade: Optional[Any] = None
+
+
+def _calcular_novos_sinais(df, config):
+    """
+    Ordem de saída e popularidade medida (ganhadores reais).
+    Nunca derruba o contexto: se faltar dado ou der erro, devolve None no sinal.
+    """
+    perfil = modelo = None
+    try:
+        from app.core.statistics.ordem_saida import calcular_perfil_posicional
+
+        perfil = calcular_perfil_posicional(df, config)
+    except Exception as e:
+        logger.warning(f"⚠️ Perfil posicional indisponível: {e}")
+    try:
+        from app.core.statistics.popularidade_medida import (
+            carregar_detalhes,
+            treinar_modelo_popularidade,
+        )
+
+        modelo = treinar_modelo_popularidade(df, carregar_detalhes(config), config)
+    except Exception as e:
+        logger.warning(f"⚠️ Popularidade medida indisponível: {e}")
+    return perfil, modelo
 
 
 class LotteryService:
@@ -129,6 +155,7 @@ class LotteryService:
         analise_repetidos = analise_temporal_repetidos(df, config, janela=30)
         matriz_cooc = matriz_coocorrencia_numeros(df, config)
         matriz_transicao = calcular_matriz_transicao(df, config)
+        perfil_pos, modelo_pop = _calcular_novos_sinais(df, config)
         return GameContext(
             config=config,
             df=df,
@@ -152,6 +179,8 @@ class LotteryService:
             pesos_dinamicos=pesos_dinamicos,
             matriz_coocorrencia=matriz_cooc,
             matriz_transicao=matriz_transicao,
+            perfil_posicional=perfil_pos,
+            modelo_popularidade=modelo_pop,
         )
 
     """
@@ -234,6 +263,7 @@ class LotteryService:
         analise_repetidos = analise_temporal_repetidos(df, config, janela=30)
         matriz_cooc = matriz_coocorrencia_numeros(df, config)
         matriz_transicao = calcular_matriz_transicao(df, config)
+        perfil_pos, modelo_pop = _calcular_novos_sinais(df, config)
 
         todos_jogos = [sorted(row.tolist()) for row in df[config.draw_cols].values]
 
@@ -286,6 +316,8 @@ class LotteryService:
             pesos_dinamicos=pesos_dinamicos,
             matriz_coocorrencia=matriz_cooc,
             matriz_transicao=matriz_transicao,
+            perfil_posicional=perfil_pos,
+            modelo_popularidade=modelo_pop,
         )
 
     def get_context(self, slug: str) -> GameContext:
@@ -336,6 +368,8 @@ class LotteryService:
             df_historico=ctx.df,
             distribuicoes_geometricas=ctx.distribuicoes_geometricas,
             stats_quadrantes=ctx.stats_quadrantes,
+            perfil_posicional=ctx.perfil_posicional,
+            modelo_popularidade=ctx.modelo_popularidade,
         )
 
     def generate(
