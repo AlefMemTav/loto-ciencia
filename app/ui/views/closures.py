@@ -5,6 +5,11 @@ from app.core.logger import logger
 from app.core.matrices import get_matriz_fechamento
 
 
+def _brl(valor: float) -> str:
+    """Formata em reais no padrão brasileiro: R$ 2.856,00."""
+    return "R$ " + f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 def render_closures(ctx, svc):
     config = ctx.config
     slug = config.slug
@@ -35,11 +40,13 @@ def render_closures(ctx, svc):
     # --- Configuração Dinâmica por Jogo ---
     if slug == "loto_facil_sorteio":
         max_base = 23
+        preco = config.game_price
         exemplo_texto = (
             "📊 **Exemplo de Potência (Lotofácil):**\n\n"
-            "Jogar **18 dezenas** na lotérica custa **R$ 2.448,00**.\n\n"
-            "Com nossa Matriz 18-15-14-15, você joga os mesmos 18 números gastando apenas **R$ 72,00** "
-            "(garantia de 14 pontos)."
+            f"Jogar **18 dezenas** na lotérica custa **{_brl(math.comb(18, 15) * preco)}**.\n\n"
+            f"Com nossa Matriz 18-15-14-15 (24 jogos), você gasta **{_brl(24 * preco)}**. "
+            "Se os 15 números sorteados estiverem entre as 18 dezenas, o fechamento "
+            "garante pelo menos 14 pontos."
         )
     elif slug == "mega_sena_sorteio":
         max_base = 15
@@ -191,31 +198,23 @@ def render_closures(ctx, svc):
                     "o fechamento completo para garantir 100% do prêmio máximo."
                 )
 
-            # Lógica de Garantia Dinâmica
-            if config.slug == "loto_facil_sorteio":
-                if len(base) <= 18:
-                    garantia = "14 Pontos (se acertar 15)"
-                elif len(base) == 19:
-                    garantia = "13 Pontos (se acertar 15) - Foco em Economia"
-                else:
-                    garantia = "11/12 Pontos (Cobertura de Equilíbrio)"
-            elif config.slug == "mega_sena_sorteio":
-                if len(base) <= 10:
-                    garantia = "Sena (100% Garantida se acertar os 6)"
-                else:
-                    garantia = "Quadra/Quina (Cobertura Estratégica)"
-            elif config.slug == "quina_sorteio":
-                if len(base) <= 10:
-                    garantia = "Quina (100% Garantida se acertar os 5)"
-                else:
-                    garantia = "Terno/Quadra (Cobertura Estratégica)"
-            elif config.slug == "loto_mania_sorteio":
-                garantia = "Distribuição Otimizada (Maximizar 19/20 pontos)"
+            # Garantia calculada a partir do que foi de fato gerado (sem promessa fixa)
+            n_base = len(base)
+            if len(jogos) == math.comb(n_base, config.k):
+                garantia = (
+                    "total: todas as combinações da base. Se todos os números sorteados "
+                    "estiverem na base, o prêmio máximo está garantido"
+                )
+            elif config.slug == "loto_facil_sorteio" and 16 <= n_base <= 18:
+                garantia = (
+                    f"pelo menos 14 pontos se os 15 números sorteados estiverem "
+                    f"entre as {n_base} dezenas da base"
+                )
             else:
-                garantia = "Cobertura Matemática Otimizada"
+                garantia = "nenhuma garantia matemática (cobertura parcial)"
 
             st.success(
-                f"✅ **Matriz Aplicada:** {len(jogos)} jogos gerados. **Garantia Estimada:** {garantia}."
+                f"✅ **Matriz Aplicada:** {len(jogos)} jogos gerados. **Garantia:** {garantia}."
             )
 
             # Visualização dos Jogos
