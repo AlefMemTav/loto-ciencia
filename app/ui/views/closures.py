@@ -172,7 +172,7 @@ def render_closures(ctx, svc):
                     delta_color = "off"  # Cinza
 
                 st.metric(
-                    "Custo LotoScience",
+                    "Custo LotoCiencia",
                     f"R$ {custo_otimizado:,.2f}",
                     delta=delta_text,
                     delta_color=delta_color,

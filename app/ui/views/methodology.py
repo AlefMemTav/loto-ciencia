@@ -33,7 +33,7 @@ def render_como_funciona():
         font-size: 2.5rem;
         line-height: 1.2;
     ">
-        A Metodologia LotoScience
+        A Metodologia LotoCiencia
     </h1>
     <p style="
         font-size: 1.25rem;
@@ -129,7 +129,7 @@ def render_como_funciona():
     box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
     margin-top: 20px;
 ">
-    <strong>✅ A Solução do LotoScience:</strong><br>
+    <strong>✅ A Solução do LotoCiencia:</strong><br>
     Não prometemos prever números (impossível). Mas garantimos que você 
     <strong>não jogue como a massa</strong>, aumentando a eficiência estatística 
     e reduzindo o risco de divisão do prêmio.
@@ -396,7 +396,7 @@ def render_como_funciona():
         O Segredo: Inteligência Artificial Híbrida
     </h3>
     <p style="font-size: 1.1rem; line-height: 1.7; color: #cbd5e1; max-width: 800px; margin-bottom: 30px;">
-        A maioria dos "geradores de loteria" usa apenas aleatoriedade (caos). O LotoScience combina duas escolas da computação para criar o <strong>Motor de Decisão Perfeito</strong>:
+        A maioria dos "geradores de loteria" usa apenas aleatoriedade (caos). O LotoCiencia combina duas escolas da computação para criar o <strong>Motor de Decisão Perfeito</strong>:
     </p>
     <div style="display: flex; flex-wrap: wrap; gap: 20px;">
         <div style="flex: 1; min-width: 300px; background: rgba(255,255,255,0.05); padding: 25px; border-radius: 12px; border-left: 4px solid #f59e0b;">
@@ -656,7 +656,7 @@ def render_como_funciona():
     # ========================================
     # SEÇÃO 3: COMO USAR (passo a passo visual)
     # ========================================
-    st.markdown("## Como Usar o LotoScience")
+    st.markdown("## Como Usar o LotoCiencia")
 
     step1, step2, step3 = st.columns(3)
 
@@ -854,7 +854,7 @@ def render_como_funciona():
     box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
 ">
     <h3 style="color: #166534; margin-top: 0; font-size: 1.3rem;">
-        ✅ DEPOIS (gerado pelo LotoScience)
+        ✅ DEPOIS (gerado pelo LotoCiencia)
     </h3>
     <div style="
         font-size: 1.4rem;

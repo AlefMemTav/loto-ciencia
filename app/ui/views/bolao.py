@@ -38,13 +38,11 @@ def render_bolao(ctx, svc):
 
         with col_inst:
             st.markdown("#### 📥 Como usar?")
-            st.markdown(
-                """
+            st.markdown("""
                 1. Exporte seus jogos (Excel/Txt).
                 2. Copie apenas os números.
                 3. Cole na caixa ao lado.
-                """
-            )
+                """)
             st.info(
                 f"**Formatos aceitos:**\n\n"
                 f"• `01 02 03...` (Espaço)\n"
@@ -517,5 +515,5 @@ def _gerar_texto_whatsapp(stats, media_score, config: GameConfig):
     if stats["duplicata"]:
         txt += f"🚨 *ATENÇÃO:* Há jogos duplicados!\n"
 
-    txt += f"🔍 *Validado por LotoScience*"
+    txt += f"🔍 *Validado por LotoCiencia*"
     return txt

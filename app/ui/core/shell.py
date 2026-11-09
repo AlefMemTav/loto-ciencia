@@ -9,7 +9,7 @@ from app.ui.components.sidebar import render_game_selector
 
 def init_page(title: str, icon: str = "🧬"):
     st.set_page_config(
-        page_title=f"{title} | LotoScience",
+        page_title=f"{title} | LotoCiencia",
         layout="wide",
         page_icon=icon,
         initial_sidebar_state="collapsed",

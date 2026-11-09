@@ -1,8 +1,4 @@
-<p align="center">
-  <img src="assets/images/logo.png" alt="LotoScience Pro" width="200" />
-</p>
-
-<h1 align="center">🎱 LotoScience Pro</h1>
+<h1 align="center">🎱 LotoCiencia</h1>
 
 <p align="center">
   <strong>Não é Sorte, é Ciência.</strong><br>
@@ -31,7 +27,7 @@
 
 > **Este sistema NÃO aumenta a probabilidade de ganhar na loteria.**
 > 
-> Todos os números têm a mesma chance teórica de serem sorteados. O LotoScience Pro é uma ferramenta de **análise estatística** que melhora a qualidade da distribuição, detecta padrões populares (risco de divisão de prêmio) e organiza apostas de forma inteligente.
+> Todos os números têm a mesma chance teórica de serem sorteados. O LotoCiencia é uma ferramenta de **análise estatística** que melhora a qualidade da distribuição, detecta padrões populares (risco de divisão de prêmio) e organiza apostas de forma inteligente.
 > 
 > **Loteria é jogo de azar. Jogue com responsabilidade.**
 

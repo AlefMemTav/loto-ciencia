@@ -4,7 +4,7 @@ import streamlit as st
 
 def apply_page_config(title=None):
     # Título Padrão (Global)
-    default_title = "LotoScience | Inteligência Estatística para Loterias"
+    default_title = "LotoCiencia | Inteligência Estatística para Loterias"
 
     # Se passar um título específico, usa ele. Senão, usa o padrão.
     final_title = title if title else default_title
@@ -16,6 +16,6 @@ def apply_page_config(title=None):
         menu_items={
             "Get Help": None,
             "Report a bug": None,
-            "About": "# LotoScience\nInteligência Estatística para Loterias.",
+            "About": "# LotoCiencia\nInteligência Estatística para Loterias.",
         },
     )

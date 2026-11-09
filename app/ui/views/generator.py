@@ -508,7 +508,7 @@ def render_generator(ctx, svc):
     st.markdown(
         """
     <div style="text-align: center; margin-top: 15px; color: #94a3b8; font-size: 0.8rem;">
-    O LotoScience não garante prêmios. Estes jogos buscam plausibilidade estatística, diversidade e menor risco de escolhas humanas óbvias. Loterias são jogos de azar. Jogue com responsabilidade.
+    O LotoCiencia não garante prêmios. Estes jogos buscam plausibilidade estatística, diversidade e menor risco de escolhas humanas óbvias. Loterias são jogos de azar. Jogue com responsabilidade.
     Aposte somente o que você pode perder.
     </div>
         """,
@@ -529,7 +529,7 @@ def _render_generated_games(
     st.markdown("---")
     st.subheader(f"💎 Resultados da Mineração ({len(jogos)} jogos)")
 
-    txt_out = f"LotoScience - Jogos Otimizados {config.name}\n"
+    txt_out = f"LotoCiencia - Jogos Otimizados {config.name}\n"
     txt_out += f"Estratégia: {estrategia.upper()} | Data: {date.today().strftime('%d/%m/%Y')}\n"
     if relatorio_jogo_real:
         txt_out += (

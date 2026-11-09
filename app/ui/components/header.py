@@ -8,7 +8,7 @@ def render_app_header(config, df):
     col1, col2 = st.columns([2, 3])
 
     with col1:
-        st.markdown("### 🧪 **LotoScience**")
+        st.markdown("### 🧪 **LotoCiencia**")
 
     with col2:
         st.caption(f"{config.name} • {len(df)} concursos analisados")

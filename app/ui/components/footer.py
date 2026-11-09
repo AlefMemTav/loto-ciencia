@@ -6,7 +6,7 @@ def render_footer():
         """
         <div class="footer-container">
             <div class="footer-text">
-                © 2026 LotoScience • Feito com Rigor Estatístico.<br>
+                © 2026 LotoCiencia • Feito com Rigor Estatístico.<br>
                 <em>Loterias são jogos de azar. Jogue com responsabilidade. Probabilidades baseadas na matemática oficial.</em>
             </div>
         </div>

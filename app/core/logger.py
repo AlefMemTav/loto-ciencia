@@ -7,7 +7,7 @@ LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 
 
-def setup_logger(name: str = "LotoScience", level=logging.INFO):
+def setup_logger(name: str = "LotoCiencia", level=logging.INFO):
     logger = logging.getLogger(name)
 
     if logger.hasHandlers():
