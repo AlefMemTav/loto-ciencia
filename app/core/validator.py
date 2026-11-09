@@ -611,6 +611,64 @@ def _analise_quase_reta(report: dict, numeros: list[int], config: "GameConfig") 
         report["msgs"].append(f"⚠️ {max_coluna} números na mesma coluna")
 
 
+def _analise_ordem_saida(report, numeros, config: GameConfig, perfil) -> None:
+    """
+    Preferência (não altera a chance de acerto): evita jogos cujos números
+    costumam sair todos cedo ou todos tarde na ordem de saída das bolas.
+    """
+    if perfil is None or len(numeros) < 2:
+        return
+    from app.core.statistics.ordem_saida import percentil_posicional
+
+    pct = percentil_posicional(numeros, perfil)
+    report["metricas"]["ordem_saida_percentil"] = round(pct, 1)
+    report["metricas"]["ordem_saida_conclusao"] = perfil.conclusao()
+
+    if pct <= 5 or pct >= 95:
+        tendencia = "cedo" if pct <= 5 else "tarde"
+        report["score"] -= 3
+        report["msgs"].append(
+            f"ℹ️ Ordem de saída: números que costumam sair {tendencia} "
+            f"(percentil {pct:.0f}). Preferência do sistema, sem efeito na chance."
+        )
+
+
+def _analise_popularidade_medida(report, numeros, config: GameConfig, modelo) -> None:
+    """
+    Risco de dividir o prêmio medido com ganhadores reais (data/detalhes).
+    Só atua se o modelo passou na validação cruzada.
+    """
+    if modelo is None or len(numeros) < 2:
+        return
+
+    aval = modelo.avaliar(numeros)
+    pct = aval["percentil"]
+    report["metricas"]["popularidade_medida_percentil"] = round(pct, 1)
+    if aval["razao_ganhadores"] is not None:
+        report["metricas"]["popularidade_medida_razao"] = round(
+            aval["razao_ganhadores"], 2
+        )
+
+    if pct >= 95:
+        report["score"] -= 12
+        report["risco_divisao"] = "ALTO"
+        report["msgs"].append(
+            f"💸 Popularidade medida alta (percentil {pct:.0f}): jogos assim "
+            f"dividiram mais o prêmio nos concursos reais."
+        )
+    elif pct >= 80:
+        report["score"] -= 5
+        if report.get("risco_divisao") == "Baixo":
+            report["risco_divisao"] = "Médio"
+        report["msgs"].append(
+            f"⚠️ Popularidade medida acima da média (percentil {pct:.0f})."
+        )
+    elif pct <= 20:
+        report["msgs"].append(
+            f"✅ Pouco popular nos dados reais (percentil {pct:.0f}): tende a dividir menos o prêmio."
+        )
+
+
 def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
     """Aplica penalidade extra quando múltiplos padrões raros co-ocorrem."""
     metricas = report.get("metricas", {})
@@ -1211,6 +1269,8 @@ def validar_jogo(
     df_historico=None,
     distribuicoes_geometricas: dict = None,
     stats_quadrantes=None,
+    perfil_posicional=None,
+    modelo_popularidade=None,
 ):
     """
     Validador genérico para qualquer jogo.
@@ -1272,6 +1332,12 @@ def validar_jogo(
     # ============================================
     _analise_coocorrencia_rara(report, numeros, config, df_historico)
     _analise_pares_populares(report, numeros, config, df_historico)
+
+    # ============================================
+    # 6b. ORDEM DE SAÍDA E POPULARIDADE MEDIDA
+    # ============================================
+    _analise_ordem_saida(report, numeros, config, perfil_posicional)
+    _analise_popularidade_medida(report, numeros, config, modelo_popularidade)
 
     # ============================================
     # 7. ANÁLISES ESTRUTURAIS

@@ -42,6 +42,10 @@ def score_plausibility_batch(
     usar_calibracao_score: bool = True,
     calibration_strength: float = 1.0,
     calibration_target: str = "historico_nulo",
+    usar_ordem_saida: bool = True,
+    ordem_strength: float = 1.0,
+    usar_popularidade_medida: bool = True,
+    popularidade_strength: float = 1.0,
 ) -> np.ndarray:
     """
     Score vetorial de plausibilidade para candidatos já ordenados.
@@ -212,6 +216,22 @@ def score_plausibility_batch(
                     * 0.35
                     * historical_signal_strength
                 )
+
+    # Popularidade medida com ganhadores reais (risco de dividir o prêmio).
+    modelo_pop = getattr(ctx, "modelo_popularidade", None)
+    if usar_popularidade_medida and modelo_pop is not None:
+        pop_pct = modelo_pop.percentil_batch(candidates)
+        forca = float(np.clip(popularidade_strength, 0.0, 3.0))
+        scores -= np.maximum(0.0, pop_pct - 60.0) / 40.0 * 2.0 * forca
+
+    # Ordem de saída das bolas: preferência leve contra extremos (cedo/tarde).
+    perfil_pos = getattr(ctx, "perfil_posicional", None)
+    if usar_ordem_saida and usar_historico and perfil_pos is not None:
+        from app.core.statistics.ordem_saida import percentil_posicional_batch
+
+        pos_pct = percentil_posicional_batch(candidates, perfil_pos)
+        forca = float(np.clip(ordem_strength, 0.0, 3.0))
+        scores -= np.maximum(0.0, np.abs(pos_pct - 50.0) - 45.0) / 5.0 * 0.4 * forca
 
     historico = getattr(ctx, "historico_set", None) or set()
     if k == config.k and historico:
