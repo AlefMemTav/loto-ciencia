@@ -257,22 +257,22 @@ A função `score_plausibility_batch` pontua lotes massivos de candidatos combin
 1. **Aderência Central e Penalidade de Caudas Combinatórias**: Premia candidatos próximos à mediana combinatória ($\text{percentil} = 50$) e penaliza violações fora da janela $[\text{percentil\_min}, \text{percentil\_max}]$ (padrão $[5\%, 95\%]$, expandido para $[3\%, 97\%]$ ou $[4\%, 96\%]$ nas estratégias de cauda).
 2. **Prior de Calibração Estrutural**: Soma $0.35 \times \text{calibration\_strength} \times \text{Prior}(b)$.
 3. **Penalidade Anti-Números da Sorte**: Desconta $1.5$ ponto se o bilhete contiver excesso de números culturais $\{3, 7, 9, 11, 13, 21, 27, 33\}$.
-4. **Sinais Históricos Controlados (Clipped)**: Incorpora as médias de $Z_{\text{Freq}}$ (peso $0.30$) e $Z_{\text{Gap}}$ (peso $0.22$) truncadas em $[-2.0, 2.0]$ para evitar que uma única bola domine o bilhete.
-5. **Co-ocorrência com Controle de Cauda**: Calcula o Z-score da soma de co-ocorrências do bilhete (`cooc_z`) via indexação triangular superior (`np.triu_indices`). Nas estratégias `cauda_controlada`, `cauda_convexa` e `cauda_agressiva`, premia sinergia moderada, mas **penaliza excesso de co-ocorrência** acima de $2.0\sigma\text{--}2.5\sigma$ para evitar sobreposição em cliques viciados.
-6. **Penalidade de Popularidade Medida e Ordem de Saída**: Desconta até $2.0 \times \text{força}$ para jogos com percentil de popularidade real acima de $60\%$ e aplica leve correção contra extremos posicionais ($< 5\%$ ou $> 95\%$).
+4. **Sinais Históricos Controlados (Clipped)** — *desligados por padrão*: em walk-forward (2.700 a 6.800 sorteios por jogo) quentes, atrasados, Markov e ciclo não se separaram do acaso (coocorrência: nulo em 3 jogos; Lotofácil z = +2,69, que não passa na correção para 28 testes). Quando ligados, incorpora as médias de $Z_{\text{Freq}}$ (peso $0.30$) e $Z_{\text{Gap}}$ (peso $0.22$) truncadas em $[-2.0, 2.0]$ para evitar que uma única bola domine o bilhete.
+5. **Co-ocorrência com Controle de Cauda**: Calcula o Z-score da soma de co-ocorrências do bilhete (`cooc_z`) via indexação triangular superior (`np.triu_indices`). Na estratégia `cauda_controlada`, premia sinergia moderada, mas **penaliza excesso de co-ocorrência** acima de $2.0\sigma\text{--}2.5\sigma$ para evitar sobreposição em cliques viciados.
+6. **Popularidade Medida, Corte e Ordem de Saída**: Desconta até $2.0 \times \text{força}$ para jogos com percentil de popularidade real acima de $60\%$ e aplica leve correção contra extremos posicionais ($< 5\%$ ou $> 95\%$). Na **Mega-Sena** e na **Quina** (R² de CV $\approx 0{,}18$ e $0{,}51$), há ainda um **corte**: jogos com razão de ganhadores prevista acima de $0{,}75$ (Mega) ou $0{,}80$ (Quina) levam penalidade de $100$ pontos e só entram no pacote se faltarem alternativas (`LIMIAR_RAZAO_GANHADORES`, `usar_corte_popularidade`). Os limiares são o percentil $10$ da razão de ganhadores entre $100$ mil bilhetes aleatórios dentro da faixa estrutural $5\text{--}95$. Lotofácil e Lotomania ficam sem corte (modelo fraco ou reprovado). O corte reduz a chance de **dividir** o prêmio; não altera a chance de acertar.
 7. **Eliminação de Jogos Já Sorteados**: Qualquer combinação presente em `ctx.historico_set` recebe score $-\infty$.
 
 ### 7.2 Seleção de Portfólio e Estratégias de Cauda (`select_diverse_portfolio`)
-O módulo suporta $6$ estratégias (`conservadora`, `balanceada`, `agressiva`, `cauda_controlada`, `cauda_agressiva`, `cauda_convexa` e `pura`):
-* **Seleção Padrão**: Ordena candidatos com ruído Gumbel proporcional à estratégia e aplica limites rígidos de exposição por dezena, chave de diversidade no espaço de features (`soma // 15`, `pares`, `span // 8`, `gap_medio // 3`) e limite de overlap de Hamming.
-* **Seleção Marginal de Conjunto (`_select_tail_controlled_portfolio`)**: Usada por `cauda_controlada`, `cauda_agressiva` e `cauda_convexa`. Em cada passo, escolhe o bilhete que maximiza a **utilidade marginal do pacote**:
+O módulo suporta $3$ estratégias (`balanceada`, `cauda_controlada` e `pura`). Em medição na Mega-Sena (7 estratégias antigas, 4 *seeds* × 20 jogos), os pacotes das estratégias diferiam entre si tanto quanto uma mesma estratégia difere de si mesma com *seeds* diferentes; por isso foram fundidas. Os nomes antigos continuam aceitos como apelidos (`app/core/strategies.py`): `agressiva` e `conservadora` → `balanceada`; `cauda_agressiva` e `cauda_convexa` → `cauda_controlada`.
+* **Seleção Padrão** (`balanceada` e `pura`): Ordena candidatos com ruído Gumbel proporcional à estratégia e aplica limites rígidos de exposição por dezena, chave de diversidade no espaço de features (`soma // 15`, `pares`, `span // 8`, `gap_medio // 3`) e limite de overlap de Hamming.
+* **Seleção Marginal de Conjunto (`_select_tail_controlled_portfolio`)**: Usada por `cauda_controlada`. Em cada passo, escolhe o bilhete que maximiza a **utilidade marginal do pacote**:
   * Impõe tetos absolutos (*hard caps*) de exposição por dezena e repetição de pares.
-  * Na estratégia **`cauda_convexa`** em jogos esparsos (ex.: Mega-Sena), trava o overlap máximo em $2$ dezenas e **proíbe qualquer repetição de trincas ($\text{cap} = 1$) e quadras ($\text{cap} = 1$)** em todo o pacote.
   * Balanceia dinamicamente os *buckets* de calibração estrutural para minimizar a divergência $D_{\text{JS}}$ do pacote.
+* **Padrão por densidade** (`estrategia_padrao`): `cauda_controlada` em jogos esparsos (Mega-Sena, Quina) e `balanceada` em jogos densos (Lotofácil, Lotomania). `pura` é o controle sem sinais históricos.
 
 ### 7.3 Motor 1: Geração Vetorial com Truque Gumbel-Max (`generator_fast.py`)
 O motor `gerar_jogos_vetorizado` realiza amostragem ponderada sem reposição em alta velocidade:
-1. Combina $Z_{\text{Freq}}$, $Z_{\text{Gap}}$, probabilidades de transição de Markov do último sorteio ($+0.15$) e bônus de gravidade do Ciclo das Dezenas ($+0.80$ para densos, $+0.25$ para esparsos).
+1. Se habilitados (`usar_quentes`, `usar_atrasados`, `usar_markov`, `usar_ciclo`; **todos desligados por padrão**), combina $Z_{\text{Freq}}$, $Z_{\text{Gap}}$, probabilidades de transição de Markov do último sorteio ($+0.15$) e bônus de gravidade do Ciclo das Dezenas ($+0.80$ para densos, $+0.25$ para esparsos). Com tudo desligado, a amostragem de candidatos é uniforme e a escolha fica por conta dos filtros estruturais, da popularidade e da diversidade do pacote.
 2. Aplica **Softmax com Temperatura** ($\tau \in [1.15, 2.0]$ conforme a estratégia):
    $$p_i = \frac{\exp(s_i / \tau)}{\sum_{j=1}^{N} \exp(s_j / \tau)}$$
 3. **Truque Gumbel-Max**: Para gerar dezenas de milhares de jogos sem reposição sem usar loops lentos em Python, soma ruído Gumbel padrão $G_{b,i} = -\ln(-\ln(U_{b,i}))$ aos log-probabilidades:
@@ -360,7 +360,7 @@ Calcula o desempenho monetário explícito do pacote frente aos sorteios futuros
 * **Receita Bruta ($R$)**, **Lucro Líquido ($L = R - C$)**, **ROI ($L / C$)** e **Fator de Retorno ($R / C$)**, permitindo tabelas de prêmios fixas (como $11, 12, 13$ pontos da Lotofácil) e sobrescritas via CLI para faixas variáveis (`14=1500`, `15=1500000`).
 
 ### 9.3 Bancada Científica Multi-Seed (`strategy_matrix.py`)
-O módulo `strategy_matrix.py` cruza todas as estratégias (`agressiva`, `cauda_agressiva`, `cauda_convexa`, `cauda_controlada`, `balanceada`, `pura`) contra múltiplas *seeds* padrão (`[7, 21, 42, 77, 101]`) e contra ambos os motores (`Vetorial` e `Genetico`):
+O módulo `strategy_matrix.py` cruza todas as estratégias (`balanceada`, `cauda_controlada`, `pura`) contra múltiplas *seeds* padrão (`[7, 21, 42, 77, 101]`) e contra ambos os motores (`Vetorial` e `Genetico`):
 * Calcula estatísticas agregadas (média, mediana, desvio padrão populacional, mínimo e máximo) para todas as métricas de acerto, portfólio, calibração e ROI.
 * Aplica o `_score_composto` diagnóstico que recompensa acertos reais (`hit_4`, `hit_5`, `hit_6`), delta positivo de acertos contra Monte Carlo e ROI, enquanto **penaliza severamente** instabilidade entre seeds, superexposição de dezenas, overlap alto, trincas/quadras repetidas e divergência de calibração $D_{\text{JS}}$.
 * **Sistema Automático de Alertas (`_gerar_alertas_agregado`)**: Emite alertas classificados por severidade (`baixa`, `media`, `alta`) para:
@@ -378,18 +378,17 @@ O módulo `strategy_matrix.py` cruza todas as estratégias (`agressiva`, `cauda_
 Para utilizar toda essa infraestrutura com disciplina científica, siga o protocolo abaixo para cada tipo de jogo:
 
 ### 10.1 Receita para Mega-Sena e Quina (Jogos Esparsos)
-1. **Estratégia recomendada**: `cauda_convexa` (para pacotes de $5$ a $30$ jogos) ou `cauda_controlada`.
-2. **Como gerar**: Utilize sempre a função `generate_real_game_package` (`real_game_mode.py`) com `perfil_esforco="forte"` ou `"maximo"` e `estrategia_base="cauda_convexa"`.
+1. **Estratégia recomendada**: `cauda_controlada` (para pacotes de $5$ a $30$ jogos).
+2. **Como gerar**: Utilize sempre a função `generate_real_game_package` (`real_game_mode.py`) com `perfil_esforco="forte"` ou `"maximo"` e `estrategia_base="cauda_controlada"` (ou deixe vazio: o padrão por densidade já escolhe).
 3. **O que verificar no relatório gerado**:
-   * `trincas_repetidas` e `quadras_repetidas` em `diagnostico_portfolio` devem ser **iguais a zero** ($0$).
-   * `overlap_max` deve ser no máximo $2$ dezenas entre quaisquer dois jogos do pacote.
+   * `max_repeticao_par` deve ser no máximo $3$ e `max_exposicao` no máximo $5$ (pacotes de $20$ jogos na Mega-Sena).
+   * `overlap_max` deve respeitar o limite do jogo (`get_overlap_limit`).
    * `percentil_vs_monte_carlo` deve estar acima de $80\%$.
    * Ao passar pelo `validar_jogo`, todos os bilhetes devem exibir `ja_saiu: False` e `risco_divisao: "Baixo"`.
 
 ### 10.2 Receita para Lotofácil e Lotomania (Jogos Densos)
 1. **Abordagem A — Pacote Diversificado (`real_game_mode.py`)**:
-   * Use `estrategia_base="balanceada"` ou `"agressiva"` com `usar_ciclo=True` e `usar_markov=True`.
-   * Como o ciclo da Lotofácil fecha rápido, o bônus de ciclo ($+0.80$) garante presença das dezenas pendentes sem viciar a geometria do cartão.
+   * Use `estrategia_base="balanceada"`.
 2. **Abordagem B — Fechamento Matemático com Garantia (`matrices.py` — Exclusivo Lotofácil)**:
    * Ordene as $25$ dezenas pelo `Peso_Geracao` da Tabela de Inteligência (`get_tabela_inteligencia` em `basic.py`).
    * Escolha as top $17$ dezenas (para gerar $8$ jogos) ou top $18$ dezenas (para gerar $24$ jogos) — cuidando para manter equilíbrio entre pares/ímpares e moldura/miolo no grupo base.

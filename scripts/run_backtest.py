@@ -21,6 +21,7 @@ from datetime import datetime
 # Adiciona o diretório raiz ao path para importar 'app'
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.core.strategies import APELIDOS, ESTRATEGIAS
 from app.core.lottery import GAMES
 from app.services.lottery_service import LotteryService
 from app.core.statistics.backtest import executar_backtest_temporal
@@ -32,10 +33,10 @@ def _build_payload_overrides(args):
         "percentil_min": args.percentil_min,
         "percentil_max": args.percentil_max,
         "historical_signal_strength": args.historical_strength,
-        "usar_quentes": not args.sem_quentes,
-        "usar_atrasados": not args.sem_atrasados,
-        "usar_markov": not args.sem_markov,
-        "usar_ciclo": not args.sem_ciclo,
+        "usar_quentes": args.com_quentes,
+        "usar_atrasados": args.com_atrasados,
+        "usar_markov": args.com_markov,
+        "usar_ciclo": args.com_ciclo,
         "usar_coocorrencia": not args.sem_coocorrencia,
         "frequencia_recente": not args.sem_frequencia_recente,
         "usar_calibracao_score": not args.sem_calibracao_score,
@@ -83,15 +84,7 @@ def main():
     parser.add_argument(
         "--estrategia",
         default="balanceada",
-        choices=[
-            "pura",
-            "balanceada",
-            "conservadora",
-            "agressiva",
-            "cauda_controlada",
-            "cauda_agressiva",
-            "cauda_convexa",
-        ],
+        choices=[*ESTRATEGIAS, *APELIDOS],
         help="Estratégia do gerador a ser testada",
     )
 
@@ -169,24 +162,24 @@ def main():
     )
 
     parser.add_argument(
-        "--sem-quentes",
+        "--com-quentes",
         action="store_true",
-        help="Desliga inclinação por números quentes/frequência recente",
+        help="Liga inclinação por números quentes/frequência recente (padrão: desligada)",
     )
     parser.add_argument(
-        "--sem-atrasados",
+        "--com-atrasados",
         action="store_true",
-        help="Desliga inclinação por atraso",
+        help="Liga inclinação por atraso (padrão: desligada)",
     )
     parser.add_argument(
-        "--sem-markov",
+        "--com-markov",
         action="store_true",
-        help="Desliga inclinação por transição Markov no gerador vetorial",
+        help="Liga inclinação por transição Markov no gerador vetorial (padrão: desligada)",
     )
     parser.add_argument(
-        "--sem-ciclo",
+        "--com-ciclo",
         action="store_true",
-        help="Desliga inclinação por ciclo no gerador vetorial",
+        help="Liga inclinação por ciclo no gerador vetorial (padrão: desligada)",
     )
     parser.add_argument(
         "--sem-coocorrencia",

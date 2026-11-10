@@ -785,31 +785,29 @@ def _analises_avancadas(
 
                 proporcao_atrasados = len(atrasados_no_jogo) / len(numeros)
 
+                # Informativo, sem pontos: em walk-forward (2.700 a 6.800 sorteios por
+                # jogo) números atrasados não saíram acima do acaso.
                 if proporcao_atrasados >= 0.4:
-                    bonus = 5
-                    report["score"] += bonus
                     report["msgs"].append(
-                        f"✅ Regressão validada: {len(atrasados_no_jogo)} números atrasados "
-                        f"(ρ={taxa_regressao['correlacao']:.2f}, p={taxa_regressao['p_value']:.4f})"
-                    )
-                    report["msgs"].append(
-                        f"   Histórico confirma: números atrasados tendem a sair (+{bonus} pts)"
+                        f"ℹ️ {len(atrasados_no_jogo)} números atrasados "
+                        f"(ρ={taxa_regressao['correlacao']:.2f}, p={taxa_regressao['p_value']:.4f}); "
+                        "informativo, não altera a nota"
                     )
                 elif proporcao_atrasados >= 0.2:
                     report["msgs"].append(
-                        f"ℹ️ Regressão detectada: {len(atrasados_no_jogo)} números atrasados "
-                        f"(ρ={taxa_regressao['correlacao']:.2f})"
+                        f"ℹ️ {len(atrasados_no_jogo)} números atrasados "
+                        f"(ρ={taxa_regressao['correlacao']:.2f}); informativo"
                     )
                 else:
                     report["msgs"].append(
-                        f"⚠️ Poucos números atrasados ({len(atrasados_no_jogo)}), "
-                        f"mas regressão histórica é forte (ρ={taxa_regressao['correlacao']:.2f})"
+                        f"ℹ️ Poucos números atrasados ({len(atrasados_no_jogo)}); "
+                        f"informativo (ρ={taxa_regressao['correlacao']:.2f})"
                     )
 
             elif 0.1 < taxa_regressao["correlacao"] <= 0.3:
                 report["msgs"].append(
                     f"ℹ️ Regressão moderada detectada (ρ={taxa_regressao['correlacao']:.2f}): "
-                    "atrasos têm algum poder preditivo"
+                    "informativo, sem efeito na nota"
                 )
             else:
                 report["msgs"].append(

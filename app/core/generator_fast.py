@@ -9,6 +9,7 @@ Versão 2.2: OTIMIZAÇÕES DE PERFORMANCE
 import numpy as np
 from typing import List
 from app.core.logger import logger
+from app.core.strategies import normalizar_estrategia
 from app.core.generator_objective import (
     score_plausibility_batch,
     select_diverse_portfolio,
@@ -58,10 +59,12 @@ def gerar_jogos_vetorizado(
     buffer_size: int = 50000,
     seed: int = None,
     temperatura: float = None,
-    usar_quentes: bool = True,
-    usar_atrasados: bool = True,
-    usar_markov: bool = True,
-    usar_ciclo: bool = True,
+    # Padrão desligado: em walk-forward (2.700 a 6.800 sorteios por jogo) quentes,
+    # atrasados, Markov e ciclo não se separaram do acaso. Continuam disponíveis.
+    usar_quentes: bool = False,
+    usar_atrasados: bool = False,
+    usar_markov: bool = False,
+    usar_ciclo: bool = False,
     usar_coocorrencia: bool = True,
     historical_signal_strength: float = 1.0,
     percentil_min: float = 5.0,
@@ -73,6 +76,7 @@ def gerar_jogos_vetorizado(
     candidate_multiplier: int = 4000,
 ) -> List[List[int]]:
 
+    estrategia = normalizar_estrategia(estrategia)
     rng = np.random.default_rng(seed)
     config = ctx.config
     n_numbers = config.n_numbers
@@ -113,18 +117,9 @@ def gerar_jogos_vetorizado(
         z_gap[dest_indices] = vals_gap[mask_safe]
 
     # Aplica estratégia
-    if estrategia in (
-        "agressiva",
-        "cauda_controlada",
-        "cauda_agressiva",
-        "cauda_convexa",
-    ):
+    if estrategia == "cauda_controlada":
         scores_final = (z_gap * 0.55 * usar_atrasados) + (
             z_freq * 0.45 * usar_quentes
-        )
-    elif estrategia == "conservadora":
-        scores_final = (z_freq * 0.65 * usar_quentes) + (
-            z_gap * 0.35 * usar_atrasados
         )
     elif estrategia == "pura":
         scores_final = np.ones(n_numbers)
@@ -186,12 +181,8 @@ def gerar_jogos_vetorizado(
 
     if temperatura is None:
         temperatura = {
-            "conservadora": 1.15,
             "balanceada": 1.35,
-            "agressiva": 1.45,
             "cauda_controlada": 1.55,
-            "cauda_agressiva": 1.60,
-            "cauda_convexa": 1.55,
             "pura": 2.0,
         }.get(estrategia, 1.35)
     temperatura = max(float(temperatura), 0.2)

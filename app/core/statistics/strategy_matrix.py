@@ -14,16 +14,10 @@ from time import perf_counter
 from typing import Any, Iterable
 
 from app.core.statistics.backtest import executar_backtest_temporal
+from app.core.strategies import APELIDOS, ESTRATEGIAS
 
 
-DEFAULT_STRATEGIES = [
-    "agressiva",
-    "cauda_agressiva",
-    "cauda_convexa",
-    "cauda_controlada",
-    "balanceada",
-    "pura",
-]
+DEFAULT_STRATEGIES = list(ESTRATEGIAS)
 DEFAULT_SEEDS = [7, 21, 42, 77, 101]
 MOTORS = ("Vetorial", "Genetico")
 

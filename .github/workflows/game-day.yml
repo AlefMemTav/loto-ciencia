@@ -1,0 +1,57 @@
+name: Pacote do dia de jogo
+
+# Só schedule e workflow_dispatch. Não usar workflow_run: atualizar_loterias.yml
+# roda duas vezes por dia e dispararia a geração nas duas.
+# Cron é em UTC: 13:00 UTC = 10:00 em Brasília. O CLI decide quais jogos têm
+# sorteio no dia (--game hoje). Feriados podem mudar o calendário: use o
+# disparo manual (workflow_dispatch) nesses casos.
+on:
+  schedule:
+    - cron: "0 13 * * 1-6"
+  workflow_dispatch:
+    inputs:
+      game:
+        description: "Jogo (hoje = os que têm sorteio hoje)"
+        type: choice
+        default: hoje
+        options: [hoje, mega_sena, quina, loto_facil, loto_mania]
+      effort:
+        description: "Esforço"
+        type: choice
+        default: forte
+        options: [rapido, forte, maximo]
+      force:
+        description: "Refazer mesmo se já existir"
+        type: boolean
+        default: false
+
+concurrency:
+  group: game-day
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pacote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Gerar e validar
+        run: |
+          python -m app.cli.game_day \
+            --game "${{ inputs.game || 'hoje' }}" \
+            --effort "${{ inputs.effort || 'forte' }}" \
+            ${{ inputs.force && '--force' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pacote-do-dia
+          path: out/
+          if-no-files-found: ignore

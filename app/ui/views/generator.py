@@ -53,8 +53,9 @@ def render_generator(ctx, svc):
         <div style="background: linear-gradient(90deg, #f8fafc 0%, #e2e8f0 100%); padding: 20px; border-radius: 10px; border-left: 5px solid {main_color}; margin-bottom: 25px;">
             <h2 style="color: #1e293b; margin:0;">⛏️ Mineração de Jogos: <span style="color: {main_color};">{config.name}</span></h2>
             <p style="color: #475569; font-size: 1rem; margin-top: 5px;">
-                Esta engine utiliza algoritmos e filtros estatísticos para encontrar combinações 
-                plausíveis, diversas e menos contaminadas por vícios humanos de escolha.
+                Esta engine evita jogos raros e jogos populares: mantém combinações plausíveis e
+                diversas e, na Mega-Sena e na Quina, afasta as que mais costumam ser divididas
+                com outros apostadores. Não aumenta a chance de acertar.
             </p>
         </div>
         """,
@@ -79,40 +80,19 @@ def render_generator(ctx, svc):
             )
 
         with col_strat:
-            # Mapas de display para ficar mais amigável
+            # Três estratégias (os nomes antigos continuam aceitos pelo backend)
             strat_display = {
-                "cauda_controlada": "🎯 Cauda Controlada (Experimental)",
-                "cauda_agressiva": "🚀 Cauda Agressiva (Experimental)",
-                "cauda_convexa": "🔶 Cauda Convexa (Experimental)",
+                "cauda_controlada": "🎯 Cauda Controlada",
                 "balanceada": "⚖️ Balanceada",
-                "conservadora": "🛡️ Conservadora (Frequentes)",
-                "agressiva": "🔥 Agressiva (Recomendada)",
-                "pura": "🎲 Aleatória Pura (Caos)",
+                "pura": "🎲 Aleatória Pura (controle)",
             }
-            strategy_options = [
-                "agressiva",
-                "cauda_convexa",
-                "cauda_agressiva",
-                "cauda_controlada",
-                "balanceada",
-                "conservadora",
-                "pura",
-            ]
-            if slug != "mega_sena_sorteio":
-                strategy_options = [
-                    "balanceada",
-                    "conservadora",
-                    "agressiva",
-                    "cauda_convexa",
-                    "cauda_agressiva",
-                    "cauda_controlada",
-                    "pura",
-                ]
-                strat_display["balanceada"] = "⚖️ Balanceada (Recomendada)"
-                strat_display["agressiva"] = "🔥 Agressiva (Atrasados)"
-                strat_display["cauda_controlada"] = "🎯 Cauda Controlada"
-                strat_display["cauda_agressiva"] = "🚀 Cauda Agressiva"
-                strat_display["cauda_convexa"] = "🔶 Cauda Convexa"
+            # Padrão por densidade: esparso (Mega, Quina) -> cauda; denso -> balanceada
+            strategy_options = (
+                ["cauda_controlada", "balanceada", "pura"]
+                if config.is_sparse
+                else ["balanceada", "cauda_controlada", "pura"]
+            )
+            strat_display[strategy_options[0]] += " (Recomendada)"
 
             strat_key = st.selectbox(
                 "Estratégia Matemática:",
@@ -123,13 +103,9 @@ def render_generator(ctx, svc):
 
         # Explicação dinâmica da estratégia selecionada
         info_strats = {
-            "cauda_controlada": "Parte da agressiva e otimiza o pacote final para concentrar sinal sem perder diversidade.",
-            "cauda_agressiva": "Busca cauda premiável com núcleos de pares/dezenas mais densos, mantendo tetos de exposição.",
-            "cauda_convexa": "Permite núcleo moderado por pares, mas protege o pacote contra repetição de trincas e quadras.",
-            "balanceada": "Mistura frequência, atraso e plausibilidade estrutural sem deixar o portfólio ficar concentrado demais.",
-            "conservadora": "Dá mais peso a números historicamente frequentes, mas com controles contra superconcentração.",
-            "agressiva": "Dá mais espaço a atrasos e ciclos, mantendo freios contra falácia do apostador e padrões artificiais.",
-            "pura": "Reduz o viés histórico dos números, mas ainda evita combinações humanas óbvias e estruturalmente pobres.",
+            "cauda_controlada": "Escolhe o pacote como conjunto: limita a repetição de dezenas e de pares entre os jogos e mantém a diversidade. Indicada para Mega-Sena e Quina.",
+            "balanceada": "Combina plausibilidade estrutural com diversidade do pacote. Indicada para Lotofácil e Lotomania.",
+            "pura": "Sem sinais históricos: só os controles estruturais. Serve de controle para comparar.",
         }
         st.info(f"💡 **Lógica:** {info_strats[strat_key]}")
 
@@ -158,7 +134,8 @@ def render_generator(ctx, svc):
 
         if modo_jogo_real:
             st.caption(
-                "O Modo Jogo Real usa o motor vetorial, escolhe o pacote por torneio e registra seed/Monte Carlo para auditoria."
+                "O Modo Jogo Real usa o motor vetorial, escolhe o pacote por torneio e registra seed/Monte Carlo para auditoria. "
+                "O percentil vs. Monte Carlo mede o quanto o pacote otimiza a própria métrica, não a chance de acerto."
             )
             tipo_motor = "⚡ Vetorial (Modo Jogo Real)"
             usar_genetico = False
@@ -278,27 +255,27 @@ def render_generator(ctx, svc):
         with col_s1:
             usar_quentes = st.toggle(
                 "Quentes",
-                value=True,
-                help="Inclui frequência histórica como inclinação fraca.",
+                value=False,
+                help="Inclui frequência histórica como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
             usar_atrasados = st.toggle(
                 "Atrasados",
-                value=True,
-                help="Inclui atraso/gap histórico como inclinação fraca.",
+                value=False,
+                help="Inclui atraso/gap histórico como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
         with col_s2:
             usar_markov = st.toggle(
                 "Markov",
-                value=True,
-                help="Inclui transições entre concursos como inclinação fraca.",
+                value=False,
+                help="Inclui transições entre concursos como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
             usar_ciclo = st.toggle(
                 "Ciclo",
-                value=True,
-                help="Inclui números faltantes do ciclo atual como inclinação fraca.",
+                value=False,
+                help="Inclui números faltantes do ciclo atual como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
         with col_s3:

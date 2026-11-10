@@ -139,55 +139,29 @@ def test_tail_controlled_strategy_caps_exposure_and_pairs():
     assert diag["overlap_max"] <= MEGASENA.get_overlap_limit()
 
 
-def test_tail_aggressive_strategy_keeps_hard_caps():
+def test_old_tail_names_are_aliases_of_tail_controlled():
+    """cauda_agressiva e cauda_convexa foram fundidas em cauda_controlada."""
     ctx = _ctx()
     service = LotteryService()
 
-    games = service.generate(
-        MEGASENA.slug,
-        {
-            "quantidade": 20,
-            "estrategia": "cauda_agressiva",
-            "seed": 101,
-            "null_model_samples": 1000,
-        },
-        ctx=ctx,
-    )
+    def gerar(nome):
+        return service.generate(
+            MEGASENA.slug,
+            {
+                "quantidade": 10,
+                "estrategia": nome,
+                "seed": 202,
+                "null_model_samples": 1000,
+            },
+            ctx=ctx,
+        )
 
-    diag = portfolio_diagnostics(games, MEGASENA, ctx.matriz_coocorrencia)
-
-    assert len(games) == 20
-    assert diag["max_exposicao"] <= 6
-    assert diag["max_repeticao_par"] <= 4
-    assert diag["overlap_max"] <= MEGASENA.get_overlap_limit()
+    base = gerar("cauda_controlada")
+    assert gerar("cauda_convexa") == base
+    assert gerar("cauda_agressiva") == base
 
 
-def test_tail_convex_strategy_protects_triples_and_quads():
-    ctx = _ctx()
-    service = LotteryService()
-
-    games = service.generate(
-        MEGASENA.slug,
-        {
-            "quantidade": 20,
-            "estrategia": "cauda_convexa",
-            "seed": 202,
-            "null_model_samples": 1000,
-        },
-        ctx=ctx,
-    )
-
-    diag = portfolio_diagnostics(games, MEGASENA, ctx.matriz_coocorrencia)
-
-    assert len(games) == 20
-    assert diag["max_exposicao"] <= 5
-    assert diag["max_repeticao_par"] <= 3
-    assert diag["max_repeticao_trinca"] <= 1
-    assert diag["max_repeticao_quadra"] <= 1
-    assert diag["overlap_max"] <= 2
-
-
-def test_tail_convex_dense_game_uses_density_aware_caps():
+def test_tail_controlled_dense_game_uses_density_aware_caps():
     ctx = _ctx(LOTOFACIL)
     service = LotteryService()
 
@@ -195,7 +169,7 @@ def test_tail_convex_dense_game_uses_density_aware_caps():
         LOTOFACIL.slug,
         {
             "quantidade": 5,
-            "estrategia": "cauda_convexa",
+            "estrategia": "cauda_controlada",
             "seed": 303,
             "null_model_samples": 1000,
         },
@@ -223,7 +197,7 @@ def test_real_game_mode_returns_auditable_package_without_validator(monkeypatch)
         {
             "quantidade": 2,
             "perfil_esforco": "rapido",
-            "estrategia_base": "agressiva",
+            "estrategia_base": "balanceada",
             "seed": 123,
             "candidate_pool_size": 16,
             "tournament_packages": 10,

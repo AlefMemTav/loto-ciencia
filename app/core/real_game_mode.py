@@ -23,6 +23,7 @@ from app.core.generator_objective import (
     score_plausibility_batch,
 )
 from app.core.statistics.score_calibration import score_calibration_diagnostics
+from app.core.strategies import estrategia_padrao, normalizar_estrategia
 
 
 @dataclass(frozen=True)
@@ -117,10 +118,10 @@ def _generate_candidate_pool(
             buffer_size=max(2000, chunk_size * 180),
             seed=seed + chunk_idx,
             temperatura=payload_options.get("temperatura"),
-            usar_quentes=payload_options.get("usar_quentes", True),
-            usar_atrasados=payload_options.get("usar_atrasados", True),
-            usar_markov=payload_options.get("usar_markov", True),
-            usar_ciclo=payload_options.get("usar_ciclo", True),
+            usar_quentes=payload_options.get("usar_quentes", False),
+            usar_atrasados=payload_options.get("usar_atrasados", False),
+            usar_markov=payload_options.get("usar_markov", False),
+            usar_ciclo=payload_options.get("usar_ciclo", False),
             usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
             historical_signal_strength=payload_options.get(
                 "historical_signal_strength", 1.0
@@ -321,11 +322,17 @@ def generate_real_game_package(
     ctx,
     quantidade: int,
     perfil_esforco: str = "forte",
-    estrategia_base: str = "agressiva",
+    estrategia_base: str | None = None,
     seed: int | None = None,
     payload_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload_options = dict(payload_options or {})
+    # Sem estratégia explícita: cauda_controlada em jogo esparso, balanceada em denso.
+    estrategia_base = (
+        normalizar_estrategia(estrategia_base)
+        if estrategia_base
+        else estrategia_padrao(ctx.config)
+    )
     if perfil_esforco not in EFFORT_PROFILES:
         raise ValueError("perfil_esforco deve ser rapido, forte ou maximo.")
     if quantidade < 1:
@@ -372,8 +379,8 @@ def generate_real_game_package(
         percentil_min=payload_options.get("percentil_min", 5.0),
         percentil_max=payload_options.get("percentil_max", 95.0),
         null_model_samples=null_model_samples,
-        usar_quentes=payload_options.get("usar_quentes", True),
-        usar_atrasados=payload_options.get("usar_atrasados", True),
+        usar_quentes=payload_options.get("usar_quentes", False),
+        usar_atrasados=payload_options.get("usar_atrasados", False),
         usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
         historical_signal_strength=payload_options.get(
             "historical_signal_strength",
@@ -419,8 +426,8 @@ def generate_real_game_package(
         percentil_min=payload_options.get("percentil_min", 5.0),
         percentil_max=payload_options.get("percentil_max", 95.0),
         null_model_samples=null_model_samples,
-        usar_quentes=payload_options.get("usar_quentes", True),
-        usar_atrasados=payload_options.get("usar_atrasados", True),
+        usar_quentes=payload_options.get("usar_quentes", False),
+        usar_atrasados=payload_options.get("usar_atrasados", False),
         usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
         historical_signal_strength=payload_options.get(
             "historical_signal_strength",

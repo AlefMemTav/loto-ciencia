@@ -11,6 +11,7 @@ import random
 from typing import List, Optional
 from app.core.logger import logger
 from app.core.generator_objective import score_plausibility_batch
+from app.core.strategies import normalizar_estrategia
 
 
 class GeneticMiner:
@@ -29,6 +30,7 @@ class GeneticMiner:
             random.seed(seed)
         self.ctx = ctx
         self.config = ctx.config
+        estrategia = normalizar_estrategia(estrategia)
         self.estrategia = estrategia
         self.objective_options = objective_options or {}
 
@@ -44,15 +46,8 @@ class GeneticMiner:
         if not raw_pesos:
             raw_pesos = {"w_freq": 0.5, "w_gap": 0.5}
 
-        if estrategia in (
-            "agressiva",
-            "cauda_controlada",
-            "cauda_agressiva",
-            "cauda_convexa",
-        ):
+        if estrategia == "cauda_controlada":
             w_freq_temp, w_gap_temp = 0.2, 0.8
-        elif estrategia == "conservadora":
-            w_freq_temp, w_gap_temp = 0.8, 0.2
         elif estrategia == "pura":
             w_freq_temp, w_gap_temp = 0.5, 0.5
         else:

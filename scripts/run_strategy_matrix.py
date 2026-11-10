@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.core.strategies import APELIDOS, ESTRATEGIAS
 from app.core.lottery import GAMES
 from app.core.statistics.strategy_matrix import (
     DEFAULT_SEEDS,
@@ -28,10 +29,10 @@ def _build_payload_overrides(args) -> dict:
         "percentil_min": args.percentil_min,
         "percentil_max": args.percentil_max,
         "historical_signal_strength": args.historical_strength,
-        "usar_quentes": not args.sem_quentes,
-        "usar_atrasados": not args.sem_atrasados,
-        "usar_markov": not args.sem_markov,
-        "usar_ciclo": not args.sem_ciclo,
+        "usar_quentes": args.com_quentes,
+        "usar_atrasados": args.com_atrasados,
+        "usar_markov": args.com_markov,
+        "usar_ciclo": args.com_ciclo,
         "usar_coocorrencia": not args.sem_coocorrencia,
         "frequencia_recente": not args.sem_frequencia_recente,
         "usar_calibracao_score": not args.sem_calibracao_score,
@@ -57,15 +58,7 @@ def _parser() -> argparse.ArgumentParser:
         "--estrategias",
         nargs="+",
         default=DEFAULT_STRATEGIES,
-        choices=[
-            "pura",
-            "balanceada",
-            "conservadora",
-            "agressiva",
-            "cauda_controlada",
-            "cauda_agressiva",
-            "cauda_convexa",
-        ],
+        choices=[*ESTRATEGIAS, *APELIDOS],
         help="Estrategias a comparar.",
     )
     parser.add_argument(
@@ -92,10 +85,10 @@ def _parser() -> argparse.ArgumentParser:
         choices=["historico_nulo", "historico", "nulo"],
         default="historico_nulo",
     )
-    parser.add_argument("--sem-quentes", action="store_true")
-    parser.add_argument("--sem-atrasados", action="store_true")
-    parser.add_argument("--sem-markov", action="store_true")
-    parser.add_argument("--sem-ciclo", action="store_true")
+    parser.add_argument("--com-quentes", action="store_true")
+    parser.add_argument("--com-atrasados", action="store_true")
+    parser.add_argument("--com-markov", action="store_true")
+    parser.add_argument("--com-ciclo", action="store_true")
     parser.add_argument("--sem-coocorrencia", action="store_true")
     parser.add_argument("--sem-frequencia-recente", action="store_true")
     parser.add_argument("--output-dir", default="backtest_results")
