@@ -456,10 +456,7 @@ class LotteryService:
 
         qtd = int(payload.get("quantidade", 1))
         perfil_esforco = payload.get("perfil_esforco", "forte")
-        estrategia_base = payload.get("estrategia_base") or payload.get(
-            "estrategia",
-            "agressiva",
-        )
+        estrategia_base = payload.get("estrategia_base") or payload.get("estrategia")
         seed = payload.get("seed", None)
 
         fixos = sorted(set(payload.get("numeros_fixos") or []))

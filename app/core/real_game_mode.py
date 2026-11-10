@@ -23,6 +23,7 @@ from app.core.generator_objective import (
     score_plausibility_batch,
 )
 from app.core.statistics.score_calibration import score_calibration_diagnostics
+from app.core.strategies import estrategia_padrao, normalizar_estrategia
 
 
 @dataclass(frozen=True)
@@ -321,11 +322,17 @@ def generate_real_game_package(
     ctx,
     quantidade: int,
     perfil_esforco: str = "forte",
-    estrategia_base: str = "agressiva",
+    estrategia_base: str | None = None,
     seed: int | None = None,
     payload_options: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload_options = dict(payload_options or {})
+    # Sem estratégia explícita: cauda_controlada em jogo esparso, balanceada em denso.
+    estrategia_base = (
+        normalizar_estrategia(estrategia_base)
+        if estrategia_base
+        else estrategia_padrao(ctx.config)
+    )
     if perfil_esforco not in EFFORT_PROFILES:
         raise ValueError("perfil_esforco deve ser rapido, forte ou maximo.")
     if quantidade < 1:

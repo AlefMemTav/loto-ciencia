@@ -12,6 +12,7 @@ from statistics import mean
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.core.strategies import APELIDOS, ESTRATEGIAS
 from app.core.lottery import GAMES
 from app.core.statistics.score_calibration import (
     BUCKET_LABELS,
@@ -36,15 +37,7 @@ def _parser() -> argparse.ArgumentParser:
         "--estrategias",
         nargs="+",
         default=DEFAULT_STRATEGIES,
-        choices=[
-            "pura",
-            "balanceada",
-            "conservadora",
-            "agressiva",
-            "cauda_controlada",
-            "cauda_agressiva",
-            "cauda_convexa",
-        ],
+        choices=[*ESTRATEGIAS, *APELIDOS],
     )
     parser.add_argument("--seeds", nargs="+", type=int, default=DEFAULT_SEEDS)
     parser.add_argument("--jogos", type=int, default=20)

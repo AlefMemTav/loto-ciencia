@@ -9,6 +9,7 @@ Versão 2.2: OTIMIZAÇÕES DE PERFORMANCE
 import numpy as np
 from typing import List
 from app.core.logger import logger
+from app.core.strategies import normalizar_estrategia
 from app.core.generator_objective import (
     score_plausibility_batch,
     select_diverse_portfolio,
@@ -73,6 +74,7 @@ def gerar_jogos_vetorizado(
     candidate_multiplier: int = 4000,
 ) -> List[List[int]]:
 
+    estrategia = normalizar_estrategia(estrategia)
     rng = np.random.default_rng(seed)
     config = ctx.config
     n_numbers = config.n_numbers
@@ -113,18 +115,9 @@ def gerar_jogos_vetorizado(
         z_gap[dest_indices] = vals_gap[mask_safe]
 
     # Aplica estratégia
-    if estrategia in (
-        "agressiva",
-        "cauda_controlada",
-        "cauda_agressiva",
-        "cauda_convexa",
-    ):
+    if estrategia == "cauda_controlada":
         scores_final = (z_gap * 0.55 * usar_atrasados) + (
             z_freq * 0.45 * usar_quentes
-        )
-    elif estrategia == "conservadora":
-        scores_final = (z_freq * 0.65 * usar_quentes) + (
-            z_gap * 0.35 * usar_atrasados
         )
     elif estrategia == "pura":
         scores_final = np.ones(n_numbers)
@@ -186,12 +179,8 @@ def gerar_jogos_vetorizado(
 
     if temperatura is None:
         temperatura = {
-            "conservadora": 1.15,
             "balanceada": 1.35,
-            "agressiva": 1.45,
             "cauda_controlada": 1.55,
-            "cauda_agressiva": 1.60,
-            "cauda_convexa": 1.55,
             "pura": 2.0,
         }.get(estrategia, 1.35)
     temperatura = max(float(temperatura), 0.2)

@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.core.strategies import APELIDOS, ESTRATEGIAS
 from app.core.lottery import GAMES
 from app.core.statistics.strategy_matrix import (
     DEFAULT_SEEDS,
@@ -57,15 +58,7 @@ def _parser() -> argparse.ArgumentParser:
         "--estrategias",
         nargs="+",
         default=DEFAULT_STRATEGIES,
-        choices=[
-            "pura",
-            "balanceada",
-            "conservadora",
-            "agressiva",
-            "cauda_controlada",
-            "cauda_agressiva",
-            "cauda_convexa",
-        ],
+        choices=[*ESTRATEGIAS, *APELIDOS],
         help="Estrategias a comparar.",
     )
     parser.add_argument(

@@ -545,7 +545,7 @@ def _render_probability_report(conjuntos, config, svc, ctx):
 
 def _render_regression_analysis(config, ctx):
     """
-    Exibe análise de regressão à média validando a estratégia "agressiva".
+    Exibe análise de regressão à média sobre números atrasados (informativa; não afeta a geração).
     """
 
     with st.expander("📈 Validação Científica: Regressão à Média", expanded=False):

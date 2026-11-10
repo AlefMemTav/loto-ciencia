@@ -79,40 +79,19 @@ def render_generator(ctx, svc):
             )
 
         with col_strat:
-            # Mapas de display para ficar mais amigável
+            # Três estratégias (os nomes antigos continuam aceitos pelo backend)
             strat_display = {
-                "cauda_controlada": "🎯 Cauda Controlada (Experimental)",
-                "cauda_agressiva": "🚀 Cauda Agressiva (Experimental)",
-                "cauda_convexa": "🔶 Cauda Convexa (Experimental)",
+                "cauda_controlada": "🎯 Cauda Controlada",
                 "balanceada": "⚖️ Balanceada",
-                "conservadora": "🛡️ Conservadora (Frequentes)",
-                "agressiva": "🔥 Agressiva (Recomendada)",
-                "pura": "🎲 Aleatória Pura (Caos)",
+                "pura": "🎲 Aleatória Pura (controle)",
             }
-            strategy_options = [
-                "agressiva",
-                "cauda_convexa",
-                "cauda_agressiva",
-                "cauda_controlada",
-                "balanceada",
-                "conservadora",
-                "pura",
-            ]
-            if slug != "mega_sena_sorteio":
-                strategy_options = [
-                    "balanceada",
-                    "conservadora",
-                    "agressiva",
-                    "cauda_convexa",
-                    "cauda_agressiva",
-                    "cauda_controlada",
-                    "pura",
-                ]
-                strat_display["balanceada"] = "⚖️ Balanceada (Recomendada)"
-                strat_display["agressiva"] = "🔥 Agressiva (Atrasados)"
-                strat_display["cauda_controlada"] = "🎯 Cauda Controlada"
-                strat_display["cauda_agressiva"] = "🚀 Cauda Agressiva"
-                strat_display["cauda_convexa"] = "🔶 Cauda Convexa"
+            # Padrão por densidade: esparso (Mega, Quina) -> cauda; denso -> balanceada
+            strategy_options = (
+                ["cauda_controlada", "balanceada", "pura"]
+                if config.is_sparse
+                else ["balanceada", "cauda_controlada", "pura"]
+            )
+            strat_display[strategy_options[0]] += " (Recomendada)"
 
             strat_key = st.selectbox(
                 "Estratégia Matemática:",
@@ -123,13 +102,9 @@ def render_generator(ctx, svc):
 
         # Explicação dinâmica da estratégia selecionada
         info_strats = {
-            "cauda_controlada": "Parte da agressiva e otimiza o pacote final para concentrar sinal sem perder diversidade.",
-            "cauda_agressiva": "Busca cauda premiável com núcleos de pares/dezenas mais densos, mantendo tetos de exposição.",
-            "cauda_convexa": "Permite núcleo moderado por pares, mas protege o pacote contra repetição de trincas e quadras.",
-            "balanceada": "Mistura frequência, atraso e plausibilidade estrutural sem deixar o portfólio ficar concentrado demais.",
-            "conservadora": "Dá mais peso a números historicamente frequentes, mas com controles contra superconcentração.",
-            "agressiva": "Dá mais espaço a atrasos e ciclos, mantendo freios contra falácia do apostador e padrões artificiais.",
-            "pura": "Reduz o viés histórico dos números, mas ainda evita combinações humanas óbvias e estruturalmente pobres.",
+            "cauda_controlada": "Escolhe o pacote como conjunto: limita a repetição de dezenas e de pares entre os jogos e mantém a diversidade. Indicada para Mega-Sena e Quina.",
+            "balanceada": "Combina plausibilidade estrutural com diversidade do pacote. Indicada para Lotofácil e Lotomania.",
+            "pura": "Sem sinais históricos: só os controles estruturais. Serve de controle para comparar.",
         }
         st.info(f"💡 **Lógica:** {info_strats[strat_key]}")
 

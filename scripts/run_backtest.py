@@ -21,6 +21,7 @@ from datetime import datetime
 # Adiciona o diretório raiz ao path para importar 'app'
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.core.strategies import APELIDOS, ESTRATEGIAS
 from app.core.lottery import GAMES
 from app.services.lottery_service import LotteryService
 from app.core.statistics.backtest import executar_backtest_temporal
@@ -83,15 +84,7 @@ def main():
     parser.add_argument(
         "--estrategia",
         default="balanceada",
-        choices=[
-            "pura",
-            "balanceada",
-            "conservadora",
-            "agressiva",
-            "cauda_controlada",
-            "cauda_agressiva",
-            "cauda_convexa",
-        ],
+        choices=[*ESTRATEGIAS, *APELIDOS],
         help="Estratégia do gerador a ser testada",
     )
 
