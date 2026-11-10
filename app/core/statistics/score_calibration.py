@@ -71,7 +71,7 @@ def _history_games(df_historico: Any, config: GameConfig) -> np.ndarray:
     cols = [col for col in config.draw_cols if col in df_historico.columns]
     if len(cols) != config.k:
         return np.empty((0, config.k), dtype=int)
-    values = df_historico[cols].dropna().to_numpy(dtype=int)
+    values = df_historico[cols].dropna().to_numpy(dtype=int).copy()
     if values.ndim != 2 or values.shape[1] != config.k:
         return np.empty((0, config.k), dtype=int)
     values.sort(axis=1)

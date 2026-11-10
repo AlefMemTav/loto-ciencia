@@ -112,15 +112,23 @@ def _validar_pacote(slug: str, jogos: list[list[int]]) -> list[dict]:
     return saida
 
 
-def _ultimo_concurso(ctx) -> tuple[int | None, str | None]:
-    df = ctx.df
+def _ultimo_concurso(ctx, slug: str) -> tuple[int | None, str | None]:
+    """Último concurso gravado e sua data (a planilha vem em ordem decrescente)."""
+    import pandas as pd
+
     try:
-        if "Concurso" in df.columns:
-            idx = df["Concurso"].astype(int).idxmax()
-            return int(df.loc[idx, "Concurso"]), (str(df.loc[idx, "Data"]) if "Data" in df.columns else None)
-        return int(df.index.max()), None
+        df = pd.read_excel(Path("data") / f"{slug}.xlsx")
+        df.columns = [str(c).strip() for c in df.columns]
+        idx = df["Concurso"].astype(int).idxmax()
+        data = df.loc[idx, "Data"] if "Data" in df.columns else None
+        if hasattr(data, "strftime"):
+            data = data.strftime("%d/%m/%Y")
+        return int(df.loc[idx, "Concurso"]), (None if data is None else str(data))
     except Exception:
-        return None, None
+        try:
+            return int(ctx.df["Concurso"].astype(int).max()), None
+        except Exception:
+            return None, None
 
 
 def _dias_desde(data_txt: str | None, hoje: date) -> int | None:
@@ -199,7 +207,7 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
     slug = JOGOS[jogo]
     ctx = LotteryService().get_context(slug)
     config = ctx.config
-    ultimo, data_ultimo = _ultimo_concurso(ctx)
+    ultimo, data_ultimo = _ultimo_concurso(ctx, slug)
     seed_base = int(hoje.strftime("%Y%m%d")) * 10 + list(JOGOS).index(jogo)
 
     pacote_gerado, validacoes, erros, avisos, tentativa = {}, [], [], [], 0
