@@ -1,0 +1,30 @@
+/* Keep prose readable on narrow screens and prevent long tokens from breaking the layout. */
+.md-typeset p,
+.md-typeset li,
+.md-typeset td,
+.md-typeset th {
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: auto;
+  text-wrap: pretty;
+}
+
+.md-typeset {
+  line-height: 1.7;
+}
+
+.md-typeset__table {
+  display: block;
+  overflow-x: auto;
+}
+
+.md-typeset .arithmatex {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.md-typeset pre {
+  max-width: 100%;
+  overflow-x: auto;
+}

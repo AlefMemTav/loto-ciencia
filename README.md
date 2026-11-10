@@ -1,4 +1,4 @@
-<h1 align="center">🎱 LotoCiencia</h1>
+<h1 align="center">LotoCiencia</h1>
 
 <p align="center">
   <strong>Não é sorte. É ciência aplicada aos dados.</strong><br>
@@ -25,14 +25,14 @@
 > dados históricos, avalia padrões e ajuda a montar apostas de forma mais consciente.
 > Loteria é jogo de azar: jogue com responsabilidade.
 
-## 📚 Documentação
+## Documentação
 
 A documentação técnica e científica está disponível em
 **[alefmemtav.github.io/loto-ciencia](https://alefmemtav.github.io/loto-ciencia/)**.
 Ela descreve a arquitetura, os modelos estatísticos, o pipeline de geração e os
 procedimentos de backtest.
 
-## ✨ Funcionalidades
+## Funcionalidades
 
 - **Dashboard de tendências:** frequências, atrasos, distribuições, testes de uniformidade
   e intervalos de confiança.
@@ -45,7 +45,7 @@ procedimentos de backtest.
 - **Dados atualizados:** resultados e detalhes de premiação obtidos dos dados oficiais da
   Caixa Econômica Federal.
 
-## 🎰 Jogos suportados
+## Jogos suportados
 
 | Jogo | Universo | Aposta padrão | Densidade |
 | --- | ---: | ---: | ---: |
@@ -57,7 +57,7 @@ procedimentos de backtest.
 > **Densidade** é a proporção entre números escolhidos e números disponíveis. Os
 > thresholds de análise são ajustados para cada modalidade.
 
-## 🧠 Como o score funciona
+## Como o score funciona
 
 O score combina critérios técnicos e sinais de popularidade. Entre eles estão soma,
 paridade, quadrantes, linhas e colunas, terminações, entropia dos intervalos, distância
@@ -65,15 +65,15 @@ de Hamming, geometria do volante, coocorrência, simetria e progressões.
 
 | Score | Classificação | Interpretação |
 | ---: | --- | --- |
-| 90–100 | 🏆 Excelente | Distribuição estatisticamente bem equilibrada |
-| 70–89 | ✅ Bom | Aposta válida |
-| 50–69 | ⚠️ Regular | Considere revisar alguns critérios |
-| 0–49 | ❌ Baixo | Muitos padrões concentrados |
+| 90–100 | Excelente | Distribuição estatisticamente bem equilibrada |
+| 70–89 | Bom | Aposta válida |
+| 50–69 | Regular | Considere revisar alguns critérios |
+| 0–49 | Baixo | Muitos padrões concentrados |
 
 O score mede a qualidade estrutural da combinação; ele **não prevê o resultado** nem
 altera a chance de acerto.
 
-## 🚀 Instalação
+## Instalação
 
 ### Pré-requisitos
 
@@ -95,7 +95,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 💻 Uso
+## Uso
 
 Para iniciar a interface:
 
@@ -127,7 +127,7 @@ print(f"Score: {relatorio['score']}")
 print(f"Risco de divisão: {relatorio['risco_divisao']}")
 ```
 
-## 🏗️ Arquitetura
+## Arquitetura
 
 ```text
 Streamlit UI (pages/, app/ui/)
@@ -142,14 +142,14 @@ Dados históricos (data/*.xlsx, data/detalhes/*.csv)
 O projeto separa apresentação, serviços, regras de negócio e dados. O núcleo prioriza
 funções puras, injeção de dependências e análises ajustadas à densidade de cada jogo.
 
-## 🧪 Testes
+## Testes
 
 ```bash
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-## 🤝 Contribuição
+## Contribuição
 
 Contribuições são bem-vindas:
 
@@ -158,25 +158,25 @@ Contribuições são bem-vindas:
 3. Adicione ou atualize os testes correspondentes.
 4. Abra um Pull Request descrevendo a mudança.
 
-## 📄 Licença
+## Licença
 
 Este projeto está sob a licença MIT.
 
-## 👨‍💻 Autor
+## Autor
 
 **AlefMemTav**
 
 - GitHub: [@AlefMemTav](https://github.com/AlefMemTav)
 
-## 🙏 Agradecimentos
+## Agradecimentos
 
 - [Caixa Econômica Federal](https://loterias.caixa.gov.br/) — Dados históricos oficiais
 - [Streamlit](https://streamlit.io/) — Framework de UI
 
 <p align="center">
-  <strong>⭐ Se este projeto foi útil, considere dar uma estrela!</strong>
+  <strong>Se este projeto foi útil, considere dar uma estrela.</strong>
 </p>
 
 <p align="center">
-  Made with ❤️ and 📊 Statistics
+  Made with Statistics
 </p>
