@@ -26,11 +26,11 @@ on:
         default: false
 
 concurrency:
-  group: game-day
+  group: registro
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   pacote:
@@ -43,15 +43,23 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install -r requirements.txt
+      - name: Preparar branch registro
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: scripts/registro_preparar.sh
       - name: Gerar e validar
         run: |
           python -m app.cli.game_day \
             --game "${{ inputs.game || 'hoje' }}" \
             --effort "${{ inputs.effort || 'forte' }}" \
+            --out registro/pacotes \
             ${{ inputs.force && '--force' || '' }}
+      - name: Guardar no branch registro
+        if: always()
+        run: scripts/registro_enviar.sh "pacotes do dia"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pacote-do-dia
-          path: out/
+          path: registro/pacotes/
           if-no-files-found: ignore
