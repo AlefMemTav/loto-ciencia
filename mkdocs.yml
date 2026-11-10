@@ -1,4 +1,7 @@
 site_name: LotoCiencia — Arquitetura e Algoritmos
+site_url: https://alefmemtav.github.io/loto-ciencia/
+repo_url: https://github.com/AlefMemTav/loto-ciencia
+repo_name: AlefMemTav/loto-ciencia
 site_description: Documentação científica da pipeline de geração, validação e backtest de loterias
 theme:
   name: material
@@ -8,6 +11,17 @@ theme:
     - navigation.sections
     - content.code.copy
     - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Usar tema escuro
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Usar tema claro
 
 markdown_extensions:
   - admonition
@@ -20,17 +34,7 @@ markdown_extensions:
       permalink: true
 
 extra_javascript:
-  - https://polyfill.io/v3/polyfill.min.js?features=es6
   - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
 
 nav:
-  - Visão Geral e Filosofia: "#1-visao-geral-e-principios-cientificos"
-  - Pipeline de 5 Estágios: "#2-arquitetura-e-pipeline-operacional-5-estagios"
-  - Modelagem e Geometria: "#3-modelagem-de-dominio-e-geometria-do-volante"
-  - Estatística e Auditoria: "#4-estatistica-descritiva-inferencial-e-auditoria"
-  - Sinais Avançados e ML: "#5-sinais-avancados-series-temporais-e-machine-learning"
-  - Modelo Nulo e Calibração: "#6-modelo-nulo-combinatorio-e-calibracao-estrutural"
-  - Motores de Geração e Portfólio: "#7-motores-de-geracao-funcao-objetivo-e-fechamentos"
-  - Validador Independente: "#8-sistema-de-validacao-e-deteccao-de-padroes"
-  - Backtest e Bancada Científica: "#9-backtest-walk-forward-modelo-financeiro-e-matriz-de-estrategias"
-  - Guia Prático de Uso: "#10-guia-pratico-de-operacao-para-apostas-reais"
+  - Documentação técnica: index.md

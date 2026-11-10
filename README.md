@@ -1,372 +1,166 @@
 <h1 align="center">🎱 LotoCiencia</h1>
 
 <p align="center">
-  <strong>Não é Sorte, é Ciência.</strong><br>
-  Plataforma de engenharia estatística para análise, validação e geração de apostas em loterias brasileiras.
+  <strong>Não é sorte. É ciência aplicada aos dados.</strong><br>
+  Plataforma de análise estatística, validação e geração de apostas para loterias brasileiras.
 </p>
 
 <p align="center">
-  <a href="#-funcionalidades">Funcionalidades</a> •
-  <a href="#-jogos-suportados">Jogos</a> •
-  <a href="#-instalação">Instalação</a> •
-  <a href="#-uso">Uso</a> •
-  <a href="#-arquitetura">Arquitetura</a> •
+  <a href="https://alefmemtav.github.io/loto-ciencia/">Documentação</a> ·
+  <a href="#-funcionalidades">Funcionalidades</a> ·
+  <a href="#-instalação">Instalação</a> ·
+  <a href="#-uso">Uso</a> ·
   <a href="#-contribuição">Contribuição</a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python 3.10+" />
-  <img src="https://img.shields.io/badge/streamlit-1.40+-red.svg" alt="Streamlit" />
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License MIT" />
-  <img src="https://img.shields.io/badge/status-active-success.svg" alt="Status Active" />
+  <img src="https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white" alt="Python 3.13 ou superior">
+  <img src="https://img.shields.io/badge/Streamlit-1.52%2B-FF4B4B?logo=streamlit&logoColor=white" alt="Streamlit">
+  <img src="https://img.shields.io/github/license/AlefMemTav/loto-ciencia?color=2ea44f" alt="Licença MIT">
+  <img src="https://img.shields.io/github/actions/workflow/status/AlefMemTav/loto-ciencia/deploy-mkdocs.yml?label=docs" alt="Build da documentação">
 </p>
 
----
+> **Aviso:** o LotoCiencia não aumenta a probabilidade matemática de acertar uma loteria.
+> Todos os números têm a mesma chance teórica de serem sorteados. A ferramenta organiza
+> dados históricos, avalia padrões e ajuda a montar apostas de forma mais consciente.
+> Loteria é jogo de azar: jogue com responsabilidade.
 
-## ⚠️ Aviso Importante
+## 📚 Documentação
 
-> **Este sistema NÃO aumenta a probabilidade de ganhar na loteria.**
-> 
-> Todos os números têm a mesma chance teórica de serem sorteados. O LotoCiencia é uma ferramenta de **análise estatística** que melhora a qualidade da distribuição, detecta padrões populares (risco de divisão de prêmio) e organiza apostas de forma inteligente.
-> 
-> **Loteria é jogo de azar. Jogue com responsabilidade.**
-
----
-
-## 📋 Índice
-
-- [Funcionalidades](#-funcionalidades)
-- [Jogos Suportados](#-jogos-suportados)
-- [Como Funciona o Score](#-como-funciona-o-score)
-- [Instalação](#-instalação)
-- [Uso](#-uso)
-- [Arquitetura](#-arquitetura)
-- [Tecnologias](#-tecnologias)
-- [Estrutura do Projeto](#-estrutura-do-projeto)
-- [Contribuição](#-contribuição)
-- [Licença](#-licença)
-
----
+A documentação técnica e científica está disponível em
+**[alefmemtav.github.io/loto-ciencia](https://alefmemtav.github.io/loto-ciencia/)**.
+Ela descreve a arquitetura, os modelos estatísticos, o pipeline de geração e os
+procedimentos de backtest.
 
 ## ✨ Funcionalidades
 
-### 📊 Dashboard de Tendências
-Visualização em tempo real com gráficos interativos:
-- **Números Quentes**: Dezenas mais frequentes nos últimos sorteios
-- **Números Frios**: Dezenas com maior atraso estatístico
-- **Análise de Poisson**: Distribuição de terminações (finais)
-- **Teste Chi-Quadrado**: Validação de uniformidade estatística
-- **Intervalos de Confiança**: IC80% e IC95% para soma dos números
+- **Dashboard de tendências:** frequências, atrasos, distribuições, testes de uniformidade
+  e intervalos de confiança.
+- **Validador de apostas:** score de 0 a 100, paridade, soma, distribuição espacial,
+  similaridade histórica, geometria e padrões populares.
+- **Gerador inteligente:** estatísticas históricas, aleatoriedade criptográfica,
+  filtros de qualidade e geração em lote.
+- **Fechamentos combinatórios:** cobertura de grupos de 7 a 12 números e estimativa de custo.
+- **Auditoria de bolões:** validação em lote, duplicidades, cobertura e relatório de custos.
+- **Dados atualizados:** resultados e detalhes de premiação obtidos dos dados oficiais da
+  Caixa Econômica Federal.
 
-### 🧪 Validador de Apostas
-Análise completa de qualquer jogo com score de 0 a 100:
-- Validação de soma (Curva Gaussiana)
-- Equilíbrio par/ímpar
-- Distribuição por quadrantes e linhas
-- Detecção de padrões populares (risco de divisão)
-- Análise de similaridade com sorteios anteriores (Distância de Hamming)
-- Análise geométrica (moldura, miolo, cruz, diagonais)
-- Detecção de progressões aritméticas e simetrias
+## 🎰 Jogos suportados
 
-### 🤖 Gerador Inteligente
-Algoritmo híbrido que combina:
-- Estatísticas históricas (frequência, atrasos)
-- Aleatoriedade controlada (cryptographic random)
-- Filtros de qualidade automáticos
-- Geração em lote com score mínimo configurável
+| Jogo | Universo | Aposta padrão | Densidade |
+| --- | ---: | ---: | ---: |
+| Mega-Sena | 1–60 | 6 números | 10% |
+| Lotofácil | 1–25 | 15 números | 60% |
+| Quina | 1–80 | 5 números | 6,25% |
+| Lotomania | 1–100 | 50 números | 50% |
 
-### 📦 Fechamentos (Wheelings)
-Combinatória matemática para grupos:
-- Geração de todas as combinações possíveis
-- Suporte de 7 a 12 números base
-- Cálculo automático de custo total
-- Análise de cobertura estatística
+> **Densidade** é a proporção entre números escolhidos e números disponíveis. Os
+> thresholds de análise são ajustados para cada modalidade.
 
-### 👥 Auditoria de Bolões
-Ferramenta para grupos e apostadores:
-- Validação em lote de múltiplos jogos
-- Detecção de duplicatas
-- Análise de cobertura do grupo
-- Relatório de custo total
-- Identificação de jogos com erros
+## 🧠 Como o score funciona
 
----
+O score combina critérios técnicos e sinais de popularidade. Entre eles estão soma,
+paridade, quadrantes, linhas e colunas, terminações, entropia dos intervalos, distância
+de Hamming, geometria do volante, coocorrência, simetria e progressões.
 
-## 🎰 Jogos Suportados
+| Score | Classificação | Interpretação |
+| ---: | --- | --- |
+| 90–100 | 🏆 Excelente | Distribuição estatisticamente bem equilibrada |
+| 70–89 | ✅ Bom | Aposta válida |
+| 50–69 | ⚠️ Regular | Considere revisar alguns critérios |
+| 0–49 | ❌ Baixo | Muitos padrões concentrados |
 
-| Jogo | Números | Escolha | Densidade | Status |
-|------|---------|---------|-----------|--------|
-| **Mega-Sena** | 1-60 | 6 | 10% | ✅ Completo |
-| **Lotofácil** | 1-25 | 15 | 60% | ✅ Completo |
-| **Quina** | 1-80 | 5 | 6.25% | ✅ Completo |
-| **Lotomania** | 1-100 | 50 | 50% | ✅ Completo |
-
-> **Densidade** = Proporção de números escolhidos vs disponíveis. O sistema ajusta automaticamente os thresholds de análise baseado na densidade de cada jogo.
-
----
-
-## 🧠 Como Funciona o Score
-
-O sistema atribui um score de **0 a 100** para cada aposta baseado em múltiplos pilares estatísticos:
-
-### Análises Técnicas
-
-| Critério | Descrição | Penalidade Máxima |
-|----------|-----------|-------------------|
-| **Soma Gaussiana** | Soma deve estar no intervalo de confiança histórico | -25 pts |
-| **Paridade** | Equilíbrio entre números pares e ímpares | -25 pts |
-| **Quadrantes** | Distribuição espacial no volante | -20 pts |
-| **Linhas/Colunas** | Cobertura vertical e horizontal | -10 pts |
-| **Finais** | Terminações dos números (0-9) | -15 pts |
-
-### Análises Avançadas
-
-| Critério | Descrição | Penalidade Máxima |
-|----------|-----------|-------------------|
-| **Entropia Shannon** | Aleatoriedade dos gaps entre números | -25 pts |
-| **Hamming Distance** | Similaridade com sorteios passados | -20 pts |
-| **Geometria** | Padrões no volante (moldura, cruz, X) | -15 pts |
-| **Co-ocorrência** | Pares que raramente saem juntos | -15 pts |
-| **Simetria** | Pares simétricos no volante | -10 pts |
-| **Motifs** | Progressões aritméticas detectadas | -20 pts |
-
-### Análise de Popularidade
-
-| Critério | Descrição | Efeito |
-|----------|-----------|--------|
-| **Sequências** | Muitos números consecutivos | ⚠️ Risco divisão |
-| **Datas** | Concentração em 1-31 | ⚠️ Risco divisão |
-| **Lost Numbers** | Padrão 4-8-15-16-23-42 | ⚠️ Risco divisão |
-| **Pares Populares** | Combinações muito frequentes | ⚠️ Risco divisão |
-
-### Classificação Final
-
-| Score | Classificação | Recomendação |
-|-------|---------------|--------------|
-| 90-100 | 🏆 Excelente | Aposta de alta qualidade |
-| 70-89 | ✅ Bom | Aposta válida |
-| 50-69 | ⚠️ Regular | Considere ajustes |
-| 0-49 | ❌ Ruim | Não recomendado |
-
----
+O score mede a qualidade estrutural da combinação; ele **não prevê o resultado** nem
+altera a chance de acerto.
 
 ## 🚀 Instalação
 
 ### Pré-requisitos
 
-- Python 3.10 ou superior
-- pip (gerenciador de pacotes)
+- Python 3.13 ou superior
 - Git
 
-### Instalação Rápida
-
 ```bash
-# 1. Clone o repositório
-git clone https://github.com/AlefMemTav/loto-science.git
-cd loto-science
+git clone https://github.com/AlefMemTav/loto-ciencia.git
+cd loto-ciencia
 
-# 2. Crie um ambiente virtual
 python -m venv .venv
 
-# Linux/Mac
+# Linux/macOS
 source .venv/bin/activate
 
-# Windows
-.venv\Scripts\activate
+# Windows PowerShell
+# .venv\Scripts\Activate.ps1
 
-# 3. Instale as dependências
 pip install -r requirements.txt
-
-# 4. Execute a aplicação
-streamlit run main.py
 ```
-
-### Atualização dos resultados e detalhes de premiação
-
-`python atualizar_loterias.py` (também roda no GitHub Actions) atualiza os `.xlsx` com os
-novos sorteios e grava, em `data/detalhes/<loteria>_detalhes.csv`, os dados que o Excel não
-tem: ganhadores e prêmio por faixa, valor arrecadado, acumulado, estimativa do próximo
-concurso e local dos ganhadores. Concursos antigos são completados na primeira execução, com uma única chamada ao histórico
-completo da API; se essa chamada falhar, o script volta ao modo gradual
-(`LIMITE_BACKFILL`, padrão 100 por loteria a cada execução).
-
-### Novos critérios de pontuação (ordem de saída e popularidade medida)
-
-- **Ordem de saída** (`app/core/statistics/ordem_saida.py`): usa a ordem real em que as bolas
-  saíram (colunas `D1..Dk`). Descarta automaticamente trechos ordenados da planilha (ex.: Quina
-  antiga), audita a uniformidade das posições (Benjamini-Hochberg) e dá uma preferência leve
-  contra jogos de números que só saem cedo ou só tarde. Não altera a chance de acerto.
-- **Popularidade medida** (`app/core/statistics/popularidade_medida.py`): com os ganhadores
-  reais em `data/detalhes/`, estima quanto cada número divide o prêmio e penaliza jogos que
-  tendem a dividir mais. Só entra se passar numa validação cruzada temporal; sem dados ou sem
-  ganho comprovado, é ignorado.
-
-Os dois entram no validador (`validar_jogo`) e no score do gerador
-(`score_plausibility_batch`), junto com todos os critérios que já existiam.
-
----
 
 ## 💻 Uso
 
-### Interface Web (Streamlit)
+Para iniciar a interface:
 
 ```bash
 streamlit run main.py
 ```
 
-Acesse: `http://localhost:8501`
+A aplicação estará disponível em <http://localhost:8501>.
 
-### Exemplos de Uso
+Para atualizar os resultados e os detalhes de premiação:
 
-#### Validar um Jogo (Python)
+```bash
+python atualizar_loterias.py
+```
+
+O mesmo processo é executado automaticamente pelo GitHub Actions. Os resultados são
+salvos em `data/*.xlsx` e os detalhes por faixa em `data/detalhes/*.csv`.
+
+### Exemplo de validação
 
 ```python
 from app.core.lottery.catalog import MEGASENA
 from app.core.validator import validar_jogo
 
 numeros = [5, 17, 28, 35, 48, 59]
-report = validar_jogo(numeros, MEGASENA)
+relatorio = validar_jogo(numeros, MEGASENA)
 
-print(f"Score: {report['score']}")
-print(f"Risco de Divisão: {report['risco_divisao']}")
+print(f"Score: {relatorio['score']}")
+print(f"Risco de divisão: {relatorio['risco_divisao']}")
 ```
-
----
 
 ## 🏗️ Arquitetura
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      PRESENTATION LAYER                      │
-├──────────────────────────────────────────────────────────────┤
-│                       Streamlit UI                           │
-│                  (pages/, app/ui/)                           │
-└──────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       SERVICE LAYER                          │
-│                   (app/services/)                            │
-│              LotteryService (cache + orchestration)          │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                        CORE LAYER                            │
-├─────────────────────────────┬───────────────────────────────┤
-│      app/core/              │    app/core/statistics/       │
-│  • validator.py             │  • basic.py                   │
-│  • generator.py             │  • distributions.py           │
-│  • lottery/                 │  • geometry.py                │
-│    - models.py              │  • similarity.py              │
-│    - catalog.py             │  • temporal.py                │
-└─────────────────────────────┴───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                        DATA LAYER                            │
-│                      (data/*.xlsx)                           │
-│            Historical lottery results from Caixa             │
-└─────────────────────────────────────────────────────────────┘
+```text
+Streamlit UI (pages/, app/ui/)
+        ↓
+Serviços e orquestração (app/services/)
+        ↓
+Núcleo estatístico e geradores (app/core/)
+        ↓
+Dados históricos (data/*.xlsx, data/detalhes/*.csv)
 ```
 
-### Princípios de Design
-
-- **Separation of Concerns**: UI, serviços e core são independentes
-- **Dependency Injection**: Serviços injetados nas camadas superiores
-- **Pure Functions**: Core estatístico sem side effects
-- **Density-Aware Analysis**: Thresholds ajustados automaticamente por jogo
-
----
-
-## 🛠️ Tecnologias
-
-### Core
-- **Python 3.10+** - Linguagem principal
-- **Pandas** - Manipulação de dados
-- **NumPy** - Computação numérica
-- **SciPy** - Análises estatísticas
-
-### Frontend
-- **Streamlit** - Interface web interativa
-- **Altair** - Visualizações declarativas
-
-### Testes
-- **pytest** - Testes automatizados
-
----
-
-## 📁 Estrutura do Projeto
-
-```
-loto-science/
-├── app/
-│   ├── core/                   # Lógica de negócio
-│   │   ├── lottery/            # Modelos e catálogo de jogos
-│   │   ├── statistics/         # Módulos estatísticos
-│   │   ├── validator.py        # Validação de apostas
-│   │   └── generator.py        # Geração de apostas
-│   ├── services/               # Camada de serviços
-│   └── ui/                     # Componentes Streamlit
-├── pages/                      # Páginas Streamlit
-├── data/                       # Dados históricos (Excel)
-├── tests/                      # Testes automatizados
-├── assets/                     # Imagens e recursos
-├── main.py                     # Entry point Streamlit
-├── requirements.txt            # Dependências
-└── README.md                   # Documentação
-```
-
----
+O projeto separa apresentação, serviços, regras de negócio e dados. O núcleo prioriza
+funções puras, injeção de dependências e análises ajustadas à densidade de cada jogo.
 
 ## 🧪 Testes
 
 ```bash
-# Instalar dependências de teste
-pip install pytest pytest-cov
-
-# Executar todos os testes
+pip install -e ".[dev]"
 pytest tests/ -v
-
-# Com cobertura
-pytest tests/ --cov=app --cov-report=html
 ```
-
----
 
 ## 🤝 Contribuição
 
-Contribuições são bem-vindas! Por favor, siga os passos:
+Contribuições são bem-vindas:
 
-1. Fork o projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add: AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
-
-### Guidelines
-
-- Siga o padrão PEP 8
-- Adicione testes para novas funcionalidades
-- Documente funções com docstrings
-- Atualize o README se necessário
-
----
-
-## 📊 Estatísticas do Projeto
-
-- **Linguagem**: Python 100%
-- **Jogos Suportados**: 4 (Mega-Sena, Lotofácil, Quina, Lotomania)
-- **Métricas de Análise**: 15+
-- **Testes**: Em desenvolvimento
-
----
+1. Faça um fork do projeto.
+2. Crie uma branch para sua alteração.
+3. Adicione ou atualize os testes correspondentes.
+4. Abra um Pull Request descrevendo a mudança.
 
 ## 📄 Licença
 
-Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para mais detalhes.
-
----
+Este projeto está sob a licença MIT.
 
 ## 👨‍💻 Autor
 
@@ -374,14 +168,10 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 - GitHub: [@AlefMemTav](https://github.com/AlefMemTav)
 
----
-
 ## 🙏 Agradecimentos
 
-- [Caixa Econômica Federal](https://loterias.caixa.gov.br/) - Dados históricos oficiais
-- [Streamlit](https://streamlit.io/) - Framework de UI
-
----
+- [Caixa Econômica Federal](https://loterias.caixa.gov.br/) — Dados históricos oficiais
+- [Streamlit](https://streamlit.io/) — Framework de UI
 
 <p align="center">
   <strong>⭐ Se este projeto foi útil, considere dar uma estrela!</strong>
