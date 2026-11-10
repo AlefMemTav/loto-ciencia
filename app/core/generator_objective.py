@@ -11,6 +11,7 @@ from itertools import combinations
 from math import comb
 import numpy as np
 
+from app.core.statistics.popularidade_medida import LIMIAR_RAZAO_GANHADORES
 from app.core.strategies import CAUDA_CONTROLADA, normalizar_estrategia
 from app.core.ticket_features import extract_ticket_features_batch
 from app.core.statistics.feature_percentiles import batch_feature_percentiles
@@ -24,6 +25,7 @@ from app.core.statistics.score_calibration import (
 
 
 TAIL_CONTROLLED = CAUDA_CONTROLADA
+PENALIDADE_CORTE_POPULARIDADE = 100.0
 TAIL_STRATEGIES = {TAIL_CONTROLLED}
 
 
@@ -34,8 +36,8 @@ def score_plausibility_batch(
     percentil_min: float = 5.0,
     percentil_max: float = 95.0,
     null_model_samples: int | None = None,
-    usar_quentes: bool = True,
-    usar_atrasados: bool = True,
+    usar_quentes: bool = False,
+    usar_atrasados: bool = False,
     usar_coocorrencia: bool = True,
     historical_signal_strength: float = 1.0,
     usar_calibracao_score: bool = True,
@@ -45,6 +47,7 @@ def score_plausibility_batch(
     ordem_strength: float = 1.0,
     usar_popularidade_medida: bool = True,
     popularidade_strength: float = 1.0,
+    usar_corte_popularidade: bool = True,
 ) -> np.ndarray:
     """
     Score vetorial de plausibilidade para candidatos já ordenados.
@@ -197,6 +200,16 @@ def score_plausibility_batch(
         pop_pct = modelo_pop.percentil_batch(candidates)
         forca = float(np.clip(popularidade_strength, 0.0, 3.0))
         scores -= np.maximum(0.0, pop_pct - 60.0) / 40.0 * 2.0 * forca
+
+        # Corte: jogos acima do limiar de razão de ganhadores (Mega e Quina) levam
+        # penalidade grande, mas finita. Assim saem da seleção enquanto houver
+        # alternativas, e o gerador ainda fecha o pacote se os fixos/evitados
+        # deixarem poucos candidatos.
+        limiar = LIMIAR_RAZAO_GANHADORES.get(getattr(config, "slug", ""))
+        if usar_corte_popularidade and limiar is not None and k == modelo_pop.k:
+            scores -= PENALIDADE_CORTE_POPULARIDADE * (
+                modelo_pop.razao_ganhadores_batch(candidates) > limiar
+            )
 
     # Ordem de saída das bolas: preferência leve contra extremos (cedo/tarde).
     perfil_pos = getattr(ctx, "perfil_posicional", None)

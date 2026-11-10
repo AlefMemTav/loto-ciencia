@@ -118,10 +118,10 @@ def _generate_candidate_pool(
             buffer_size=max(2000, chunk_size * 180),
             seed=seed + chunk_idx,
             temperatura=payload_options.get("temperatura"),
-            usar_quentes=payload_options.get("usar_quentes", True),
-            usar_atrasados=payload_options.get("usar_atrasados", True),
-            usar_markov=payload_options.get("usar_markov", True),
-            usar_ciclo=payload_options.get("usar_ciclo", True),
+            usar_quentes=payload_options.get("usar_quentes", False),
+            usar_atrasados=payload_options.get("usar_atrasados", False),
+            usar_markov=payload_options.get("usar_markov", False),
+            usar_ciclo=payload_options.get("usar_ciclo", False),
             usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
             historical_signal_strength=payload_options.get(
                 "historical_signal_strength", 1.0
@@ -379,8 +379,8 @@ def generate_real_game_package(
         percentil_min=payload_options.get("percentil_min", 5.0),
         percentil_max=payload_options.get("percentil_max", 95.0),
         null_model_samples=null_model_samples,
-        usar_quentes=payload_options.get("usar_quentes", True),
-        usar_atrasados=payload_options.get("usar_atrasados", True),
+        usar_quentes=payload_options.get("usar_quentes", False),
+        usar_atrasados=payload_options.get("usar_atrasados", False),
         usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
         historical_signal_strength=payload_options.get(
             "historical_signal_strength",
@@ -426,8 +426,8 @@ def generate_real_game_package(
         percentil_min=payload_options.get("percentil_min", 5.0),
         percentil_max=payload_options.get("percentil_max", 95.0),
         null_model_samples=null_model_samples,
-        usar_quentes=payload_options.get("usar_quentes", True),
-        usar_atrasados=payload_options.get("usar_atrasados", True),
+        usar_quentes=payload_options.get("usar_quentes", False),
+        usar_atrasados=payload_options.get("usar_atrasados", False),
         usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
         historical_signal_strength=payload_options.get(
             "historical_signal_strength",

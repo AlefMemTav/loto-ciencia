@@ -36,6 +36,15 @@ PASTA_DETALHES = os.path.join("data", "detalhes")
 MIN_CONCURSOS = 300
 MEDIANA_MIN_GANHADORES = 300  # para o ruído de contagem (Poisson) ficar pequeno
 R2_MINIMO = 0.02
+# Corte de popularidade: só nos jogos em que o modelo explica bem os ganhadores
+# (R2 de CV: Quina ~0,51, Mega ~0,18). Valor = razão de ganhadores prevista
+# (1,0 = jogo médio) que deixa de fora os 90% de jogos mais populares dentro da
+# faixa estrutural 5-95 (medido em 100 mil bilhetes aleatórios por jogo).
+# Lotofácil (R2 ~0,022) e Lotomania (reprovada) ficam sem corte.
+LIMIAR_RAZAO_GANHADORES = {
+    "mega_sena_sorteio": 0.75,
+    "quina_sorteio": 0.80,
+}
 LAMBDAS = (1.0, 10.0, 100.0, 1000.0)
 N_AMOSTRAS_NULO = 4000
 N_BLOCOS_CV = 6
@@ -117,6 +126,13 @@ class ModeloPopularidade:
         valores = self.pesos[candidatos - 1].mean(axis=1)
         nulo = self._nulo(candidatos.shape[1])
         return 100.0 * np.searchsorted(nulo, valores, side="right") / len(nulo)
+
+    def razao_ganhadores_batch(self, candidatos: np.ndarray) -> np.ndarray:
+        """Razão de ganhadores prevista de cada jogo (1,0 = jogo médio)."""
+        candidatos = np.asarray(candidatos)
+        if candidatos.size == 0:
+            return np.array([], dtype=float)
+        return np.exp(self.pesos[candidatos - 1].sum(axis=1))
 
     def avaliar(self, numeros) -> dict:
         """Popularidade de um jogo: percentil e razão de ganhadores vs. jogo médio."""

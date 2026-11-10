@@ -53,8 +53,9 @@ def render_generator(ctx, svc):
         <div style="background: linear-gradient(90deg, #f8fafc 0%, #e2e8f0 100%); padding: 20px; border-radius: 10px; border-left: 5px solid {main_color}; margin-bottom: 25px;">
             <h2 style="color: #1e293b; margin:0;">⛏️ Mineração de Jogos: <span style="color: {main_color};">{config.name}</span></h2>
             <p style="color: #475569; font-size: 1rem; margin-top: 5px;">
-                Esta engine utiliza algoritmos e filtros estatísticos para encontrar combinações 
-                plausíveis, diversas e menos contaminadas por vícios humanos de escolha.
+                Esta engine evita jogos raros e jogos populares: mantém combinações plausíveis e
+                diversas e, na Mega-Sena e na Quina, afasta as que mais costumam ser divididas
+                com outros apostadores. Não aumenta a chance de acertar.
             </p>
         </div>
         """,
@@ -133,7 +134,8 @@ def render_generator(ctx, svc):
 
         if modo_jogo_real:
             st.caption(
-                "O Modo Jogo Real usa o motor vetorial, escolhe o pacote por torneio e registra seed/Monte Carlo para auditoria."
+                "O Modo Jogo Real usa o motor vetorial, escolhe o pacote por torneio e registra seed/Monte Carlo para auditoria. "
+                "O percentil vs. Monte Carlo mede o quanto o pacote otimiza a própria métrica, não a chance de acerto."
             )
             tipo_motor = "⚡ Vetorial (Modo Jogo Real)"
             usar_genetico = False
@@ -253,27 +255,27 @@ def render_generator(ctx, svc):
         with col_s1:
             usar_quentes = st.toggle(
                 "Quentes",
-                value=True,
-                help="Inclui frequência histórica como inclinação fraca.",
+                value=False,
+                help="Inclui frequência histórica como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
             usar_atrasados = st.toggle(
                 "Atrasados",
-                value=True,
-                help="Inclui atraso/gap histórico como inclinação fraca.",
+                value=False,
+                help="Inclui atraso/gap histórico como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
         with col_s2:
             usar_markov = st.toggle(
                 "Markov",
-                value=True,
-                help="Inclui transições entre concursos como inclinação fraca.",
+                value=False,
+                help="Inclui transições entre concursos como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
             usar_ciclo = st.toggle(
                 "Ciclo",
-                value=True,
-                help="Inclui números faltantes do ciclo atual como inclinação fraca.",
+                value=False,
+                help="Inclui números faltantes do ciclo atual como inclinação fraca (desligado por padrão: não passou em teste walk-forward).",
                 on_change=limpar_sessao,
             )
         with col_s3:
