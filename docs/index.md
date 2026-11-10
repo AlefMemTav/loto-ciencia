@@ -9,7 +9,7 @@ Esta documentação reúne a especificação arquitetural, a pipeline metodológ
 ### 1.1 O Problema Fundamental das Loterias
 Em qualquer loteria honesta onde são sorteadas $k$ bolas dentre $N$ disponíveis sem reposição, o espaço amostral total possui tamanho dado pelo coeficiente binomial:
 
-$$\Omega = \binom{N}{k} = \frac{N!}{k!(N - k)!}$$
+\[\Omega = \binom{N}{k} = \frac{N!}{k!(N - k)!}\]
 
 Cada bilhete individual possui exatamente a mesma probabilidade matemática de acerto do prêmio principal ($P = 1 / \Omega$). Portanto, **não existe algoritmo capaz de prever o próximo sorteio com certeza**. No entanto, um sistema de engenharia estatística consegue otimizar três dimensões reais:
 
@@ -21,6 +21,7 @@ Cada bilhete individual possui exatamente a mesma probabilidade matemática de a
 > *"Quando uma métrica se torna um objetivo, ela deixa de ser uma boa métrica."* — Lei de Goodhart.
 
 Uma decisão arquitetural central do **LotoCiencia** é a separação estrita entre:
+
 * **Objetivo do Gerador (`generator_objective.py`)**: Avalia milhões de candidatos de forma contínua usando percentis do Modelo Nulo Combinatório, calibração estrutural suave, sinais históricos limitados (clipped) e modelo empírico de popularidade.
 * **Validador Independente (`validator.py`)**: Atua como um auditor externo de 13 etapas que aplica testes com correção de Bonferroni e detectores geométricos rigorosos. O gerador **nunca** chama o `validator.py` para otimizar o score de tela, evitando *overfitting* artificial.
 * **Score Composto de Backtest (`strategy_matrix.py`)**: É puramente diagnóstico para comparar relatórios históricos e jamais realimenta os geradores.
@@ -80,9 +81,10 @@ O registro `GAMES_REGISTRY` centraliza as quatro loterias suportadas e seus par�
 ### 3.2 Geometria do Volante (`BoardLayout` em `models.py`)
 Mapeia qualquer dezena $n \in \{1, \dots, N\}$ para coordenadas bidimensionais zero-based $(r, c)$:
 
-$$r = \lfloor (n - 1) / C \rfloor, \quad c = (n - 1) \bmod C$$
+\[r = \lfloor (n - 1) / C \rfloor, \quad c = (n - 1) \bmod C\]
 
 A partir de $(r, c)$, o sistema extrai automaticamente subconjuntos geométricos do volante:
+
 * **Moldura (Borda)**: $\{n \mid r \in \{0, R - 1\} \lor c \in \{0, C - 1\}\}$.
 * **Miolo (Centro)**: Complementar da moldura no universo $\{1, \dots, N\}$.
 * **Cantos**: Os 4 vértices extremos $(0, 0), (0, C-1), (R-1, 0), (R-1, C-1)$.
@@ -91,15 +93,17 @@ A partir de $(r, c)$, o sistema extrai automaticamente subconjuntos geométricos
 * **Quadrantes ($Q_1, Q_2, Q_3, Q_4$)**: Divisão do volante ao meio em $R/2$ e $C/2$.
 * **Xadrez**: Partição em casas brancas ($(r + c) \bmod 2 = 0$) e casas pretas ($(r + c) \bmod 2 = 1$).
 * **Anéis Concêntricos (Distância de Manhattan)**: Mede a distância ao centro $(r_c, c_c) = (R/2, C/2)$:
-  $$d_{\text{Manhattan}}(n) = |r - r_c| + |c - c_c|$$
+  \(d_{\text{Manhattan}}(n) = |r - r_c| + |c - c_c|\)
   Classifica em anel **Externo** ($\ge 66\%$ da distância máxima), **Médio** ($33\%$ a $66\%$) e **Interno** ($< 33\%$).
 
 ### 3.3 Regras de Densidade e Limite de Overlap (`GameConfig` em `models.py`)
 A densidade do jogo é definida por $d = k_{\text{bet}} / N$:
+
 * `is_sparse`: $d < 0.20$ (Mega-Sena, Quina).
 * `is_dense`: $d > 0.40$ (Lotofácil, Lotomania).
 
 O método `get_overlap_limit()` define o máximo de dezenas repetidas permitidas entre dois bilhetes do mesmo pacote:
+
 * Se $d < 0.20$: $\lfloor 0.50 \times k_{\text{bet}} \rfloor$ (ex.: máx. $3$ dezenas comuns na Mega-Sena).
 * Se $0.20 \le d < 0.45$: $\lfloor 0.70 \times k_{\text{bet}} \rfloor$.
 * Se $d \ge 0.45$: $\lfloor 0.85 \times k_{\text{bet}} \rfloor$ (ex.: máx. $12$ dezenas comuns na Lotofácil).
@@ -117,9 +121,10 @@ Ao avaliar um bilhete simultaneamente em $15$ dimensões estatísticas ($5$ geom
 
 Para manter o erro familiar global em $\alpha_{\text{family}} = 0.05$, aplica-se a **Correção de Bonferroni**:
 
-$$\alpha_{\text{Bonferroni}} = \frac{\alpha_{\text{family}}}{15} = \frac{0.05}{15} \approx 0.00333$$
+\[\alpha_{\text{Bonferroni}} = \frac{\alpha_{\text{family}}}{15} = \frac{0.05}{15} \approx 0.00333\]
 
 Isso redefine os limiares críticos de Z-score (`compute_zscore` em `basic.py`, dado por $Z = \frac{x - \mu}{\sigma + 10^{-9}}$):
+
 * `ZSCORE_EXTREME` $= 2.97$ (evento de $\sim 0.3\%$ após correção; penalidade peso $3.0$).
 * `ZSCORE_VERY_RARE` $= 2.39$ (evento de $\sim 1.7\%$; penalidade peso $2.0$).
 * `ZSCORE_RARE` $= 1.64$ (evento de $\sim 10\%$; penalidade peso $1.0$).
@@ -131,29 +136,33 @@ Para cada dezena $n \in \{1, \dots, N\}$, consolida:
 1. **Frequência ($F_n$)**: Total de aparições históricas e seu respectivo $Z_{\text{Freq}}$.
 2. **Atraso Atual ($G_n$)**: Quantidade de concursos desde a última aparição (`calcular_atrasos`) e seu respectivo $Z_{\text{Gap}}$.
 3. **Peso Composto Base**:
-   $$P_n = 0.40 \cdot Z_{\text{Freq}}(n) + 0.60 \cdot Z_{\text{Gap}}(n)$$
+   \(P_n = 0.40 \cdot Z_{\text{Freq}}(n) + 0.60 \cdot Z_{\text{Gap}}(n)\)
 4. **Peso de Geração Normalizado**: Escalonado para $[0.01, 1.01]$ via Min-Max scaling, além dos percentis empíricos `Percentil_Freq` e `Percentil_Gap`.
 
 ### 4.3 Testes de Honestidade e Distribuições (`distributions.py`)
+
 * **Teste Qui-Quadrado ($\chi^2$) e Kolmogorov-Smirnov (`calcular_chi_quadrado`)**: Compara a frequência observada $O_n$ de cada bola com a frequência uniforme esperada $E_n = \frac{T \cdot k}{N}$, onde $T$ é o total de sorteios:
-  $$\chi^2 = \sum_{n=1}^{N} \frac{(O_n - E_n)^2}{E_n}$$
+  \(\chi^2 = \sum_{n=1}^{N} \frac{(O_n - E_n)^2}{E_n}\)
   Se $p_{\chi^2} > 0.05$ e $p_{\text{KS}} > 0.05$, classifica o sorteio como **Honesto (Aleatório)**.
+
 * **Análise de Poisson nos Dígitos Finais (`analise_poisson`)**: Verifica se os terminais $0 \dots 9$ seguem a distribuição de Poisson $\text{Poisson}(\lambda_d)$, onde $\lambda_d = T \cdot k \cdot P_{\text{teórica}}(d)$, apontando déficits ou excessos bilaterais com $p < \alpha$.
 * **Estatísticas de Ordem (`calcular_order_statistics`)**: Para um bilhete ordenado $x_{(1)} < x_{(2)} < \dots < x_{(k)}$, a posição esperada da $i$-ésima menor dezena em um sorteio uniforme é:
-  $$E[X_{(i)}] = i \cdot \frac{N + 1}{k + 1}$$
+  \(E[X_{(i)}] = i \cdot \frac{N + 1}{k + 1}\)
   O algoritmo calcula o desvio médio relativo normalizado por $(N/k)$ para detectar números excessivamente deslocados para o início ou fim do volante.
+
 * **Distribuição de Gaps Internos (`testar_distribuicao_gaps_bilhete` e `detectar_motifs_gaps`)**: Testa os intervalos $g_i = x_{(i+1)} - x_{(i)}$ contra uma distribuição Exponencial via teste KS, calcula o coeficiente de variação $\text{CV}_{\text{gaps}} = \sigma_g / \mu_g$ e busca *motifs* periódicos como $[a, a, \dots]$, alternâncias $[a, b, a, b]$ ou subsequências repetidas.
 
 ### 4.4 Auditoria da Ordem de Saída das Bolas (`ordem_saida.py`)
 Analisa as colunas `D1..Dk` na ordem exata em que foram sorteadas do globo:
 1. **Filtro de Dados Antigos Ordenados (`mascara_ordem_de_saida`)**: Algumas bases históricas antigas (ex.: Quina) registravam os primeiros concursos em ordem crescente em vez da ordem de sorteio. Como a chance de uma linha real sair estritamente crescente por acaso é $1 / k!$, o algoritmo encontra o ponto de corte ótimo $c^*$ que minimiza o custo de incoerência:
-   $$\text{custo}(c) = \sum_{t=0}^{c-1} (1 - I_{\text{crescente}}(t)) + \sum_{t=c}^{T-1} I_{\text{crescente}}(t)$$
+   \(\text{custo}(c) = \sum_{t=0}^{c-1} (1 - I_{\text{crescente}}(t)) + \sum_{t=c}^{T-1} I_{\text{crescente}}(t)\)
    Descartando automaticamente o bloco corrompido $[0, c^*)$.
 2. **Teste Posicional com Correção FDR (Benjamini-Hochberg)**: Normaliza a ordem de saída em $[0, 1]$ ($0 =$ primeira bola, $1 =$ última bola). Sob $H_0$, a posição média esperada de cada dezena é $0.50$, com variância teórica:
-   $$\text{Var}(P) = \frac{k + 1}{12(k - 1)}$$
+   \(\text{Var}(P) = \frac{k + 1}{12(k - 1)}\)
    Calcula o Z-score por dezena e controla a Taxa de Falsas Descobertas (*False Discovery Rate* — FDR a $5\%$) pelo procedimento step-up de **Benjamini-Hochberg** (`_benjamini_hochberg`), além de testar a uniformidade da primeira e da última bola via $\chi^2$.
 
 ### 4.5 Bootstrap e Monte Carlo (`monte_carlo.py` e `bootstrap_integration.py`)
+
 * **Intervalo de Confiança Bootstrap da Soma (`bootstrap_ic_soma`)**: Realiza $B = 5.000$ (ou $10.000$) reamostragens com reposição das somas históricas para estimar a distribuição empírica da média e seus percentis de $95\%$.
 * **Validação Cruzada de Soma (`avaliar_soma_com_bootstrap`)**: Compara o IC Histórico ($P_{10}\text{--}P_{90}$ e $P_{2.5}\text{--}P_{97.5}$) com o IC Bootstrap, gerando diagnósticos de convergência ou divergência para o validador.
 
@@ -166,9 +175,9 @@ Analisa as colunas `D1..Dk` na ordem exata em que foram sorteadas do globo:
 ### 5.1 Matriz de Co-ocorrência Normalizada (`advanced.py`)
 Mede a afinidade histórica entre pares de dezenas $(i, j)$ normalizada pela esperança hipergeométrica sob independência:
 
-$$P_{\text{esperada}}(i \land j) = \frac{\binom{N - 2}{k - 2}}{\binom{N}{k}} = \frac{k(k - 1)}{N(N - 1)}$$
+\[P_{\text{esperada}}(i \land j) = \frac{\binom{N - 2}{k - 2}}{\binom{N}{k}} = \frac{k(k - 1)}{N(N - 1)}\]
 
-$$M_{\text{cooc}}[i, j] = \frac{\text{Ocorrências}(i, j)}{T \cdot P_{\text{esperada}}(i \land j) + 10^{-9}}$$
+\[M_{\text{cooc}}[i, j] = \frac{\text{Ocorrências}(i, j)}{T \cdot P_{\text{esperada}}(i \land j) + 10^{-9}}\]
 
 Valores $M_{\text{cooc}}[i, j] > 1.0$ indicam pares que saíram juntos acima do esperado (`get_pares_mais_frequentes`), enquanto valores próximos de $0$ identificam pares que historicamente "se repelem" (`get_pares_que_se_repelem`).
 
@@ -176,8 +185,9 @@ Valores $M_{\text{cooc}}[i, j] > 1.0$ indicam pares que saíram juntos acima do 
 Constrói a matriz de transição estocástica $M_{\text{trans}}[i, j] = P(j \in \text{Sorteio}_{t+1} \mid i \in \text{Sorteio}_t)$, normalizada por linha. A função `analisar_transicoes_anomalas` avalia desvios em relação à contagem esperada $E_{ij} = (T - 1) \cdot k \cdot (k / N)$ via aproximação de Poisson ($\sigma = \sqrt{E_{ij}}$), sinalizando transições com $|Z| \ge 2.5$.
 
 ### 5.3 Teste de Runs de Wald-Wolfowitz e Índice VMR (`advanced.py`)
+
 * **Teste de Runs (`teste_runs_numero`)**: Converte o histórico de cada dezena em uma sequência binária de presenças ($n_1$) e ausências ($n_0$). Conta o número de *runs* (sequências contínuas de $1$s ou $0$s) e compara com a esperança e variância exatas sob aleatoriedade:
-  $$\mu_R = \frac{2 n_1 n_0}{n_1 + n_0} + 1, \quad \sigma_R^2 = \frac{2 n_1 n_0 (2 n_1 n_0 - n_1 - n_0)}{(n_1 + n_0)^2 (n_1 + n_0 - 1)}$$
+  \(\mu_R = \frac{2 n_1 n_0}{n_1 + n_0} + 1, \quad \sigma_R^2 = \frac{2 n_1 n_0 (2 n_1 n_0 - n_1 - n_0)}{(n_1 + n_0)^2 (n_1 + n_0 - 1)}\)
 * **Índice de Dispersão VMR (`indice_dispersao`)**: Calcula a razão variância-média das frequências ($\text{VMR} = s^2 / \bar{x}$). Sob uma distribuição de Poisson, $\text{VMR} \approx 1.0$ e a estatística $(N - 1) \cdot \text{VMR} \sim \chi^2_{N-1}$.
 
 ### 5.4 Calibração Dinâmica de Pesos — "Autópsia dos Vencedores" (`advanced.py`)
@@ -188,18 +198,20 @@ A função `calibrar_pesos_dinamicos` substitui escolhas arbitrárias entre núm
    * Retorno rápido ($\Delta t \le N / k$): ponto para **Frequência** ($p_{\text{freq}}$).
    * Retorno lento ($\Delta t > N / k$): ponto para **Atraso/Gap** ($p_{\text{gap}}$).
 4. **Fusão Bayesiana**: Combina a evidência recente (confiança de $75\%$) com a distribuição *prior* da natureza do jogo ($P_{\text{prior}} = 0.70$ para densos, $0.30$ para esparsos):
-   $$w_{\text{freq}} = 0.75 \cdot p_{\text{freq}} + 0.25 \cdot P_{\text{prior}}, \quad w_{\text{gap}} = 1.0 - w_{\text{freq}}$$
-
+   \(w_{\text{freq}} = 0.75 \cdot p_{\text{freq}} + 0.25 \cdot P_{\text{prior}}, \quad w_{\text{gap}} = 1.0 - w_{\text{freq}}\)
 ### 5.5 Ciclos, Eletrocardiograma de Somas e Regressão à Média (`temporal.py` e `similarity.py`)
+
 * **Ciclo das Dezenas (`calcular_ciclo_atual`)**: Monitora o *Coupon Collector's Problem*, identificando exatamente quais dezenas ainda faltam sair para fechar o ciclo atual de $1$ a $N$.
 * **Eletrocardiograma das Somas (`analise_temporal_somas`)**: Calcula a média teórica da soma e seu desvio padrão exato com fator de correção para população finita:
-  $$\mu_{\text{soma}} = k \frac{N + 1}{2}, \quad \sigma_{\text{soma}} = \sqrt{k \left(\frac{N^2 - 1}{12}\right) \left(\frac{N - k}{N - 1}\right)}$$
+  \(\mu_{\text{soma}} = k \frac{N + 1}{2}, \quad \sigma_{\text{soma}} = \sqrt{k \left(\frac{N^2 - 1}{12}\right) \left(\frac{N - k}{N - 1}\right)}\)
   Define a banda de normalidade em $[\mu_{\text{soma}} - 2\sigma_{\text{soma}}, \mu_{\text{soma}} + 2\sigma_{\text{soma}}]$.
+
 * **Validação de Regressão à Média (`calcular_taxa_regressao` e `analisar_gaps_geometricos` em `similarity.py`)**: Mede a correlação de Spearman ($\rho$) entre o atraso passado e a frequência futura na janela seguinte, além de testar se os intervalos entre aparições de cada bola seguem a distribuição Geométrica teórica $\text{Geom}(p = k/N)$.
 
 ### 5.6 Clusterização de Padrões com K-Means e DBSCAN (`clustering.py` e `cluster_profile.py`)
 Todo jogo é transformado em um vetor de $9$ features (`extrair_features_jogo`):
 `[soma, media, prop_pares, prop_baixos, gap_medio, gap_std, sequencias, prop_finais_unicos, amplitude_relativa]`.
+
 * **K-Means (`clusterizar_jogos_kmeans`)**: Padroniza com `StandardScaler`, encontra o número ótimo de clusters maximizando o *Silhouette Score* (`encontrar_numero_otimo_clusters`) e rotula os grupos dinamicamente em `cluster_profile.py`:
   * 🔵 **Compacto-Inicial** (Soma baixa + Gap concentrado)
   * 🔴 **Expansivo-Final** (Soma alta + Gap espalhado)
@@ -212,7 +224,7 @@ Todo jogo é transformado em um vetor de $9$ features (`extrair_features_jogo`):
 Em vez de depender apenas de regras fixas sobre o que os apostadores jogam, este módulo estima a popularidade real de cada dezena a partir dos dados de rateio da Caixa (`data/detalhes/<loteria>_detalhes.csv`):
 1. **Seleção de Faixa (`_escolher_faixa`)**: Escolhe a faixa de premiação com mediana de ganhadores $\ge 300$ (ex.: Quadra da Mega-Sena), onde a lei dos grandes números reduz o ruído de Poisson.
 2. **Especificação Econométrica (Regressão Ridge)**: Como as dezenas sorteadas são independentes do volume arrecadado, modela-se a taxa logarítmica de ganhadores por milhão arrecadado:
-   $$y_t = \log\left(\frac{\text{Ganhadores}_t + 0.5}{\text{Arrecadado}_t} \times 10^6\right) = \beta_0 + \sum_{n=1}^{N} \beta_n X_{t,n} + \gamma_1 \widetilde{\log(\text{Arrecadado}_t)} + \gamma_2 \tilde{t} + \varepsilon_t$$
+   \(y_t = \log\left(\frac{\text{Ganhadores}_t + 0.5}{\text{Arrecadado}_t} \times 10^6\right) = \beta_0 + \sum_{n=1}^{N} \beta_n X_{t,n} + \gamma_1 \widetilde{\log(\text{Arrecadado}_t)} + \gamma_2 \tilde{t} + \varepsilon_t\)
    Onde $X_{t,n} \in \{0, 1\}$ indica se a dezena $n$ foi sorteada no concurso $t$. A penalização Ridge ($\lambda \in \{1, 10, 100, 1000\}$) incide apenas sobre os pesos das dezenas $\beta_1 \dots \beta_N$, deixando o intercepto e os controles livres.
 3. **Validação Cruzada Temporal Estrita (`treinar_modelo_popularidade`)**: Divide o histórico em $6$ blocos expansivos (sem vazamento de dados futuros). O modelo só é ativado se superar o modelo nulo (apenas controles) em mais da metade dos *folds* e atingir ganho fora da amostra $R^2_{\text{CV}} \ge 0.02$.
 4. **Razão de Divisão de Prêmio (`avaliar`)**: Para qualquer bilhete candidato, $\exp\left(\sum_{n \in \text{jogo}} \hat{\beta}_n\right)$ estima o multiplicador esperado de ganhadores caso aquele jogo seja sorteado.
@@ -227,7 +239,7 @@ Em vez de depender apenas de regras fixas sobre o que os apostadores jogam, este
 A função `extract_ticket_features_batch` processa dezenas de milhares de candidatos simultaneamente em NumPy, extraindo $17$ métricas objetivas:
 `soma`, `pares`, `span`, `min_gap`, `max_gap`, `gap_medio`, `gap_variety`, `entropia_gaps`, `max_sequencia`, `max_final_repetido`, `superior`, `inferior`, `max_dezena_repetida`, `max_linha`, `max_coluna`, `max_quadrante` e o índice contínuo `compressibilidade_simples` $\in [0, 1]$:
 
-$$\text{Compressibilidade} = \text{clip}\left(0.55 \cdot \hat{H}(\text{gaps}) + 0.35 \cdot \text{VarGaps} - 0.20 \cdot \text{Pen}_{\text{seq}} - 0.10 \cdot \text{Pen}_{\text{final}}, \, 0, \, 1\right)$$
+\[\text{Compressibilidade} = \text{clip}\left(0.55 \cdot \hat{H}(\text{gaps}) + 0.35 \cdot \text{VarGaps} - 0.20 \cdot \text{Pen}_{\text{seq}} - 0.10 \cdot \text{Pen}_{\text{final}}, \, 0, \, 1\right)\]
 
 ### 6.2 Modelo Nulo Combinatório (`null_model.py` e `feature_percentiles.py`)
 Para saber se uma métrica é "rara" ou "comum" sem usar limiares arbitrários:
@@ -240,12 +252,11 @@ Impede que o gerador produza apenas bilhetes "artificialmente perfeitos" (concen
 1. Calcula um score estrutural independente do validador (`score_structural_from_percentiles`), combinando métricas centrais (ótimo em torno do percentil $50$), métricas onde valores altos são ruins (ex.: `max_sequencia`, `max_final_repetido`) e métricas onde valores baixos são ruins (`min_gap`, `compressibilidade_simples`).
 2. Divide o score em $5$ *buckets*: `0-39`, `40-54`, `55-69`, `70-84`, `85-100`.
 3. Define a distribuição alvo como uma mistura convexa:
-   $$P_{\text{alvo}}(b) = 0.70 \cdot P_{\text{histórico}}(b) + 0.30 \cdot P_{\text{modelo\_nulo}}(b)$$
+   \(P_{\text{alvo}}(b) = 0.70 \cdot P_{\text{histórico}}(b) + 0.30 \cdot P_{\text{modelo\_nulo}}(b)\)
 4. Calcula o *log-prior* de calibração para cada candidato no bucket $b$:
-   $$\text{Prior}(b) = \text{clip}\left(\ln\left(\frac{P_{\text{alvo}}(b)}{0.20}\right), \, -1.5, \, 1.5\right)$$
+   \(\text{Prior}(b) = \text{clip}\left(\ln\left(\frac{P_{\text{alvo}}(b)}{0.20}\right), \, -1.5, \, 1.5\right)\)
 5. Audita a fidelidade do pacote gerado medindo a **Divergência de Jensen-Shannon ($D_{\text{JS}}$)** entre a distribuição gerada $P$ e a distribuição alvo $Q$ (onde $M = \frac{1}{2}(P + Q)$):
-   $$D_{\text{JS}}(P \parallel Q) = \frac{1}{2} D_{\text{KL}}(P \parallel M) + \frac{1}{2} D_{\text{KL}}(Q \parallel M)$$
-
+   \(D_{\text{JS}}(P \parallel Q) = \frac{1}{2} D_{\text{KL}}(P \parallel M) + \frac{1}{2} D_{\text{KL}}(Q \parallel M)\)
 ---
 
 ## 7. Motores de Geração, Função Objetivo e Fechamentos
@@ -264,6 +275,7 @@ A função `score_plausibility_batch` pontua lotes massivos de candidatos combin
 
 ### 7.2 Seleção de Portfólio e Estratégias de Cauda (`select_diverse_portfolio`)
 O módulo suporta $3$ estratégias (`balanceada`, `cauda_controlada` e `pura`). Em medição na Mega-Sena (7 estratégias antigas, 4 *seeds* × 20 jogos), os pacotes das estratégias diferiam entre si tanto quanto uma mesma estratégia difere de si mesma com *seeds* diferentes; por isso foram fundidas. Os nomes antigos continuam aceitos como apelidos (`app/core/strategies.py`): `agressiva` e `conservadora` → `balanceada`; `cauda_agressiva` e `cauda_convexa` → `cauda_controlada`.
+
 * **Seleção Padrão** (`balanceada` e `pura`): Ordena candidatos com ruído Gumbel proporcional à estratégia e aplica limites rígidos de exposição por dezena, chave de diversidade no espaço de features (`soma // 15`, `pares`, `span // 8`, `gap_medio // 3`) e limite de overlap de Hamming.
 * **Seleção Marginal de Conjunto (`_select_tail_controlled_portfolio`)**: Usada por `cauda_controlada`. Em cada passo, escolhe o bilhete que maximiza a **utilidade marginal do pacote**:
   * Impõe tetos absolutos (*hard caps*) de exposição por dezena e repetição de pares.
@@ -274,13 +286,14 @@ O módulo suporta $3$ estratégias (`balanceada`, `cauda_controlada` e `pura`). 
 O motor `gerar_jogos_vetorizado` realiza amostragem ponderada sem reposição em alta velocidade:
 1. Se habilitados (`usar_quentes`, `usar_atrasados`, `usar_markov`, `usar_ciclo`; **todos desligados por padrão**), combina $Z_{\text{Freq}}$, $Z_{\text{Gap}}$, probabilidades de transição de Markov do último sorteio ($+0.15$) e bônus de gravidade do Ciclo das Dezenas ($+0.80$ para densos, $+0.25$ para esparsos). Com tudo desligado, a amostragem de candidatos é uniforme e a escolha fica por conta dos filtros estruturais, da popularidade e da diversidade do pacote.
 2. Aplica **Softmax com Temperatura** ($\tau \in [1.15, 2.0]$ conforme a estratégia):
-   $$p_i = \frac{\exp(s_i / \tau)}{\sum_{j=1}^{N} \exp(s_j / \tau)}$$
+   \(p_i = \frac{\exp(s_i / \tau)}{\sum_{j=1}^{N} \exp(s_j / \tau)}\)
 3. **Truque Gumbel-Max**: Para gerar dezenas de milhares de jogos sem reposição sem usar loops lentos em Python, soma ruído Gumbel padrão $G_{b,i} = -\ln(-\ln(U_{b,i}))$ aos log-probabilidades:
-   $$W_{b,i} = \ln(p_i + 10^{-10}) - \ln(-\ln(U_{b,i} + 10^{-10}))$$
+   \(W_{b,i} = \ln(p_i + 10^{-10}) - \ln(-\ln(U_{b,i} + 10^{-10}))\)
    Selecionar os $k$ maiores valores de $W_{b,i}$ por linha via `np.argpartition` produz matematicamente uma amostra exata sem reposição da distribuição multinomial ponderada.
 
 ### 7.4 Motor 2: Minerador Genético Evolutivo (`generator_genetic.py`)
 A classe `GeneticMiner` implementa um algoritmo evolucionário sobre conjuntos:
+
 * **População**: $300$ indivíduos evoluídos por $30$ (jogos pequenos) a $60$ gerações (Mega-Sena/Quina/Lotomania).
 * **Fitness**: Avaliado diretamente por `score_plausibility_batch`.
 * **Elitismo e Crossover de Conjunto (`_crossover_set`)**: Preserva os top $10\%$ como elite. O cruzamento une os genes dos pais ($P_1 \cup P_2$) e amostra $k$ dezenas únicas dessa união.
@@ -290,11 +303,12 @@ A classe `GeneticMiner` implementa um algoritmo evolucionário sobre conjuntos:
 Projetado para o momento da aposta real, evitando que o usuário rode o gerador várias vezes até escolher um resultado por viés visual:
 1. **Seed Determinística Auditável (`_default_seed`)**: Gera uma *seed* SHA-256 única combinando a data do dia, o slug do jogo, a quantidade de bilhetes, o perfil de esforço (`rapido`, `forte` ou `maximo`), o tamanho do histórico e as dezenas do último sorteio.
 2. **Torneio de Pacotes (`_package_score`)**: Gera um pool de candidatos e monta até $800$ pacotes concorrentes (no perfil `maximo`). Cada pacote é avaliado pela função de utilidade global:
-   $$\text{Score}_{\text{pacote}} = \bar{S} + 0.12 \cdot S_{\max} + 0.80 \cdot \text{Cob}_{\text{pares}} + 0.55 \cdot \text{Cob}_{\text{trincas}} - 0.80 \cdot \text{Excesso}_{\text{exp}} - 0.80 \cdot \text{Excesso}_{\text{overlap}} - 0.60 \cdot \text{Excesso}_{\text{pares}}$$
+   \(\text{Score}_{\text{pacote}} = \bar{S} + 0.12 \cdot S_{\max} + 0.80 \cdot \text{Cob}_{\text{pares}} + 0.55 \cdot \text{Cob}_{\text{trincas}} - 0.80 \cdot \text{Excesso}_{\text{exp}} - 0.80 \cdot \text{Excesso}_{\text{overlap}} - 0.60 \cdot \text{Excesso}_{\text{pares}}\)
 3. **Comparação contra Monte Carlo**: Gera até $5.000$ pacotes puramente aleatórios sob as mesmas restrições e informa o percentil exato e o $p$-valor empírico do pacote campeão.
 
 ### 7.6 Matrizes de Fechamento Combinatório (`matrices.py`)
 Quando o apostador seleciona $n > k$ dezenas base:
+
 * **Catálogo Otimizado Lotofácil (`MatrixCatalog`)**:
   * $16$ dezenas $\to 3$ jogos.
   * $17$ dezenas $\to 8$ jogos.
@@ -316,11 +330,11 @@ A função `validar_jogo` parte de um score inicial de $100$ pontos e executa um
    * Concentração vertical de linhas vazias ($-5$ pts) e equilíbrio entre metade superior e inferior ($-10$ a $-20$ pts).
    * Repetição excessiva de dígitos finais ($-5$ a $-15$ pts).
 3. **Entropia de Shannon dos Gaps (`_analise_entropia`)**:
-   $$H(\text{gaps}) = -\sum_{g} p(g) \log_2 p(g)$$
+   \(H(\text{gaps}) = -\sum_{g} p(g) \log_2 p(g)\)
    Penaliza padrões regulares com baixa entropia ($-25$ pts e risco de divisão `ALTO`) e concede bônus ($+5$ pts) para alta entropia.
 4. **Heurísticas de Popularidade Humana (`_analise_popularidade` e `_analise_numeros_sortudos`)**: Detecta excesso de datas ($\le 31$), presença da combinação famosa da série *Lost* ($\{4, 8, 15, 16, 23, 42\}$), excesso de sequências consecutivas e concentração de números sortudos culturais.
 5. **Distribuição Espacial pelo Coeficiente de Gini (`_calcular_coeficiente_gini`)**:
-   $$G = \frac{2 \sum_{i=1}^{k} i \cdot y_{(i)}}{k \sum_{i=1}^{k} y_{(i)}} - \frac{k + 1}{k}, \quad y_i = \frac{x_i - 1}{N - 1}$$
+   \(G = \frac{2 \sum_{i=1}^{k} i \cdot y_{(i)}}{k \sum_{i=1}^{k} y_{(i)}} - \frac{k + 1}{k}, \quad y_i = \frac{x_i - 1}{N - 1}\)
    Premia $G < 0.15$ ($+5$ pts) e penaliza alta concentração espacial $G > 0.50$ ($-10$ pts).
 6. **Geometria Empírica com Correção de Bonferroni (`_analise_geometrica`)**: Avalia Moldura, Miolo, Cruz, Xis, Cantos, Colunas, Xadrez e Metades contra a distribuição histórica real.
 7. **Propriedades Matemáticas (`_analise_primos`, `_analise_multiplos`, `_analise_quase_reta`)**: Audita quantidade de números primos, concentração de múltiplos de $d \in \{2, 3, 5, 10\}$ e formação de linhas ou colunas quase completas no volante.
@@ -350,17 +364,19 @@ Para testar se uma estratégia realmente agrega valor sem *data leakage* (olhar 
    * Executa $M$ simulações de **Monte Carlo** (ex.: $500$ pacotes aleatórios) enfrentando exatamente o mesmo `df_futuro`.
 3. **Métricas Estatísticas Rigorosas**:
    * **Delta contra o Acaso**: $\Delta_w = \text{Score}_{\text{motor}, w} - \overline{\text{Score}}_{\text{MC}, w}$.
-   * **$p$-valor Empírico Unilateral**:
-     $$p_{\text{emp}, w} = \frac{\sum_{m=1}^{M} \mathbb{I}(\text{Score}_{\text{MC}, m} \ge \text{Score}_{\text{motor}, w}) + 1}{M + 1}$$
+   * **$p$-valor Empírico Unilateral**: \(\displaystyle p_{\text{emp}, w} = \frac{\sum_{m=1}^{M} \mathbb{I}(\text{Score}_{\text{MC}, m} \ge \text{Score}_{\text{motor}, w}) + 1}{M + 1}\).
+
    * **Intervalo de Confiança Bootstrap $95\%$**: Reamostra os deltas das janelas ($B = 2.000$) para verificar se o ganho médio sustenta-se acima de zero.
 
 ### 9.2 Diagnóstico Financeiro (`prize_model.py`)
 Calcula o desempenho monetário explícito do pacote frente aos sorteios futuros:
+
 * **Custo Total**: $C = Q \times T_{\text{teste}} \times \text{Preço}_{\text{aposta}}$.
 * **Receita Bruta ($R$)**, **Lucro Líquido ($L = R - C$)**, **ROI ($L / C$)** e **Fator de Retorno ($R / C$)**, permitindo tabelas de prêmios fixas (como $11, 12, 13$ pontos da Lotofácil) e sobrescritas via CLI para faixas variáveis (`14=1500`, `15=1500000`).
 
 ### 9.3 Bancada Científica Multi-Seed (`strategy_matrix.py`)
 O módulo `strategy_matrix.py` cruza todas as estratégias (`balanceada`, `cauda_controlada`, `pura`) contra múltiplas *seeds* padrão (`[7, 21, 42, 77, 101]`) e contra ambos os motores (`Vetorial` e `Genetico`):
+
 * Calcula estatísticas agregadas (média, mediana, desvio padrão populacional, mínimo e máximo) para todas as métricas de acerto, portfólio, calibração e ROI.
 * Aplica o `_score_composto` diagnóstico que recompensa acertos reais (`hit_4`, `hit_5`, `hit_6`), delta positivo de acertos contra Monte Carlo e ROI, enquanto **penaliza severamente** instabilidade entre seeds, superexposição de dezenas, overlap alto, trincas/quadras repetidas e divergência de calibração $D_{\text{JS}}$.
 * **Sistema Automático de Alertas (`_gerar_alertas_agregado`)**: Emite alertas classificados por severidade (`baixa`, `media`, `alta`) para:
