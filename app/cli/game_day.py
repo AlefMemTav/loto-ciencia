@@ -279,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--game", default="hoje", choices=["hoje", *JOGOS], help="jogo, ou 'hoje' para os jogos com sorteio hoje (BRT)")
     p.add_argument("--quantidade", type=int, default=10, help="jogos no pacote (1 a 50)")
     p.add_argument("--effort", default="forte", choices=["rapido", "forte", "maximo"])
-    p.add_argument("--out", default="out", help="pasta de saída")
+    p.add_argument("--out", default="out", help="pasta de saída (os pacotes vão em <out>/<data>/<jogo>)")
     p.add_argument("--force", action="store_true", help="refaz mesmo que o pacote do dia já exista")
     p.add_argument("--data", help="data AAAA-MM-DD (padrão: hoje em America/Sao_Paulo)")
     args = p.parse_args(argv)

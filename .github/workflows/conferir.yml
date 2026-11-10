@@ -1,0 +1,40 @@
+name: Conferir pacotes com o sorteio
+
+# Só schedule e workflow_dispatch (sem workflow_run: atualizar_loterias.yml roda
+# duas vezes por dia). Roda depois das atualizações das planilhas:
+#   03:00 UTC (00h BRT) — depois da execução das 22h30 BRT
+#   16:00 UTC (13h BRT) — depois do backup das 12h BRT
+# É idempotente: pacote sem sorteio na planilha fica pendente para a próxima rodada.
+# O código e as planilhas vêm da master; os pacotes e resultados, do branch `registro`.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: registro
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  conferir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install pandas openpyxl
+      - name: Preparar branch registro
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: scripts/registro_preparar.sh
+      - name: Conferir
+        run: python -m app.cli.conferir --registro registro | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Guardar no branch registro
+        run: scripts/registro_enviar.sh "conferência"
