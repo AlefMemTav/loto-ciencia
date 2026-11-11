@@ -1,0 +1,448 @@
+{
+  "status": "aprovado",
+  "meta": {
+    "jogo": "quina",
+    "data": "2026-11-11",
+    "ultimo_concurso": 7164,
+    "data_ultimo_concurso": "10/11/2026",
+    "seed": 202611111,
+    "tentativas": 1,
+    "commit": "e2e420f"
+  },
+  "jogos": [
+    [
+      16,
+      29,
+      42,
+      61,
+      69
+    ],
+    [
+      21,
+      26,
+      66,
+      74,
+      79
+    ],
+    [
+      31,
+      33,
+      49,
+      60,
+      76
+    ],
+    [
+      15,
+      56,
+      61,
+      66,
+      79
+    ],
+    [
+      29,
+      40,
+      52,
+      59,
+      70
+    ],
+    [
+      26,
+      40,
+      53,
+      61,
+      74
+    ],
+    [
+      14,
+      31,
+      64,
+      68,
+      72
+    ],
+    [
+      22,
+      56,
+      61,
+      66,
+      74
+    ],
+    [
+      37,
+      44,
+      51,
+      70,
+      72
+    ],
+    [
+      26,
+      56,
+      59,
+      62,
+      74
+    ]
+  ],
+  "validacao": [
+    {
+      "jogo": [
+        16,
+        29,
+        42,
+        61,
+        69
+      ],
+      "score": 92,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7987
+    },
+    {
+      "jogo": [
+        21,
+        26,
+        66,
+        74,
+        79
+      ],
+      "score": 85,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.758
+    },
+    {
+      "jogo": [
+        31,
+        33,
+        49,
+        60,
+        76
+      ],
+      "score": 100,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7916
+    },
+    {
+      "jogo": [
+        15,
+        56,
+        61,
+        66,
+        79
+      ],
+      "score": 75,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7915
+    },
+    {
+      "jogo": [
+        29,
+        40,
+        52,
+        59,
+        70
+      ],
+      "score": 80,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6787
+    },
+    {
+      "jogo": [
+        26,
+        40,
+        53,
+        61,
+        74
+      ],
+      "score": 82,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6847
+    },
+    {
+      "jogo": [
+        14,
+        31,
+        64,
+        68,
+        72
+      ],
+      "score": 78,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7781
+    },
+    {
+      "jogo": [
+        22,
+        56,
+        61,
+        66,
+        74
+      ],
+      "score": 58,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7476
+    },
+    {
+      "jogo": [
+        37,
+        44,
+        51,
+        70,
+        72
+      ],
+      "score": 80,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7736
+    },
+    {
+      "jogo": [
+        26,
+        56,
+        59,
+        62,
+        74
+      ],
+      "score": 55,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7767
+    }
+  ],
+  "erros": [],
+  "avisos": [
+    "Maior sobreposição entre dois jogos: 3 (limite 2).",
+    "1 trinca(s) repetida(s) no pacote."
+  ],
+  "relatorio": {
+    "modo": "jogo_real",
+    "perfil_esforco": "forte",
+    "estrategia_base": "cauda_controlada",
+    "seed": 202611111,
+    "quantidade": 10,
+    "candidate_pool_size": 90,
+    "tournament_packages": 180,
+    "monte_carlo_packages": 1000,
+    "null_model_samples": 30000,
+    "score_pacote": 3.206287,
+    "percentil_vs_monte_carlo": 100.0,
+    "p_empirico_mc_supera_ou_iguala": 0.000999,
+    "score_mc_media": -500087.340322,
+    "score_mc_p95": -68.569351,
+    "ranking_torneio": 1,
+    "restricoes": {
+      "numeros_fixos": [],
+      "numeros_evitados": []
+    },
+    "diagnostico_portfolio": {
+      "exposicao_dezenas": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "10": 0,
+        "11": 0,
+        "12": 0,
+        "13": 0,
+        "14": 1,
+        "15": 1,
+        "16": 1,
+        "17": 0,
+        "18": 0,
+        "19": 0,
+        "20": 0,
+        "21": 1,
+        "22": 1,
+        "23": 0,
+        "24": 0,
+        "25": 0,
+        "26": 3,
+        "27": 0,
+        "28": 0,
+        "29": 2,
+        "30": 0,
+        "31": 2,
+        "32": 0,
+        "33": 1,
+        "34": 0,
+        "35": 0,
+        "36": 0,
+        "37": 1,
+        "38": 0,
+        "39": 0,
+        "40": 2,
+        "41": 0,
+        "42": 1,
+        "43": 0,
+        "44": 1,
+        "45": 0,
+        "46": 0,
+        "47": 0,
+        "48": 0,
+        "49": 1,
+        "50": 0,
+        "51": 1,
+        "52": 1,
+        "53": 1,
+        "54": 0,
+        "55": 0,
+        "56": 3,
+        "57": 0,
+        "58": 0,
+        "59": 2,
+        "60": 1,
+        "61": 4,
+        "62": 1,
+        "63": 0,
+        "64": 1,
+        "65": 0,
+        "66": 3,
+        "67": 0,
+        "68": 1,
+        "69": 1,
+        "70": 2,
+        "71": 0,
+        "72": 2,
+        "73": 0,
+        "74": 4,
+        "75": 0,
+        "76": 1,
+        "77": 0,
+        "78": 0,
+        "79": 2,
+        "80": 0
+      },
+      "top_dezenas": [
+        {
+          "dezena": 61,
+          "vezes": 4
+        },
+        {
+          "dezena": 74,
+          "vezes": 4
+        },
+        {
+          "dezena": 26,
+          "vezes": 3
+        },
+        {
+          "dezena": 56,
+          "vezes": 3
+        },
+        {
+          "dezena": 66,
+          "vezes": 3
+        },
+        {
+          "dezena": 29,
+          "vezes": 2
+        },
+        {
+          "dezena": 31,
+          "vezes": 2
+        },
+        {
+          "dezena": 40,
+          "vezes": 2
+        },
+        {
+          "dezena": 59,
+          "vezes": 2
+        },
+        {
+          "dezena": 70,
+          "vezes": 2
+        }
+      ],
+      "max_exposicao": 4,
+      "media_exposicao_usadas": 1.6129,
+      "desvio_exposicao_usadas": 0.9044,
+      "overlap_medio": 0.6222,
+      "overlap_max": 3,
+      "pares_repetidos": 8,
+      "pares_repetidos_acima_2": 1,
+      "max_repeticao_par": 3,
+      "trincas_repetidas": 1,
+      "max_repeticao_trinca": 2,
+      "quadras_repetidas": 0,
+      "max_repeticao_quadra": 1,
+      "coocorrencia_media": 11.9801,
+      "dispersao_features": {
+        "soma": {
+          "media": 259.2,
+          "desvio": 18.4163,
+          "min": 217.0,
+          "max": 279.0
+        },
+        "span": {
+          "media": 50.2,
+          "desvio": 8.2195,
+          "min": 35.0,
+          "max": 64.0
+        },
+        "pares": {
+          "media": 3.0,
+          "desvio": 0.7746,
+          "min": 2.0,
+          "max": 4.0
+        },
+        "gap_medio": {
+          "media": 12.55,
+          "desvio": 2.0549,
+          "min": 8.75,
+          "max": 16.0
+        }
+      }
+    },
+    "diagnostico_calibracao_score": {
+      "score_medio": 58.477096,
+      "score_min": 51.200984,
+      "score_max": 69.303982,
+      "distribuicao_gerada": {
+        "0-39": 0.0,
+        "40-54": 40.0,
+        "55-69": 60.0,
+        "70-84": 0.0,
+        "85-100": 0.0
+      },
+      "distribuicao_historica": {
+        "0-39": 7.78903,
+        "40-54": 37.492899,
+        "55-69": 44.890949,
+        "70-84": 9.799066,
+        "85-100": 0.028057
+      },
+      "distribuicao_modelo_nulo": {
+        "0-39": 8.17002,
+        "40-54": 36.703305,
+        "55-69": 45.859957,
+        "70-84": 9.190018,
+        "85-100": 0.0767
+      },
+      "distribuicao_alvo": {
+        "0-39": 7.903327,
+        "40-54": 37.256021,
+        "55-69": 45.181651,
+        "70-84": 9.616352,
+        "85-100": 0.04265
+      },
+      "js_vs_alvo": 0.095718,
+      "js_vs_historico": 0.09625,
+      "js_vs_nulo": 0.094527,
+      "chi_square_vs_alvo": 0.226244,
+      "modelo_version": "score-cal-v1",
+      "n_historico": 7164,
+      "n_amostras_modelo_nulo": 30000,
+      "target": "historico_nulo"
+    }
+  }
+}
