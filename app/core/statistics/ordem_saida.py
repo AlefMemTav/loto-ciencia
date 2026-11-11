@@ -24,6 +24,10 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from app.core.statistics.multiple_testing import (
+    benjamini_hochberg as _benjamini_hochberg,
+)
+
 N_AMOSTRAS_NULO = 4000
 ALFA = 0.05
 
@@ -73,18 +77,6 @@ def posicoes_normalizadas(df: pd.DataFrame, config, mascara=None) -> np.ndarray:
     colunas = (vals - 1).ravel()
     pos[linhas, colunas] = np.tile(np.arange(k) / max(1, k - 1), t)
     return pos
-
-
-def _benjamini_hochberg(p: np.ndarray) -> np.ndarray:
-    """P-valores ajustados (FDR) de Benjamini-Hochberg."""
-    p = np.asarray(p, dtype=float)
-    m = len(p)
-    ordem = np.argsort(p)
-    ajustado = np.empty(m)
-    ajustado[ordem] = np.minimum.accumulate(
-        (p[ordem] * m / (np.arange(m) + 1))[::-1]
-    )[::-1]
-    return np.clip(ajustado, 0.0, 1.0)
 
 
 @dataclass

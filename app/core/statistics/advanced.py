@@ -256,74 +256,135 @@ def calcular_matriz_transicao(df: pd.DataFrame, config: GameConfig) -> np.ndarra
 
 
 def analisar_transicoes_anomalas(
-    df: pd.DataFrame, config: GameConfig, threshold_zscore: float = 2.5
+    df: pd.DataFrame,
+    config: GameConfig,
+    threshold_zscore: float = 2.5,
+    alfa: float | None = 0.05,
+    n_permutacoes: int = 500,
+    seed: int = 0,
 ) -> list[dict]:
     """
     Identifica transições com frequência anormalmente alta ou baixa.
 
+    Para cada par (i, j), conta quantas vezes i saiu no sorteio t e j saiu em
+    t+1. A referência é a distribuição dessas contagens quando a ORDEM dos
+    sorteios é embaralhada: isso preserva a frequência de cada número e destrói
+    qualquer dependência entre sorteios consecutivos, que é exatamente a
+    hipótese nula. Cada célula é padronizada pela média e pelo desvio obtidos
+    nas permutações.
+
+    Por que permutação, e não a fórmula fechada Binomial(T - 1, p²):
+    - as células não são independentes (cada sorteio tem exatamente k números)
+      e as da diagonal (i → i) têm variância bem maior que a binomial: 1,75×
+      na Lotofácil, 1,18× na Mega-Sena;
+    - a fórmula também confunde "o número é mais frequente que o esperado" com
+      "o número tende a vir depois de outro", e a permutação separa os dois.
+    Em simulações com sorteios independentes, a fórmula binomial reportava
+    alguma transição falsa em 11% dos conjuntos de Lotofácil, mesmo com Holm.
+
+    São N² testes simultâneos, e um limiar de |Z| fixo produziria dezenas de
+    falsos positivos por acaso (cerca de 47 por conjunto na Mega-Sena). Por
+    isso a transição só é reportada se, além do |Z|, o p-valor ajustado pelo
+    método max-T de Westfall-Young (que vale sob qualquer dependência entre as
+    células) ficar abaixo de `alfa`.
+
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame com histórico de sorteios.
+        DataFrame com histórico de sorteios (ordem cronológica).
     config : GameConfig
         Configuração do jogo.
     threshold_zscore : float, optional
         Limiar de Z-score para considerar anomalia (default: 2.5).
+    alfa : float | None, optional
+        Taxa de erro familiar aceita (default: 0.05): probabilidade de reportar
+        ao menos uma transição falsa se os sorteios forem independentes. Use
+        None para desligar a correção e filtrar só pelo Z-score.
+    n_permutacoes : int, optional
+        Embaralhamentos usados para a referência (default: 500). O menor
+        p-valor ajustado possível é 1 / (n_permutacoes + 1).
+    seed : int, optional
+        Semente das permutações, para resultado reprodutível.
 
     Returns
     -------
     list[dict]
         Lista de transições anômalas com 'de', 'para', 'observado',
-        'esperado', 'zscore', 'tipo'.
+        'esperado' (média nas permutações), 'zscore', 'p_valor' (por célula),
+        'p_ajustado' (max-T) e 'tipo'.
 
     Examples
     --------
     >>> anomalias = analisar_transicoes_anomalas(df, MEGASENA)
     >>> anomalias[0]
-    {'de': 7, 'para': 14, 'observado': 45, 'esperado': 30.2,
-     'zscore': 2.7, 'tipo': 'excesso'}
+    {'de': 7, 'para': 14, 'observado': 62, 'esperado': 30.8, 'zscore': 5.7,
+     'p_valor': 0.002, 'p_ajustado': 0.002, 'tipo': 'excesso'}
     """
     if df.empty or len(df) < 2:
         return []
 
     n = config.n_numbers
-    k = config.k
-    n_transicoes = len(df) - 1
+    n_permutacoes = max(1, int(n_permutacoes))
 
-    # Conta transições
-    matriz_contagem = np.zeros((n, n))
-    for i in range(1, len(df)):
-        anterior = set(df.iloc[i - 1][config.draw_cols].values)
-        atual = set(df.iloc[i][config.draw_cols].values)
-        for a in anterior:
-            for b in atual:
-                matriz_contagem[a - 1][b - 1] += 1
+    # Matriz de presença (sorteios x números); float32 para usar BLAS no produto
+    valores = df[config.draw_cols].to_numpy(dtype=int)
+    n_sorteios = len(valores)
+    presenca = np.zeros((n_sorteios, n), dtype=np.float32)
+    linhas = np.repeat(np.arange(n_sorteios), valores.shape[1])
+    presenca[linhas, valores.ravel() - 1] = 1.0
 
-    # Esperado: cada número sai com probabilidade k/n
-    # Transições esperadas de i para j = n_transicoes * k * (k/n)
-    esperado_por_celula = n_transicoes * k * (k / n)
+    def contagem_transicoes(p: np.ndarray) -> np.ndarray:
+        # [i, j] = nº de vezes que i saiu em t e j saiu em t+1
+        return p[:-1].T @ p[1:]
 
-    # Calcula Z-scores
-    # Assumindo distribuição aproximadamente Poisson para contagens
-    std_esperado = np.sqrt(esperado_por_celula)
+    # Amostra 0 é o histórico real; as demais têm a ordem dos sorteios
+    # embaralhada (distribuição nula)
+    rng = np.random.default_rng(seed)
+    amostras = np.empty((n_permutacoes + 1, n, n), dtype=np.float32)
+    amostras[0] = contagem_transicoes(presenca)
+    for b in range(1, n_permutacoes + 1):
+        amostras[b] = contagem_transicoes(presenca[rng.permutation(n_sorteios)])
+    observado = amostras[0].astype(np.float64)
+
+    # A média e o desvio de cada célula incluem o histórico real. Sem isso, cada
+    # permutação "se ajuda" a ser padronizada (entra no próprio desvio) e o
+    # histórico não, o que o deixa sistematicamente mais extremo nas caudas e
+    # faz o teste rejeitar mais que o nível nominal.
+    media = amostras.mean(axis=0, dtype=np.float64)
+    desvio = amostras.std(axis=0, dtype=np.float64)
+    # Número que nunca varia (ou nunca saiu) não tem como ser anômalo: z = 0
+    desvio_seguro = np.where(desvio > 0, desvio, np.inf)
+
+    zscores = (observado - media) / desvio_seguro
+    z_nulo = np.abs(amostras[1:] - media) / desvio_seguro
+    z_abs = np.abs(zscores)
+
+    # p-valor por célula (bilateral) e p ajustado pelo máximo de |Z| entre
+    # todas as células em cada permutação (Westfall-Young, passo único)
+    p_valores = (1 + (z_nulo >= z_abs).sum(axis=0)) / (n_permutacoes + 1)
+    maximos_nulo = np.sort(z_nulo.max(axis=(1, 2)))
+    n_maximos_acima = n_permutacoes - np.searchsorted(maximos_nulo, z_abs, side="left")
+    p_ajustados = (1 + n_maximos_acima) / (n_permutacoes + 1)
+
+    selecionadas = z_abs >= threshold_zscore
+    if alfa is not None:
+        selecionadas &= p_ajustados < alfa
 
     anomalias = []
-    for i in range(n):
-        for j in range(n):
-            observado = matriz_contagem[i, j]
-            zscore = (observado - esperado_por_celula) / (std_esperado + 1e-9)
-
-            if abs(zscore) >= threshold_zscore:
-                anomalias.append(
-                    {
-                        "de": i + 1,
-                        "para": j + 1,
-                        "observado": int(observado),
-                        "esperado": round(esperado_por_celula, 2),
-                        "zscore": round(zscore, 2),
-                        "tipo": "excesso" if zscore > 0 else "deficit",
-                    }
-                )
+    for i, j in zip(*np.nonzero(selecionadas)):
+        zscore = zscores[i, j]
+        anomalias.append(
+            {
+                "de": int(i) + 1,
+                "para": int(j) + 1,
+                "observado": int(observado[i, j]),
+                "esperado": round(float(media[i, j]), 2),
+                "zscore": round(float(zscore), 2),
+                "p_valor": float(p_valores[i, j]),
+                "p_ajustado": float(p_ajustados[i, j]),
+                "tipo": "excesso" if zscore > 0 else "deficit",
+            }
+        )
 
     # Ordena por Z-score absoluto (mais anômalo primeiro)
     anomalias.sort(key=lambda x: abs(x["zscore"]), reverse=True)

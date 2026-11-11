@@ -91,7 +91,7 @@ def calcular_ciclo_atual(df: pd.DataFrame, config: GameConfig) -> dict:
 
 
 def analise_temporal_somas(
-    df: pd.DataFrame, config: GameConfig, janela: int = 20
+    df: pd.DataFrame, config: GameConfig, janela: int = 20, janela_media: int = 5
 ) -> dict:
     """
     Prepara dados para o gráfico de 'Eletrocardiograma' (Somas).
@@ -102,6 +102,10 @@ def analise_temporal_somas(
         Histórico.
     janela : int
         Quantos últimos concursos analisar.
+    janela_media : int
+        Tamanho (em concursos) da média móvel de `Media_Movel`. Os concursos
+        anteriores à janela são usados para que o primeiro ponto já tenha a
+        média completa.
 
     Returns
     -------
@@ -111,8 +115,11 @@ def analise_temporal_somas(
     if df.empty:
         return {"dados": [], "min_ideal": 0, "max_ideal": 0}
 
-    df_tail = df.tail(janela).copy()
-    somas = df_tail[config.draw_cols].sum(axis=1)
+    janela_media = max(1, int(janela_media))
+    df_tail = df.tail(janela + janela_media - 1).copy()
+    somas_todas = df_tail[config.draw_cols].sum(axis=1)
+    medias = somas_todas.rolling(janela_media, min_periods=1).mean().tail(janela)
+    somas = somas_todas.tail(janela)
 
     N = config.n_numbers
     k = config.k
@@ -132,7 +139,7 @@ def analise_temporal_somas(
             {
                 "Concurso": idx,
                 "Soma": int(soma),
-                "Media_Movel": int(soma),
+                "Media_Movel": round(float(medias.loc[idx]), 1),
                 "Status": ("Normal" if min_ideal <= soma <= max_ideal else "Atípico"),
             }
         )
@@ -188,8 +195,16 @@ def calcular_autocorrelacao_frequencias(
     """
     Calcula autocorrelação das frequências de números ao longo do tempo.
 
-    Divide o histórico em janelas e calcula a frequência de cada número
-    em cada janela, depois mede a autocorrelação dessa série.
+    Divide o histórico em janelas de `janela` sorteios, conta quantas vezes
+    cada número saiu em cada janela e mede, para cada número, a autocorrelação
+    dessa série de contagens. O resultado por lag é a média da autocorrelação
+    entre todos os números do universo.
+
+    Sob independência entre sorteios, a autocorrelação de cada número tem
+    desvio ≈ 1/√W (W = número de janelas), então a média sobre N números tem
+    desvio ≈ 1/√(W·N). Como são testados `max_lag` lags de uma vez, o limite
+    de significância usa correção de Bonferroni: sem ela, com 50 lags a chance
+    de algum lag passar do limite por acaso é de cerca de 92%.
 
     Parameters
     ----------
@@ -206,7 +221,9 @@ def calcular_autocorrelacao_frequencias(
     -------
     dict
         Autocorrelações e análise de ciclos:
-        - 'autocorrelacoes': array de autocorrelações por lag
+        - 'autocorrelacoes': autocorrelação média por lag, já corrigida do
+          viés do estimador (o valor esperado sem dependência é zero)
+        - 'limite_significancia': limite bilateral já corrigido por lags
         - 'lags_significativos': lags com autocorrelação significativa
         - 'ciclo_detectado': se foi detectado padrão cíclico
         - 'periodo_ciclo': período estimado do ciclo (se houver)
@@ -214,50 +231,55 @@ def calcular_autocorrelacao_frequencias(
     if df.empty or len(df) < janela * 3:
         return None
 
+    n_universo = config.n_numbers
     n_janelas = len(df) // janela
 
-    # Série temporal de frequências por janela
-    frequencias_por_janela = []
+    # Contagem de cada número em cada janela: matriz (janelas x números)
+    valores = df[config.draw_cols].to_numpy(dtype=int)[: n_janelas * janela]
+    por_sorteio = valores.shape[1]
+    indice_janela = np.repeat(np.arange(n_janelas), janela * por_sorteio)
+    indice_numero = valores.ravel() - 1
+    validos = (indice_numero >= 0) & (indice_numero < n_universo)
+    contagens = np.zeros((n_janelas, n_universo))
+    np.add.at(contagens, (indice_janela[validos], indice_numero[validos]), 1)
 
-    for i in range(n_janelas):
-        inicio = i * janela
-        fim = inicio + janela
-        df_janela = df.iloc[inicio:fim]
+    # Números sem variação (nunca saíram, ou sempre iguais) não têm autocorrelação
+    centrada = contagens - contagens.mean(axis=0)
+    soma_quadrados = (centrada**2).sum(axis=0)
+    com_variacao = soma_quadrados > 0
+    if not com_variacao.any():
+        return None
+    centrada = centrada[:, com_variacao]
+    soma_quadrados = soma_quadrados[com_variacao]
+    n_series = int(com_variacao.sum())
 
-        todos_numeros = df_janela[config.draw_cols].values.flatten()
-        freq_total = len(todos_numeros)
-        frequencias_por_janela.append(freq_total)
+    # Autocorrelação de cada número em cada lag, e média entre os números
+    max_lag = min(max_lag, n_janelas // 2)
+    lags = np.arange(1, max_lag + 1)
+    autocorrs = np.array(
+        [
+            ((centrada[:-lag] * centrada[lag:]).sum(axis=0) / soma_quadrados).mean()
+            for lag in lags
+        ]
+    )
 
-    serie = np.array(frequencias_por_janela)
+    # O estimador com média amostral removida tem viés negativo sob ruído branco,
+    # E[r_k] ≈ -(W - k) / (W (W - 1)); subtrai para que o zero seja o valor nulo.
+    autocorrs = autocorrs + (n_janelas - lags) / (n_janelas * (n_janelas - 1))
 
-    # Normaliza a série
-    serie_norm = (serie - serie.mean()) / (serie.std() + 1e-9)
-
-    # Calcula autocorrelações
-    n = len(serie_norm)
-    max_lag = min(max_lag, n // 2)
-    autocorrs = []
-
-    for lag in range(1, max_lag + 1):
-        if lag >= n:
-            break
-        autocorr = np.corrcoef(serie_norm[:-lag], serie_norm[lag:])[0, 1]
-        autocorrs.append(autocorr)
-
-    autocorrs = np.array(autocorrs)
-
-    # Limite de significância (aproximação)
-    limite_sig = 1.96 / np.sqrt(n)
+    # Limite de significância bilateral (5%) com Bonferroni sobre os lags
+    z_crit = stats.norm.isf(0.05 / (2 * max(1, max_lag)))
+    limite_sig = float(z_crit / np.sqrt(n_janelas * n_series))
 
     # Encontra lags significativos
     lags_significativos = [
         i + 1 for i, ac in enumerate(autocorrs) if abs(ac) > limite_sig
     ]
 
-    # Detecta ciclo (pico na autocorrelação)
+    # Detecta ciclo (pico positivo na autocorrelação)
     if len(autocorrs) > 0:
-        pico_idx = np.argmax(autocorrs)
-        ciclo_detectado = autocorrs[pico_idx] > limite_sig
+        pico_idx = int(np.argmax(autocorrs))
+        ciclo_detectado = bool(autocorrs[pico_idx] > limite_sig)
         periodo_ciclo = pico_idx + 1 if ciclo_detectado else None
     else:
         ciclo_detectado = False

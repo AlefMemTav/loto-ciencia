@@ -160,6 +160,17 @@ from app.core.statistics.patterns import (
     analise_completa_padroes,
 )
 
+# Auditoria de independência entre sorteios
+from app.core.statistics.auditoria_independencia import (
+    AuditoriaIndependencia,
+    ResultadoTeste,
+    auditar_independencia,
+)
+from app.core.statistics.multiple_testing import (
+    benjamini_hochberg,
+    holm_bonferroni,
+)
+
 __all__ = [
     # basic
     "compute_zscore",
@@ -278,4 +289,10 @@ __all__ = [
     "detectar_diagonal_volante",
     "detectar_bordas_extremas",
     "analise_completa_padroes",
+    # Auditoria de independência
+    "AuditoriaIndependencia",
+    "ResultadoTeste",
+    "auditar_independencia",
+    "benjamini_hochberg",
+    "holm_bonferroni",
 ]
