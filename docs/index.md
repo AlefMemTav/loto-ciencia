@@ -159,7 +159,7 @@ Analisa as colunas `D1..Dk` na ordem exata em que foram sorteadas do globo:
    Descartando automaticamente o bloco corrompido $[0, c^*)$.
 2. **Teste Posicional com Correção FDR (Benjamini-Hochberg)**: Normaliza a ordem de saída em $[0, 1]$ ($0 =$ primeira bola, $1 =$ última bola). Sob $H_0$, a posição média esperada de cada dezena é $0.50$, com variância teórica:
    \(\text{Var}(P) = \frac{k + 1}{12(k - 1)}\)
-   Calcula o Z-score por dezena e controla a Taxa de Falsas Descobertas (*False Discovery Rate* — FDR a $5\%$) pelo procedimento step-up de **Benjamini-Hochberg** (`_benjamini_hochberg`), além de testar a uniformidade da primeira e da última bola via $\chi^2$.
+   Calcula o Z-score por dezena e controla a Taxa de Falsas Descobertas (*False Discovery Rate* — FDR a $5\%$) pelo procedimento step-up de **Benjamini-Hochberg** (`benjamini_hochberg` em `multiple_testing.py`), além de testar a uniformidade da primeira e da última bola via $\chi^2$.
 
 ### 4.5 Bootstrap e Monte Carlo (`monte_carlo.py` e `bootstrap_integration.py`)
 
@@ -167,6 +167,17 @@ Analisa as colunas `D1..Dk` na ordem exata em que foram sorteadas do globo:
 * **Validação Cruzada de Soma (`avaliar_soma_com_bootstrap`)**: Compara o IC Histórico ($P_{10}\text{--}P_{90}$ e $P_{2.5}\text{--}P_{97.5}$) com o IC Bootstrap, gerando diagnósticos de convergência ou divergência para o validador.
 
 ---
+
+### 4.6 Auditoria de Independência entre Sorteios (`auditoria_independencia.py`)
+`auditar_independencia` roda uma bateria de oito testes que perguntam se o histórico mostra alguma dependência que valha explorar. Sob $H_0$ os sorteios são independentes e as bolas saem em ordem uniforme:
+
+* **Soma jogo a jogo**: autocorrelação lag 1 e tamanho médio de $|\Delta \text{soma}|$ (ambos por permutação da ordem dos sorteios), Ljung-Box em 10 lags, transição entre tercis da soma (qui-quadrado $3 \times 3$) e runs da soma acima/abaixo da mediana (Wald-Wolfowitz).
+* **Repetição do sorteio anterior**: distribuição de quantos números repetem, contra a hipergeométrica $\text{Hip}(N, k, k)$ (qui-quadrado com classes agrupadas até esperado $\ge 5$).
+* **Ordem de saída** (só nas linhas na ordem real, via `mascara_ordem_de_saida`): correlação de Spearman média entre posição de saída e valor da bola (com $\text{Var}(\rho) = 1/(k-1)$ por sorteio) e uniformidade da posição em que sai o menor número.
+
+Os p-valores são ajustados por **Holm-Bonferroni** (`multiple_testing.py`), que não supõe nenhuma estrutura de dependência entre os testes. Simulações com sorteios independentes mostram que cada teste rejeita em cerca de $5\%$ dos conjuntos e que a bateria inteira rejeita algo em $2$ a $7\%$ deles. Nos históricos reais das quatro modalidades, nenhum dos oito testes rejeita após o ajuste (menores p ajustados: $0{,}53$ na Lotomania e $0{,}58$ na Mega-Sena; $1{,}0$ na Quina e na Lotofácil).
+
+Ausência de rejeição não prova independência, e uma rejeição isolada não é sinal explorável: antes de usá-la em geração, deve ser confirmada fora da amostra pelo backtest walk-forward (seção 9.1).
 
 ## 5. Sinais Avançados, Séries Temporais e Machine Learning
 
@@ -182,7 +193,9 @@ Mede a afinidade histórica entre pares de dezenas $(i, j)$ normalizada pela esp
 Valores $M_{\text{cooc}}[i, j] > 1.0$ indicam pares que saíram juntos acima do esperado (`get_pares_mais_frequentes`), enquanto valores próximos de $0$ identificam pares que historicamente "se repelem" (`get_pares_que_se_repelem`).
 
 ### 5.2 Cadeias de Markov de 1ª Ordem (`advanced.py`)
-Constrói a matriz de transição estocástica $M_{\text{trans}}[i, j] = P(j \in \text{Sorteio}_{t+1} \mid i \in \text{Sorteio}_t)$, normalizada por linha. A função `analisar_transicoes_anomalas` avalia desvios em relação à contagem esperada $E_{ij} = (T - 1) \cdot k \cdot (k / N)$ via aproximação de Poisson ($\sigma = \sqrt{E_{ij}}$), sinalizando transições com $|Z| \ge 2.5$.
+Constrói a matriz de transição estocástica $M_{\text{trans}}[i, j] = P(j \in \text{Sorteio}_{t+1} \mid i \in \text{Sorteio}_t)$, normalizada por linha. A função `analisar_transicoes_anomalas` compara a contagem observada de cada transição com a obtida ao **embaralhar a ordem dos sorteios** (500 permutações por padrão), o que preserva a frequência de cada dezena e destrói qualquer dependência entre sorteios consecutivos. Cada célula é padronizada pela média e pelo desvio dessas permutações (incluindo o histórico real, para que ele e as permutações sejam tratados de forma simétrica) e só é sinalizada se $|Z| \ge 2.5$ **e** o p-valor ajustado pelo método *max-T* de Westfall-Young ficar abaixo de $5\%$.
+
+A fórmula fechada $E_{ij} = (T - 1) \cdot (k / N)^2$ (contagem $\text{Binomial}(T - 1, p^2)$ com $p = k / N$) é a esperança correta sob independência, mas não é usada como referência: as células da diagonal ($i \to i$) têm variância $1 + 2p/(1+p)$ vezes maior que a binomial ($1{,}75\times$ na Lotofácil), e as demais são dependentes entre si porque cada sorteio tem exatamente $k$ números. Em simulações com sorteios independentes, a versão binomial reportava ao menos uma transição falsa em $11\%$ dos conjuntos de Lotofácil; a versão por permutação, em $2$ a $6\%$ (Lotofácil, Mega-Sena e Quina).
 
 ### 5.3 Teste de Runs de Wald-Wolfowitz e Índice VMR (`advanced.py`)
 
@@ -205,6 +218,8 @@ A função `calibrar_pesos_dinamicos` substitui escolhas arbitrárias entre núm
 * **Eletrocardiograma das Somas (`analise_temporal_somas`)**: Calcula a média teórica da soma e seu desvio padrão exato com fator de correção para população finita:
   \(\mu_{\text{soma}} = k \frac{N + 1}{2}, \quad \sigma_{\text{soma}} = \sqrt{k \left(\frac{N^2 - 1}{12}\right) \left(\frac{N - k}{N - 1}\right)}\)
   Define a banda de normalidade em $[\mu_{\text{soma}} - 2\sigma_{\text{soma}}, \mu_{\text{soma}} + 2\sigma_{\text{soma}}]$.
+
+* **Autocorrelação de Frequências (`calcular_autocorrelacao_frequencias`)**: Divide o histórico em janelas de $w$ sorteios, conta quantas vezes cada dezena saiu em cada janela e calcula, para cada dezena, a autocorrelação dessa série de contagens, tirando a média entre as $N$ dezenas. O estimador com média removida tem viés $-(W - k)/(W(W-1))$ sob ruído branco ($W$ = nº de janelas, $k$ = lag), que é subtraído. Sob independência a média tem desvio $\approx 1/\sqrt{W \cdot N}$, e o limite de significância usa correção de Bonferroni sobre os lags testados (sem ela, com 50 lags, a chance de algum passar por acaso é de $\approx 92\%$).
 
 * **Validação de Regressão à Média (`calcular_taxa_regressao` e `analisar_gaps_geometricos` em `similarity.py`)**: Mede a correlação de Spearman ($\rho$) entre o atraso passado e a frequência futura na janela seguinte, além de testar se os intervalos entre aparições de cada bola seguem a distribuição Geométrica teórica $\text{Geom}(p = k/N)$.
 
