@@ -1,4 +1,5 @@
 Concurso,Data,acumulou,valorArrecadado,valorAcumuladoProximoConcurso,valorEstimadoProximoConcurso,valorAcumuladoConcursoEspecial,concursoEspecial,local,faixa1_ganhadores,faixa1_premio,faixa2_ganhadores,faixa2_premio,faixa3_ganhadores,faixa3_premio,localGanhadores
+3084,10/11/2026,False,26815890.0,16640032.07,20000000.0,149816278.71,False,"ESPAÇO DA SORTE em SÃO PAULO, SP",1.0,3287949.91,29.0,28344.4,2264.0,518.66,"[{""ganhadores"": 1, ""municipio"": ""ITURAMA"", ""nomeFatansiaUL"": """", ""serie"": """", ""posicao"": 1, ""uf"": ""MG""}]"
 3083,08/11/2026,False,46208712.0,0.0,3500000.0,148583297.49,False,"ESPAÇO DA SORTE em SÃO PAULO, SP",1.0,59526903.72,61.0,23220.26,3117.0,649.17,"[{""ganhadores"": 1, ""municipio"": ""GOIANIA"", ""nomeFatansiaUL"": """", ""serie"": """", ""posicao"": 1, ""uf"": ""GO""}]"
 3082,06/11/2026,True,53156880.0,53861161.13,60000000.0,146458644.0,False,"ESPAÇO DA SORTE em SÃO PAULO, SP",0.0,0.0,81.0,20116.27,4527.0,514.19,[]
 3081,04/11/2026,True,54177108.0,47343489.76,55000000.0,144014517.22,False,"ESPAÇO DA SORTE em SÃO PAULO, SP",0.0,0.0,63.0,26360.17,3571.0,664.35,[]
