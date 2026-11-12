@@ -1,0 +1,447 @@
+{
+  "status": "aprovado",
+  "meta": {
+    "jogo": "mega_sena",
+    "data": "2026-11-12",
+    "ultimo_concurso": 3084,
+    "data_ultimo_concurso": "10/11/2026",
+    "seed": 202611120,
+    "tentativas": 1,
+    "commit": "109af61"
+  },
+  "jogos": [
+    [
+      11,
+      14,
+      30,
+      43,
+      46,
+      54
+    ],
+    [
+      23,
+      30,
+      37,
+      41,
+      42,
+      58
+    ],
+    [
+      6,
+      38,
+      45,
+      48,
+      50,
+      53
+    ],
+    [
+      16,
+      35,
+      36,
+      41,
+      42,
+      49
+    ],
+    [
+      9,
+      38,
+      41,
+      42,
+      46,
+      49
+    ],
+    [
+      27,
+      30,
+      43,
+      46,
+      47,
+      53
+    ],
+    [
+      23,
+      30,
+      38,
+      44,
+      52,
+      53
+    ],
+    [
+      8,
+      30,
+      34,
+      38,
+      53,
+      54
+    ],
+    [
+      10,
+      28,
+      41,
+      47,
+      53,
+      59
+    ],
+    [
+      10,
+      27,
+      30,
+      40,
+      42,
+      52
+    ]
+  ],
+  "validacao": [
+    {
+      "jogo": [
+        11,
+        14,
+        30,
+        43,
+        46,
+        54
+      ],
+      "score": 90,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7094
+    },
+    {
+      "jogo": [
+        23,
+        30,
+        37,
+        41,
+        42,
+        58
+      ],
+      "score": 95,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7295
+    },
+    {
+      "jogo": [
+        6,
+        38,
+        45,
+        48,
+        50,
+        53
+      ],
+      "score": 67,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7263
+    },
+    {
+      "jogo": [
+        16,
+        35,
+        36,
+        41,
+        42,
+        49
+      ],
+      "score": 95,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7042
+    },
+    {
+      "jogo": [
+        9,
+        38,
+        41,
+        42,
+        46,
+        49
+      ],
+      "score": 85,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7356
+    },
+    {
+      "jogo": [
+        27,
+        30,
+        43,
+        46,
+        47,
+        53
+      ],
+      "score": 87,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6834
+    },
+    {
+      "jogo": [
+        23,
+        30,
+        38,
+        44,
+        52,
+        53
+      ],
+      "score": 75,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7379
+    },
+    {
+      "jogo": [
+        8,
+        30,
+        34,
+        38,
+        53,
+        54
+      ],
+      "score": 73,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6994
+    },
+    {
+      "jogo": [
+        10,
+        28,
+        41,
+        47,
+        53,
+        59
+      ],
+      "score": 82,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7302
+    },
+    {
+      "jogo": [
+        10,
+        27,
+        30,
+        40,
+        42,
+        52
+      ],
+      "score": 48,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.746
+    }
+  ],
+  "erros": [],
+  "avisos": [
+    "3 trinca(s) repetida(s) no pacote."
+  ],
+  "relatorio": {
+    "modo": "jogo_real",
+    "perfil_esforco": "forte",
+    "estrategia_base": "cauda_controlada",
+    "seed": 202611120,
+    "quantidade": 10,
+    "candidate_pool_size": 90,
+    "tournament_packages": 180,
+    "monte_carlo_packages": 1000,
+    "null_model_samples": 30000,
+    "score_pacote": 2.569784,
+    "percentil_vs_monte_carlo": 100.0,
+    "p_empirico_mc_supera_ou_iguala": 0.000999,
+    "score_mc_media": -200087.301204,
+    "score_mc_p95": -67.328532,
+    "ranking_torneio": 1,
+    "restricoes": {
+      "numeros_fixos": [],
+      "numeros_evitados": []
+    },
+    "diagnostico_portfolio": {
+      "exposicao_dezenas": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        "6": 1,
+        "7": 0,
+        "8": 1,
+        "9": 1,
+        "10": 2,
+        "11": 1,
+        "12": 0,
+        "13": 0,
+        "14": 1,
+        "15": 0,
+        "16": 1,
+        "17": 0,
+        "18": 0,
+        "19": 0,
+        "20": 0,
+        "21": 0,
+        "22": 0,
+        "23": 2,
+        "24": 0,
+        "25": 0,
+        "26": 0,
+        "27": 2,
+        "28": 1,
+        "29": 0,
+        "30": 6,
+        "31": 0,
+        "32": 0,
+        "33": 0,
+        "34": 1,
+        "35": 1,
+        "36": 1,
+        "37": 1,
+        "38": 4,
+        "39": 0,
+        "40": 1,
+        "41": 4,
+        "42": 4,
+        "43": 2,
+        "44": 1,
+        "45": 1,
+        "46": 3,
+        "47": 2,
+        "48": 1,
+        "49": 2,
+        "50": 1,
+        "51": 0,
+        "52": 2,
+        "53": 5,
+        "54": 2,
+        "55": 0,
+        "56": 0,
+        "57": 0,
+        "58": 1,
+        "59": 1,
+        "60": 0
+      },
+      "top_dezenas": [
+        {
+          "dezena": 30,
+          "vezes": 6
+        },
+        {
+          "dezena": 53,
+          "vezes": 5
+        },
+        {
+          "dezena": 38,
+          "vezes": 4
+        },
+        {
+          "dezena": 41,
+          "vezes": 4
+        },
+        {
+          "dezena": 42,
+          "vezes": 4
+        },
+        {
+          "dezena": 46,
+          "vezes": 3
+        },
+        {
+          "dezena": 10,
+          "vezes": 2
+        },
+        {
+          "dezena": 23,
+          "vezes": 2
+        },
+        {
+          "dezena": 27,
+          "vezes": 2
+        },
+        {
+          "dezena": 43,
+          "vezes": 2
+        }
+      ],
+      "max_exposicao": 6,
+      "media_exposicao_usadas": 1.875,
+      "desvio_exposicao_usadas": 1.317,
+      "overlap_medio": 1.2,
+      "overlap_max": 3,
+      "pares_repetidos": 15,
+      "pares_repetidos_acima_2": 3,
+      "max_repeticao_par": 3,
+      "trincas_repetidas": 3,
+      "max_repeticao_trinca": 2,
+      "quadras_repetidas": 0,
+      "max_repeticao_quadra": 1,
+      "coocorrencia_media": 17.3863,
+      "dispersao_features": {
+        "soma": {
+          "media": 225.5,
+          "desvio": 15.8066,
+          "min": 198.0,
+          "max": 246.0
+        },
+        "span": {
+          "media": 39.1,
+          "desvio": 7.3546,
+          "min": 26.0,
+          "max": 49.0
+        },
+        "pares": {
+          "media": 3.5,
+          "desvio": 1.0247,
+          "min": 2.0,
+          "max": 5.0
+        },
+        "gap_medio": {
+          "media": 7.82,
+          "desvio": 1.4709,
+          "min": 5.2,
+          "max": 9.8
+        }
+      }
+    },
+    "diagnostico_calibracao_score": {
+      "score_medio": 60.130349,
+      "score_min": 47.169262,
+      "score_max": 79.577584,
+      "distribuicao_gerada": {
+        "0-39": 0.0,
+        "40-54": 40.0,
+        "55-69": 50.0,
+        "70-84": 10.0,
+        "85-100": 0.0
+      },
+      "distribuicao_historica": {
+        "0-39": 6.452879,
+        "40-54": 28.372108,
+        "55-69": 46.076101,
+        "70-84": 18.417665,
+        "85-100": 0.681247
+      },
+      "distribuicao_modelo_nulo": {
+        "0-39": 6.490023,
+        "40-54": 28.346653,
+        "55-69": 45.666624,
+        "70-84": 18.473336,
+        "85-100": 1.023365
+      },
+      "distribuicao_alvo": {
+        "0-39": 6.464022,
+        "40-54": 28.364471,
+        "55-69": 45.953258,
+        "70-84": 18.434366,
+        "85-100": 0.783882
+      },
+      "js_vs_alvo": 0.053193,
+      "js_vs_historico": 0.052545,
+      "js_vs_nulo": 0.05471,
+      "chi_square_vs_alvo": 0.162364,
+      "modelo_version": "score-cal-v1",
+      "n_historico": 3084,
+      "n_amostras_modelo_nulo": 30000,
+      "target": "historico_nulo"
+    }
+  }
+}
