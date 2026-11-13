@@ -1,0 +1,28 @@
+{
+  "status": "conferido",
+  "concurso": 3085,
+  "sorteio": [
+    10,
+    27,
+    29,
+    37,
+    39,
+    59
+  ],
+  "acertos": [
+    0,
+    1,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    2,
+    2
+  ],
+  "melhor": 2,
+  "media_acertos": 0.6,
+  "esperado_aleatorio": 0.6,
+  "premios": []
+}
