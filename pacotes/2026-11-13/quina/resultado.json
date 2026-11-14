@@ -1,0 +1,27 @@
+{
+  "status": "conferido",
+  "concurso": 7167,
+  "sorteio": [
+    5,
+    9,
+    25,
+    39,
+    69
+  ],
+  "acertos": [
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    0
+  ],
+  "melhor": 1,
+  "media_acertos": 0.3,
+  "esperado_aleatorio": 0.3125,
+  "premios": []
+}
