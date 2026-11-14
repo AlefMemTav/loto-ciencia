@@ -1,0 +1,445 @@
+{
+  "status": "aprovado",
+  "meta": {
+    "jogo": "quina",
+    "data": "2026-11-14",
+    "ultimo_concurso": 7167,
+    "data_ultimo_concurso": "13/11/2026",
+    "seed": 202611141,
+    "tentativas": 1,
+    "commit": "9a8e237"
+  },
+  "jogos": [
+    [
+      19,
+      40,
+      61,
+      64,
+      74
+    ],
+    [
+      31,
+      45,
+      53,
+      61,
+      70
+    ],
+    [
+      22,
+      52,
+      59,
+      63,
+      75
+    ],
+    [
+      20,
+      46,
+      49,
+      70,
+      73
+    ],
+    [
+      1,
+      42,
+      62,
+      64,
+      68
+    ],
+    [
+      16,
+      38,
+      50,
+      55,
+      62
+    ],
+    [
+      15,
+      41,
+      72,
+      79,
+      80
+    ],
+    [
+      21,
+      26,
+      31,
+      66,
+      79
+    ],
+    [
+      14,
+      39,
+      51,
+      60,
+      70
+    ],
+    [
+      15,
+      16,
+      60,
+      61,
+      67
+    ]
+  ],
+  "validacao": [
+    {
+      "jogo": [
+        19,
+        40,
+        61,
+        64,
+        74
+      ],
+      "score": 85,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7455
+    },
+    {
+      "jogo": [
+        31,
+        45,
+        53,
+        61,
+        70
+      ],
+      "score": 87,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6831
+    },
+    {
+      "jogo": [
+        22,
+        52,
+        59,
+        63,
+        75
+      ],
+      "score": 75,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7826
+    },
+    {
+      "jogo": [
+        20,
+        46,
+        49,
+        70,
+        73
+      ],
+      "score": 75,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7256
+    },
+    {
+      "jogo": [
+        1,
+        42,
+        62,
+        64,
+        68
+      ],
+      "score": 68,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7592
+    },
+    {
+      "jogo": [
+        16,
+        38,
+        50,
+        55,
+        62
+      ],
+      "score": 75,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7716
+    },
+    {
+      "jogo": [
+        15,
+        41,
+        72,
+        79,
+        80
+      ],
+      "score": 62,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.764
+    },
+    {
+      "jogo": [
+        21,
+        26,
+        31,
+        66,
+        79
+      ],
+      "score": 100,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7788
+    },
+    {
+      "jogo": [
+        14,
+        39,
+        51,
+        60,
+        70
+      ],
+      "score": 100,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.704
+    },
+    {
+      "jogo": [
+        15,
+        16,
+        60,
+        61,
+        67
+      ],
+      "score": 92,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7507
+    }
+  ],
+  "erros": [],
+  "avisos": [],
+  "relatorio": {
+    "modo": "jogo_real",
+    "perfil_esforco": "forte",
+    "estrategia_base": "cauda_controlada",
+    "seed": 202611141,
+    "quantidade": 10,
+    "candidate_pool_size": 90,
+    "tournament_packages": 180,
+    "monte_carlo_packages": 1000,
+    "null_model_samples": 30000,
+    "score_pacote": 3.113751,
+    "percentil_vs_monte_carlo": 100.0,
+    "p_empirico_mc_supera_ou_iguala": 0.000999,
+    "score_mc_media": -200087.802524,
+    "score_mc_p95": -61.734885,
+    "ranking_torneio": 17,
+    "restricoes": {
+      "numeros_fixos": [],
+      "numeros_evitados": []
+    },
+    "diagnostico_portfolio": {
+      "exposicao_dezenas": {
+        "1": 1,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "10": 0,
+        "11": 0,
+        "12": 0,
+        "13": 0,
+        "14": 1,
+        "15": 2,
+        "16": 2,
+        "17": 0,
+        "18": 0,
+        "19": 1,
+        "20": 1,
+        "21": 1,
+        "22": 1,
+        "23": 0,
+        "24": 0,
+        "25": 0,
+        "26": 1,
+        "27": 0,
+        "28": 0,
+        "29": 0,
+        "30": 0,
+        "31": 2,
+        "32": 0,
+        "33": 0,
+        "34": 0,
+        "35": 0,
+        "36": 0,
+        "37": 0,
+        "38": 1,
+        "39": 1,
+        "40": 1,
+        "41": 1,
+        "42": 1,
+        "43": 0,
+        "44": 0,
+        "45": 1,
+        "46": 1,
+        "47": 0,
+        "48": 0,
+        "49": 1,
+        "50": 1,
+        "51": 1,
+        "52": 1,
+        "53": 1,
+        "54": 0,
+        "55": 1,
+        "56": 0,
+        "57": 0,
+        "58": 0,
+        "59": 1,
+        "60": 2,
+        "61": 3,
+        "62": 2,
+        "63": 1,
+        "64": 2,
+        "65": 0,
+        "66": 1,
+        "67": 1,
+        "68": 1,
+        "69": 0,
+        "70": 3,
+        "71": 0,
+        "72": 1,
+        "73": 1,
+        "74": 1,
+        "75": 1,
+        "76": 0,
+        "77": 0,
+        "78": 0,
+        "79": 2,
+        "80": 1
+      },
+      "top_dezenas": [
+        {
+          "dezena": 61,
+          "vezes": 3
+        },
+        {
+          "dezena": 70,
+          "vezes": 3
+        },
+        {
+          "dezena": 15,
+          "vezes": 2
+        },
+        {
+          "dezena": 16,
+          "vezes": 2
+        },
+        {
+          "dezena": 31,
+          "vezes": 2
+        },
+        {
+          "dezena": 60,
+          "vezes": 2
+        },
+        {
+          "dezena": 62,
+          "vezes": 2
+        },
+        {
+          "dezena": 64,
+          "vezes": 2
+        },
+        {
+          "dezena": 79,
+          "vezes": 2
+        },
+        {
+          "dezena": 1,
+          "vezes": 1
+        }
+      ],
+      "max_exposicao": 3,
+      "media_exposicao_usadas": 1.2821,
+      "desvio_exposicao_usadas": 0.5523,
+      "overlap_medio": 0.2889,
+      "overlap_max": 1,
+      "pares_repetidos": 0,
+      "pares_repetidos_acima_2": 0,
+      "max_repeticao_par": 1,
+      "trincas_repetidas": 0,
+      "max_repeticao_trinca": 1,
+      "quadras_repetidas": 0,
+      "max_repeticao_quadra": 1,
+      "coocorrencia_media": 11.8032,
+      "dispersao_features": {
+        "soma": {
+          "media": 246.8,
+          "desvio": 22.117,
+          "min": 219.0,
+          "max": 287.0
+        },
+        "span": {
+          "media": 54.4,
+          "desvio": 7.7743,
+          "min": 39.0,
+          "max": 67.0
+        },
+        "pares": {
+          "media": 2.6,
+          "desvio": 0.9165,
+          "min": 1.0,
+          "max": 4.0
+        },
+        "gap_medio": {
+          "media": 13.6,
+          "desvio": 1.9436,
+          "min": 9.75,
+          "max": 16.75
+        }
+      }
+    },
+    "diagnostico_calibracao_score": {
+      "score_medio": 57.909776,
+      "score_min": 42.551588,
+      "score_max": 70.300134,
+      "distribuicao_gerada": {
+        "0-39": 0.0,
+        "40-54": 30.0,
+        "55-69": 60.0,
+        "70-84": 10.0,
+        "85-100": 0.0
+      },
+      "distribuicao_historica": {
+        "0-39": 7.799722,
+        "40-54": 37.50511,
+        "55-69": 44.872158,
+        "70-84": 9.794964,
+        "85-100": 0.028045
+      },
+      "distribuicao_modelo_nulo": {
+        "0-39": 8.17002,
+        "40-54": 36.703305,
+        "55-69": 45.859957,
+        "70-84": 9.190018,
+        "85-100": 0.0767
+      },
+      "distribuicao_alvo": {
+        "0-39": 7.910811,
+        "40-54": 37.264569,
+        "55-69": 45.168498,
+        "70-84": 9.61348,
+        "85-100": 0.042642
+      },
+      "js_vs_alvo": 0.050199,
+      "js_vs_historico": 0.05006,
+      "js_vs_nulo": 0.050623,
+      "chi_square_vs_alvo": 0.142553,
+      "modelo_version": "score-cal-v1",
+      "n_historico": 7167,
+      "n_amostras_modelo_nulo": 30000,
+      "target": "historico_nulo"
+    }
+  }
+}
