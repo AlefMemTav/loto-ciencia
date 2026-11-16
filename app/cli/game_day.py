@@ -12,7 +12,11 @@ Saída em `out/AAAA-MM-DD/<jogo>/`:
     report.md     resumo legível
 
 Idempotente: se `package.json` do dia já existir, pula (use --force para refazer).
-Código de saída: 0 ok (ou nada a fazer), 1 pacote reprovado nas checagens, 2 uso.
+Código de saída:
+    0 ok (ou nada a fazer). Em `--game hoje`, também retorna 0 se ao menos um
+      pacote do dia for aprovado.
+    1 falha total (nenhum pacote aprovado) ou reprovação no modo de jogo único.
+    2 uso.
 """
 
 from __future__ import annotations
@@ -299,7 +303,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     aprovados = [gerar(j, hoje, args.quantidade, args.effort, Path(args.out), args.force) for j in jogos]
-    return 0 if all(aprovados) else 1
+    if all(aprovados):
+        return 0
+    if args.game == "hoje" and any(aprovados):
+        print("Alguns pacotes foram reprovados; execução concluída com sucesso parcial.")
+        return 0
+    return 1
 
 
 if __name__ == "__main__":

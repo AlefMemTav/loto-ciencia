@@ -74,7 +74,7 @@ def test_main_sem_sorteio_nao_faz_nada(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_main_codigo_de_saida_e_idempotencia(tmp_path, monkeypatch):
+def test_main_codigo_de_saida_parcial_em_hoje(tmp_path, monkeypatch):
     chamadas = []
 
     def falso(jogo, hoje, quantidade, esforco, saida, force):
@@ -82,8 +82,13 @@ def test_main_codigo_de_saida_e_idempotencia(tmp_path, monkeypatch):
         return jogo != "quina"
 
     monkeypatch.setattr(gd, "gerar", falso)
-    assert gd.main(["--data", "2026-11-10", "--out", str(tmp_path)]) == 1
+    assert gd.main(["--data", "2026-11-10", "--out", str(tmp_path)]) == 0
     assert chamadas == ["mega_sena", "quina", "loto_facil"]
+
+
+def test_main_codigo_de_saida_falha_no_modo_jogo_unico(tmp_path, monkeypatch):
+    monkeypatch.setattr(gd, "gerar", lambda *a, **k: False)
+    assert gd.main(["--game", "quina", "--data", "2026-11-10", "--out", str(tmp_path)]) == 1
 
 
 def test_gerar_pula_quando_pacote_ja_existe(tmp_path):
