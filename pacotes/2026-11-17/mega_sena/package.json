@@ -1,0 +1,449 @@
+{
+  "status": "aprovado",
+  "meta": {
+    "jogo": "mega_sena",
+    "data": "2026-11-17",
+    "ultimo_concurso": 3086,
+    "data_ultimo_concurso": "15/11/2026",
+    "seed": 202611170,
+    "tentativas": 1,
+    "commit": "a8c9e1c"
+  },
+  "jogos": [
+    [
+      4,
+      27,
+      40,
+      41,
+      51,
+      52
+    ],
+    [
+      16,
+      37,
+      39,
+      41,
+      53,
+      58
+    ],
+    [
+      10,
+      35,
+      40,
+      41,
+      53,
+      58
+    ],
+    [
+      10,
+      27,
+      30,
+      41,
+      50,
+      53
+    ],
+    [
+      16,
+      34,
+      37,
+      41,
+      54,
+      58
+    ],
+    [
+      16,
+      23,
+      30,
+      41,
+      46,
+      54
+    ],
+    [
+      6,
+      30,
+      36,
+      41,
+      46,
+      53
+    ],
+    [
+      10,
+      32,
+      34,
+      35,
+      49,
+      50
+    ],
+    [
+      6,
+      34,
+      37,
+      47,
+      50,
+      53
+    ],
+    [
+      16,
+      28,
+      32,
+      38,
+      50,
+      57
+    ]
+  ],
+  "validacao": [
+    {
+      "jogo": [
+        4,
+        27,
+        40,
+        41,
+        51,
+        52
+      ],
+      "score": 95,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6619
+    },
+    {
+      "jogo": [
+        16,
+        37,
+        39,
+        41,
+        53,
+        58
+      ],
+      "score": 72,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6559
+    },
+    {
+      "jogo": [
+        10,
+        35,
+        40,
+        41,
+        53,
+        58
+      ],
+      "score": 75,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7179
+    },
+    {
+      "jogo": [
+        10,
+        27,
+        30,
+        41,
+        50,
+        53
+      ],
+      "score": 85,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6784
+    },
+    {
+      "jogo": [
+        16,
+        34,
+        37,
+        41,
+        54,
+        58
+      ],
+      "score": 65,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6821
+    },
+    {
+      "jogo": [
+        16,
+        23,
+        30,
+        41,
+        46,
+        54
+      ],
+      "score": 82,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6755
+    },
+    {
+      "jogo": [
+        6,
+        30,
+        36,
+        41,
+        46,
+        53
+      ],
+      "score": 75,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.697
+    },
+    {
+      "jogo": [
+        10,
+        32,
+        34,
+        35,
+        49,
+        50
+      ],
+      "score": 60,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7397
+    },
+    {
+      "jogo": [
+        6,
+        34,
+        37,
+        47,
+        50,
+        53
+      ],
+      "score": 90,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7012
+    },
+    {
+      "jogo": [
+        16,
+        28,
+        32,
+        38,
+        50,
+        57
+      ],
+      "score": 50,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6724
+    }
+  ],
+  "erros": [],
+  "avisos": [
+    "Maior sobreposição entre dois jogos: 4 (limite 3).",
+    "Algum par de dezenas aparece 4 vezes (limite 3).",
+    "9 trinca(s) repetida(s) no pacote."
+  ],
+  "relatorio": {
+    "modo": "jogo_real",
+    "perfil_esforco": "forte",
+    "estrategia_base": "cauda_controlada",
+    "seed": 202611170,
+    "quantidade": 10,
+    "candidate_pool_size": 90,
+    "tournament_packages": 180,
+    "monte_carlo_packages": 1000,
+    "null_model_samples": 30000,
+    "score_pacote": 1.141406,
+    "percentil_vs_monte_carlo": 100.0,
+    "p_empirico_mc_supera_ou_iguala": 0.000999,
+    "score_mc_media": -200088.879199,
+    "score_mc_p95": -67.544113,
+    "ranking_torneio": 1,
+    "restricoes": {
+      "numeros_fixos": [],
+      "numeros_evitados": []
+    },
+    "diagnostico_portfolio": {
+      "exposicao_dezenas": {
+        "1": 0,
+        "2": 0,
+        "3": 0,
+        "4": 1,
+        "5": 0,
+        "6": 2,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "10": 3,
+        "11": 0,
+        "12": 0,
+        "13": 0,
+        "14": 0,
+        "15": 0,
+        "16": 4,
+        "17": 0,
+        "18": 0,
+        "19": 0,
+        "20": 0,
+        "21": 0,
+        "22": 0,
+        "23": 1,
+        "24": 0,
+        "25": 0,
+        "26": 0,
+        "27": 2,
+        "28": 1,
+        "29": 0,
+        "30": 3,
+        "31": 0,
+        "32": 2,
+        "33": 0,
+        "34": 3,
+        "35": 2,
+        "36": 1,
+        "37": 3,
+        "38": 1,
+        "39": 1,
+        "40": 2,
+        "41": 7,
+        "42": 0,
+        "43": 0,
+        "44": 0,
+        "45": 0,
+        "46": 2,
+        "47": 1,
+        "48": 0,
+        "49": 1,
+        "50": 4,
+        "51": 1,
+        "52": 1,
+        "53": 5,
+        "54": 2,
+        "55": 0,
+        "56": 0,
+        "57": 1,
+        "58": 3,
+        "59": 0,
+        "60": 0
+      },
+      "top_dezenas": [
+        {
+          "dezena": 41,
+          "vezes": 7
+        },
+        {
+          "dezena": 53,
+          "vezes": 5
+        },
+        {
+          "dezena": 16,
+          "vezes": 4
+        },
+        {
+          "dezena": 50,
+          "vezes": 4
+        },
+        {
+          "dezena": 10,
+          "vezes": 3
+        },
+        {
+          "dezena": 30,
+          "vezes": 3
+        },
+        {
+          "dezena": 34,
+          "vezes": 3
+        },
+        {
+          "dezena": 37,
+          "vezes": 3
+        },
+        {
+          "dezena": 58,
+          "vezes": 3
+        },
+        {
+          "dezena": 6,
+          "vezes": 2
+        }
+      ],
+      "max_exposicao": 7,
+      "media_exposicao_usadas": 2.2222,
+      "desvio_exposicao_usadas": 1.4487,
+      "overlap_medio": 1.4444,
+      "overlap_max": 4,
+      "pares_repetidos": 26,
+      "pares_repetidos_acima_2": 4,
+      "max_repeticao_par": 4,
+      "trincas_repetidas": 9,
+      "max_repeticao_trinca": 2,
+      "quadras_repetidas": 1,
+      "max_repeticao_quadra": 2,
+      "coocorrencia_media": 17.4209,
+      "dispersao_features": {
+        "soma": {
+          "media": 222.7,
+          "desvio": 12.6969,
+          "min": 210.0,
+          "max": 244.0
+        },
+        "span": {
+          "media": 43.6,
+          "desvio": 3.4409,
+          "min": 38.0,
+          "max": 48.0
+        },
+        "pares": {
+          "media": 3.5,
+          "desvio": 0.8062,
+          "min": 2.0,
+          "max": 5.0
+        },
+        "gap_medio": {
+          "media": 8.72,
+          "desvio": 0.6882,
+          "min": 7.6,
+          "max": 9.6
+        }
+      }
+    },
+    "diagnostico_calibracao_score": {
+      "score_medio": 66.465557,
+      "score_min": 53.806935,
+      "score_max": 80.066443,
+      "distribuicao_gerada": {
+        "0-39": 0.0,
+        "40-54": 10.0,
+        "55-69": 70.0,
+        "70-84": 20.0,
+        "85-100": 0.0
+      },
+      "distribuicao_historica": {
+        "0-39": 6.448697,
+        "40-54": 28.353721,
+        "55-69": 46.078644,
+        "70-84": 18.405729,
+        "85-100": 0.713209
+      },
+      "distribuicao_modelo_nulo": {
+        "0-39": 6.490023,
+        "40-54": 28.346653,
+        "55-69": 45.666624,
+        "70-84": 18.473336,
+        "85-100": 1.023365
+      },
+      "distribuicao_alvo": {
+        "0-39": 6.461095,
+        "40-54": 28.351601,
+        "55-69": 45.955038,
+        "70-84": 18.426011,
+        "85-100": 0.806256
+      },
+      "js_vs_alvo": 0.087691,
+      "js_vs_historico": 0.08697,
+      "js_vs_nulo": 0.089381,
+      "chi_square_vs_alvo": 0.318615,
+      "modelo_version": "score-cal-v1",
+      "n_historico": 3086,
+      "n_amostras_modelo_nulo": 30000,
+      "target": "historico_nulo"
+    }
+  }
+}
