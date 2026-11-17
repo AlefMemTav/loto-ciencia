@@ -117,13 +117,13 @@ def render_dashboard(ctx, svc):
         with st.container(border=True):
             st.markdown("**🔢 Análise de Finais (Poisson)**")
             if poisson_finais:
-                st.warning(f"⚠️ Detectamos {len(poisson_finais)} finais atrasados.")
+                st.warning(f"⚠️ Detectamos {len(poisson_finais)} finais com desvio amostral relevante.")
                 cols = st.columns(len(poisson_finais))
                 for i, item in enumerate(poisson_finais):
                     cols[i].metric(
                         f"Final {item['digito']}",
                         f"p={item['p_value']}",
-                        help="Probabilidade estatística extremamente baixa. Pela Lei de Poisson, este final 'deveria' ter saído mais vezes.",
+                        help="Frequência observada abaixo da média esperada pela distribuição uniforme/Poisson na amostra histórica; isso descreve variação passada e não aumenta a chance no próximo sorteio.",
                     )
             else:
                 st.success("✅ A distribuição dos finais (0-9) está normal.")
@@ -453,6 +453,7 @@ def _plot_heatmap_matplotlib(freq, nums_filtro, config):
             )
 
     st.pyplot(fig, width="stretch")
+    plt.close(fig)
 
 
 def _render_probability_report(conjuntos, config, svc, ctx):
@@ -602,19 +603,19 @@ def _render_regression_analysis(config, ctx):
                 unsafe_allow_html=True,
             )
         if regressao["correlacao"] > 0.2:
-            st.success(
-                "✅ **Evidência forte de regressão à média!** "
-                "Isso valida estratégias que priorizam números atrasados (modo 'Agressivo' no gerador)."
+            st.info(
+                "ℹ️ **Correlação amostral positiva no período observado.** "
+                "Atenção: trata-se de correlação descritiva dentro da janela analisada; testes walk-forward fora da amostra não comprovam ganho preditivo para números atrasados."
             )
         elif regressao["correlacao"] > 0.1:
             st.info(
-                "ℹ️ **Evidência moderada de regressão.** "
-                "Há alguma tendência, mas não é muito forte."
+                "ℹ️ **Correlação amostral leve.** "
+                "Variação compatível com flutuação histórica sem vantagem preditiva comprovada fora da amostra."
             )
         else:
-            st.warning(
-                "⚠️ **Sem evidência clara.** "
-                "Neste período específico, números atrasados não mostraram tendência forte de retorno."
+            st.info(
+                "ℹ️ **Sem correlação relevante.** "
+                "Neste período, números mais atrasados não apresentaram retorno diferenciado."
             )
 
 
@@ -676,7 +677,7 @@ def _render_ciclo_section(ciclo, config):
 
             if config.n_numbers <= 25:  # Lotofácil
                 st.caption(
-                    "💡 **Dica:** Fixar estes números costuma ser uma estratégia forte."
+                    "ℹ️ **Nota estatística:** O ciclo acompanha o histórico de saída das dezenas; todos os números mantêm a mesma probabilidade individual no próximo sorteio."
                 )
 
 

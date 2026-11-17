@@ -391,7 +391,7 @@ class LotteryService:
         usar_atrasados = bool(payload.get("usar_atrasados", False))
         usar_markov = bool(payload.get("usar_markov", False))
         usar_ciclo = bool(payload.get("usar_ciclo", False))
-        usar_coocorrencia = bool(payload.get("usar_coocorrencia", True))
+        usar_coocorrencia = bool(payload.get("usar_coocorrencia", False))
         historical_signal_strength = float(
             payload.get("historical_signal_strength", 1.0)
         )
@@ -500,7 +500,7 @@ class LotteryService:
             usar_atrasados = bool(payload.get("usar_atrasados", False))
             usar_markov = bool(payload.get("usar_markov", False))
             usar_ciclo = bool(payload.get("usar_ciclo", False))
-            usar_coocorrencia = bool(payload.get("usar_coocorrencia", True))
+            usar_coocorrencia = bool(payload.get("usar_coocorrencia", False))
             frequencia_recente = bool(payload.get("frequencia_recente", True))
             historical_signal_strength = float(
                 payload.get("historical_signal_strength", 1.0)
@@ -556,7 +556,7 @@ class LotteryService:
             "usar_quentes": bool(payload.get("usar_quentes", False))
             and bool(payload.get("frequencia_recente", True)),
             "usar_atrasados": bool(payload.get("usar_atrasados", False)),
-            "usar_coocorrencia": bool(payload.get("usar_coocorrencia", True)),
+            "usar_coocorrencia": bool(payload.get("usar_coocorrencia", False)),
             "historical_signal_strength": float(
                 payload.get("historical_signal_strength", 1.0)
             ),

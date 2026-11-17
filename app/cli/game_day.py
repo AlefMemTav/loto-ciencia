@@ -225,7 +225,7 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
             jogos,
             validacoes,
             pacote_gerado["relatorio"]["diagnostico_portfolio"],
-            k=config.k,
+            k=config.bet_size,
             n_numbers=config.n_numbers,
             overlap_limit=config.get_overlap_limit(),
             esparso=bool(config.is_sparse),

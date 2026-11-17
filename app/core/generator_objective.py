@@ -38,7 +38,7 @@ def score_plausibility_batch(
     null_model_samples: int | None = None,
     usar_quentes: bool = False,
     usar_atrasados: bool = False,
-    usar_coocorrencia: bool = True,
+    usar_coocorrencia: bool = False,
     historical_signal_strength: float = 1.0,
     usar_calibracao_score: bool = True,
     calibration_strength: float = 1.0,
@@ -573,6 +573,8 @@ def portfolio_diagnostics(
     games: list[list[int]] | np.ndarray,
     config,
     matriz_coocorrencia=None,
+    include_higher_order: bool = True,
+    include_dispersao: bool = True,
 ) -> dict:
     """Resume concentração e diversidade de um pacote de jogos."""
     if games is None or len(games) == 0:
@@ -582,48 +584,119 @@ def portfolio_diagnostics(
     if arr.ndim != 2:
         return {}
 
-    exposure = {str(n): 0 for n in range(1, config.n_numbers + 1)}
-    for row in arr:
-        for n in row:
-            exposure[str(int(n))] += 1
+    m, k = arr.shape
+    n_numbers = int(config.n_numbers)
+    in_bounds = arr.size > 0 and int(arr.min()) >= 1 and int(arr.max()) <= n_numbers
+
+    used_fast_path = False
+    if in_bounds:
+        B = np.zeros((m, n_numbers), dtype=np.int32)
+        B[np.arange(m)[:, None], arr - 1] = 1
+        if np.all(B.sum(axis=1) == k):
+            used_fast_path = True
+            exposure_counts = B.sum(axis=0)
+            exposure = {str(n): int(exposure_counts[n - 1]) for n in range(1, n_numbers + 1)}
+
+            if m >= 2:
+                G = B @ B.T
+                overlaps_arr = G[np.triu_indices(m, k=1)]
+                overlap_medio = round(float(np.mean(overlaps_arr)), 4)
+                overlap_max = int(np.max(overlaps_arr))
+            else:
+                overlap_medio = 0.0
+                overlap_max = 0
+
+            P = B.T @ B
+            pi, pj = np.triu_indices(n_numbers, k=1)
+            pair_vals = P[pi, pj]
+            nz_pairs = pair_vals[pair_vals > 0]
+            pares_repetidos = int(np.sum(nz_pairs > 1))
+            pares_repetidos_acima_2 = int(np.sum(nz_pairs > 2))
+            max_repeticao_par = int(np.max(nz_pairs)) if nz_pairs.size else 0
+
+            trincas_repetidas = 0
+            max_repeticao_trinca = 1 if (include_higher_order and config.bet_size >= 3 and k >= 3 and m >= 1) else 0
+            quadras_repetidas = 0
+            max_repeticao_quadra = 1 if (include_higher_order and config.bet_size >= 4 and k >= 4 and m >= 1) else 0
+
+            if include_higher_order and config.bet_size >= 3 and k >= 3 and m >= 2:
+                for a in np.flatnonzero(exposure_counts[: max(0, n_numbers - 2)] >= 2):
+                    mask_a = B[:, a] == 1
+                    Ra = B[mask_a, a + 1 :]
+                    Pa = Ra.T @ Ra
+                    np.fill_diagonal(Pa, 0)
+                    rep_a = int(np.count_nonzero(Pa > 1)) // 2
+                    if rep_a > 0:
+                        trincas_repetidas += rep_a
+                        max_repeticao_trinca = max(max_repeticao_trinca, int(Pa.max()))
+
+                    if config.bet_size >= 4 and k >= 4 and a < n_numbers - 3:
+                        bs = np.flatnonzero(P[a, a + 1 : n_numbers - 2] >= 2) + (a + 1)
+                        for b in bs:
+                            Rab = B[mask_a & (B[:, b] == 1), b + 1 :]
+                            Qab = Rab.T @ Rab
+                            np.fill_diagonal(Qab, 0)
+                            rep_ab = int(np.count_nonzero(Qab > 1)) // 2
+                            if rep_ab > 0:
+                                quadras_repetidas += rep_ab
+                                max_repeticao_quadra = max(max_repeticao_quadra, int(Qab.max()))
+
+    if not used_fast_path:
+        exposure = {str(n): 0 for n in range(1, n_numbers + 1)}
+        for row in arr:
+            for n in row:
+                key = str(int(n))
+                exposure[key] = exposure.get(key, 0) + 1
+
+        overlaps = []
+        pair_counts: dict[tuple[int, int], int] = {}
+        triple_counts: dict[tuple[int, int, int], int] = {}
+        quad_counts: dict[tuple[int, int, int, int], int] = {}
+        for i, row in enumerate(arr):
+            row_set = set(row.tolist())
+            for other in arr[i + 1 :]:
+                overlaps.append(len(row_set.intersection(set(other.tolist()))))
+            for pair in _pair_keys(row):
+                pair_counts[pair] = pair_counts.get(pair, 0) + 1
+            if include_higher_order and config.bet_size >= 3:
+                for triple in _group_keys(row, 3):
+                    triple_counts[triple] = triple_counts.get(triple, 0) + 1
+            if include_higher_order and config.bet_size >= 4:
+                for quad in _group_keys(row, 4):
+                    quad_counts[quad] = quad_counts.get(quad, 0) + 1
+
+        repeated_pairs = [count for count in pair_counts.values() if count > 1]
+        repeated_triples = [count for count in triple_counts.values() if count > 1]
+        repeated_quads = [count for count in quad_counts.values() if count > 1]
+        overlap_medio = round(float(np.mean(overlaps)), 4) if overlaps else 0.0
+        overlap_max = int(max(overlaps) if overlaps else 0)
+        pares_repetidos = int(len(repeated_pairs))
+        pares_repetidos_acima_2 = int(sum(1 for count in repeated_pairs if count > 2))
+        max_repeticao_par = int(max(pair_counts.values()) if pair_counts else 0)
+        trincas_repetidas = int(len(repeated_triples))
+        max_repeticao_trinca = int(max(triple_counts.values()) if triple_counts else 0)
+        quadras_repetidas = int(len(repeated_quads))
+        max_repeticao_quadra = int(max(quad_counts.values()) if quad_counts else 0)
+
     used_counts = np.array([v for v in exposure.values() if v > 0], dtype=float)
     top_dezenas = sorted(
-        ((int(k), int(v)) for k, v in exposure.items() if v > 0),
+        ((int(key), int(v)) for key, v in exposure.items() if v > 0),
         key=lambda item: (-item[1], item[0]),
     )[:10]
 
-    overlaps = []
-    pair_counts: dict[tuple[int, int], int] = {}
-    triple_counts: dict[tuple[int, int, int], int] = {}
-    quad_counts: dict[tuple[int, int, int, int], int] = {}
-    for i, row in enumerate(arr):
-        row_set = set(row.tolist())
-        for other in arr[i + 1 :]:
-            overlaps.append(len(row_set.intersection(set(other.tolist()))))
-        for pair in _pair_keys(row):
-            pair_counts[pair] = pair_counts.get(pair, 0) + 1
-        if config.bet_size >= 3:
-            for triple in _group_keys(row, 3):
-                triple_counts[triple] = triple_counts.get(triple, 0) + 1
-        if config.bet_size >= 4:
-            for quad in _group_keys(row, 4):
-                quad_counts[quad] = quad_counts.get(quad, 0) + 1
-
-    repeated_pairs = [count for count in pair_counts.values() if count > 1]
-    repeated_triples = [count for count in triple_counts.values() if count > 1]
-    repeated_quads = [count for count in quad_counts.values() if count > 1]
-    features = extract_ticket_features_batch(arr, config)
     feature_summary = {}
-    for metric in ("soma", "span", "pares", "gap_medio"):
-        vals = features.get(metric)
-        if vals is None or len(vals) == 0:
-            continue
-        feature_summary[metric] = {
-            "media": round(float(np.mean(vals)), 4),
-            "desvio": round(float(np.std(vals)), 4),
-            "min": round(float(np.min(vals)), 4),
-            "max": round(float(np.max(vals)), 4),
-        }
+    if include_dispersao:
+        features = extract_ticket_features_batch(arr, config)
+        for metric in ("soma", "span", "pares", "gap_medio"):
+            vals = features.get(metric)
+            if vals is None or len(vals) == 0:
+                continue
+            feature_summary[metric] = {
+                "media": round(float(np.mean(vals)), 4),
+                "desvio": round(float(np.std(vals)), 4),
+                "min": round(float(np.min(vals)), 4),
+                "max": round(float(np.max(vals)), 4),
+            }
 
     cooc_media = 0.0
     if (
@@ -646,19 +719,15 @@ def portfolio_diagnostics(
         "desvio_exposicao_usadas": round(float(np.std(used_counts)), 4)
         if len(used_counts)
         else 0.0,
-        "overlap_medio": round(float(np.mean(overlaps)), 4) if overlaps else 0.0,
-        "overlap_max": int(max(overlaps) if overlaps else 0),
-        "pares_repetidos": int(len(repeated_pairs)),
-        "pares_repetidos_acima_2": int(
-            sum(1 for count in repeated_pairs if count > 2)
-        ),
-        "max_repeticao_par": int(max(pair_counts.values()) if pair_counts else 0),
-        "trincas_repetidas": int(len(repeated_triples)),
-        "max_repeticao_trinca": int(
-            max(triple_counts.values()) if triple_counts else 0
-        ),
-        "quadras_repetidas": int(len(repeated_quads)),
-        "max_repeticao_quadra": int(max(quad_counts.values()) if quad_counts else 0),
+        "overlap_medio": overlap_medio,
+        "overlap_max": overlap_max,
+        "pares_repetidos": pares_repetidos,
+        "pares_repetidos_acima_2": pares_repetidos_acima_2,
+        "max_repeticao_par": max_repeticao_par,
+        "trincas_repetidas": trincas_repetidas,
+        "max_repeticao_trinca": max_repeticao_trinca,
+        "quadras_repetidas": quadras_repetidas,
+        "max_repeticao_quadra": max_repeticao_quadra,
         "coocorrencia_media": round(cooc_media, 4),
         "dispersao_features": feature_summary,
     }

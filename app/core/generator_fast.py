@@ -65,7 +65,7 @@ def gerar_jogos_vetorizado(
     usar_atrasados: bool = False,
     usar_markov: bool = False,
     usar_ciclo: bool = False,
-    usar_coocorrencia: bool = True,
+    usar_coocorrencia: bool = False,
     historical_signal_strength: float = 1.0,
     percentil_min: float = 5.0,
     percentil_max: float = 95.0,

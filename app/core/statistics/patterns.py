@@ -195,13 +195,16 @@ def detectar_sequencias_longas(
     maior_seq = max(sequencias, key=len)
     tamanho = len(maior_seq)
 
-    # Ajuste por densidade
+    # Ajuste por densidade e tamanho do jogo (Lotomania 50/100 tem maior maior-sequência esperada que Lotofácil 15/25)
     densidade = len(numeros) / config.n_numbers
 
-    # Para LotofÃ¡cil (densidade 60%), sequências de 4-5 são comuns
     if densidade >= 0.5:
-        threshold_alto = 7
-        threshold_medio = 6
+        if len(numeros) >= 30:
+            threshold_medio = 8
+            threshold_alto = 10
+        else:
+            threshold_alto = 7
+            threshold_medio = 6
     else:
         threshold_alto = 5
         threshold_medio = 4

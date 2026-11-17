@@ -130,9 +130,10 @@ def _render_validator_results(relatorio, nums, ctx, svc):
     st.subheader("📋 Veredito do Analista")
 
     if ja_saiu:
-        st.error(
-            "🛑 **PARE AGORA!** Esse jogo **JÁ SAIU** na história da loteria. "
-            "A chance de repetir o mesmo resultado é astronômica. Não jogue dinheiro fora."
+        st.warning(
+            "⚠️ **Combinação já sorteada no histórico.** "
+            "Matematicamente ela mantém a mesma chance individual de qualquer outro volante no próximo sorteio, "
+            "mas repetir exatamente uma combinação premiada costuma atrair apostadores que copiam resultados antigos (maior risco de divisão)."
         )
         st.caption(f"Score Técnico Original: {score_original}/100")
         return  # Interrompe a exibição detalhada se já saiu (regra de UX)
@@ -142,23 +143,23 @@ def _render_validator_results(relatorio, nums, ctx, svc):
     with col_veredicto:
         if score >= 85:
             st.success(
-                "💎 **JOGO DE ELITE!** Estatisticamente forte. "
-                "Este volante tem todas as características dos sorteios premiados. "
+                "💎 **PERFIL ESTRUTURAL TÍPICO!** Bem alinhado às faixas mais frequentes do espaço combinatório. "
+                "Lembrando: todas as apostas válidas têm a mesma chance individual de sorteio; este score avalia equilíbrio estrutural e risco de divisão."
             )
         elif score >= 60:
             st.info(
-                "👍 **JOGO SÓLIDO.** Passou na maioria dos testes, mas tem alguns padrões "
-                "comuns. É um jogo seguro, mas não extraordinário."
+                "👍 **JOGO EQUILIBRADO.** Passou na maioria dos filtros estruturais, com alguns traços "
+                "menos usuais ou leves alertas de concentração/popularidade."
             )
         elif score >= 40:
             st.warning(
-                "⚠️ **JOGO ARRISCADO.** Detectamos padrões viciados (ex: muitas sequências "
-                "ou desequilíbrio par/ímpar). A estatística joga contra você aqui."
+                "⚠️ **JOGO ATÍPICO / CONCENTRADO.** Detectamos padrões visualmente previsíveis ou pouco usuais "
+                "(ex: sequências ou forte desequilíbrio), o que pode aumentar o risco de divisão ou concentrar o volante."
             )
         else:
             st.error(
-                "🗑️ **LIXO ESTATÍSTICO.** Esse jogo viola quase todas os nossos dados estatísticos. "
-                "Jogar isso é quase uma doação para a Caixa. Recomendamos usar o Gerador."
+                "🚨 **PADRÃO MUITO ATÍPICO / POPULAR.** Esse jogo concentra vários alertas estruturais ou padrões humanos comuns. "
+                "Embora tenha a mesma chance matemática individual no sorteio, tende a sofrer maior risco de divisão ou forte concentração."
             )
 
     with col_score:

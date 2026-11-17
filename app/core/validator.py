@@ -40,6 +40,7 @@ except ImportError:
 # Importa constantes com Bonferroni
 from app.core.statistics.constants import (
     ajustar_threshold_por_densidade,
+    ajustar_threshold_inferior_por_densidade,
     ZSCORE_EXTREME,
     ZSCORE_VERY_RARE,
     ZSCORE_RARE,
@@ -169,21 +170,13 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
                 f"⚠️ Soma ({soma}) desviada da média teórica ({media_teorica:.0f})."
             )
 
-    # Regra 2: Pares e Ímpares (com ajuste por densidade)
+    # Regra 2: Pares e Ímpares (limiares proporcionais sem distorção por densidade)
     qtd_numeros = len(numeros)
     pares = sum(1 for n in numeros if n % 2 == 0)
 
     densidade = config.density
-    # Ajusta thresholds por densidade
-    ideal_min_base = 0.35
-    ideal_max_base = 0.65
-
-    ideal_min = int(
-        qtd_numeros * ajustar_threshold_por_densidade(ideal_min_base, densidade)
-    )
-    ideal_max = int(
-        qtd_numeros * ajustar_threshold_por_densidade(ideal_max_base, densidade)
-    )
+    ideal_min = int(math.floor(qtd_numeros * 0.35))
+    ideal_max = int(math.ceil(qtd_numeros * 0.65))
 
     if pares in [0, qtd_numeros]:
         report["score"] -= 25
@@ -259,16 +252,17 @@ def _analise_entropia(report, numeros, config: GameConfig):
         return
 
     entropia = _calcular_entropia_shannon(numeros)
+    report["metricas"]["entropia"] = round(entropia, 3)
 
     k = len(numeros)
     densidade = config.density
 
-    # Ajusta limiares por densidade
+    # Ajusta limiares inferiores por densidade (jogos densos têm gaps menores e menor entropia de gaps)
     limiar_baixo_base = 0.5 if k <= 6 else 1.0
     limiar_alto_base = 2.0 if k <= 6 else 3.5
 
-    limiar_baixo = ajustar_threshold_por_densidade(limiar_baixo_base, densidade)
-    limiar_alto = ajustar_threshold_por_densidade(limiar_alto_base, densidade)
+    limiar_baixo = ajustar_threshold_inferior_por_densidade(limiar_baixo_base, densidade)
+    limiar_alto = ajustar_threshold_inferior_por_densidade(limiar_alto_base, densidade)
 
     if entropia < limiar_baixo:
         report["score"] -= 25
@@ -299,7 +293,7 @@ def _analise_popularidade(report, numeros, config: GameConfig):
     densidade = config.density
 
     # Sequências - ajusta baseado na densidade
-    if densidade > 0.5:
+    if densidade >= 0.5:
         # Alta densidade: espera-se muitas sequências
         limite_seq = max(3, int(qtd * ajustar_threshold_por_densidade(0.8, densidade)))
     else:
@@ -321,7 +315,7 @@ def _analise_popularidade(report, numeros, config: GameConfig):
 
     # Lost numbers - ajusta threshold baseado na densidade
     lost_disponivel = len([n for n in lost_nums if n <= config.n_numbers])
-    if densidade > 0.5:
+    if densidade >= 0.5:
         # Alta densidade: só penaliza se tem todos os Lost disponíveis
         if qtd_lost == lost_disponivel and lost_disponivel >= 4:
             pontos_risco += 1
@@ -486,11 +480,10 @@ def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> N
         report["msgs"].append("⚠️ Análise de primos ignorada: lista de números vazia.")
         return
 
-    # Fração esperada com ajuste por densidade
+    # Fração esperada exata (distribuição hipergeométrica sem reposição)
     densidade = config.density
     frac_primos_universo = len(primos_validos) / config.n_numbers
-    esperado_base = k * frac_primos_universo
-    esperado = ajustar_threshold_por_densidade(esperado_base, densidade)
+    esperado = k * frac_primos_universo
 
     report["metricas"]["qtd_primos"] = qtd_primos
     report["metricas"]["primos_esperado"] = round(esperado, 1)
@@ -516,8 +509,16 @@ def _analise_primos(report: dict, numeros: list[int], config: "GameConfig") -> N
         report["msgs"].append(f"⚠️ Nenhum número primo (esperado ~{esperado:.1f})")
         return
 
-    # Desvio normal (tolerância ajustada por densidade)
-    tolerancia = ajustar_threshold_por_densidade(2.0, densidade)
+    # Desvio normal (mínimo 2 sigma hipergeométrico ou ajuste por densidade)
+    fator_finito = (
+        (config.n_numbers - k) / (config.n_numbers - 1)
+        if config.n_numbers > 1
+        else 1.0
+    )
+    std_primos = math.sqrt(
+        max(0.0, esperado * (1.0 - frac_primos_universo) * max(0.0, fator_finito))
+    )
+    tolerancia = max(ajustar_threshold_por_densidade(2.0, densidade), 2.0 * std_primos)
 
     if abs(qtd_primos - esperado) <= tolerancia:
         report["msgs"].append(f"✅ {qtd_primos} primos (esperado ~{esperado:.1f})")
@@ -688,7 +689,7 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
 
     # 2. Gaps muito regulares
     cv_gaps = metricas.get("cv_gaps")
-    cv_threshold = ajustar_threshold_por_densidade(0.2, densidade)
+    cv_threshold = ajustar_threshold_inferior_por_densidade(0.2, densidade)
     if cv_gaps is not None and cv_gaps < cv_threshold:
         alertas_graves += 1
         detalhes.append("gaps_regulares")
@@ -701,7 +702,7 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
         detalhes.append("multiplos")
 
     # 4. Span muito baixo
-    span_threshold = ajustar_threshold_por_densidade(0.4, densidade)
+    span_threshold = ajustar_threshold_inferior_por_densidade(0.4, densidade)
     if metricas.get("span_relativo", 1.0) < span_threshold:
         alertas_graves += 1
         detalhes.append("span_baixo")
@@ -713,7 +714,7 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
         detalhes.append("linha_concentrada")
 
     # 6. Entropia muito baixa
-    entropia_threshold = ajustar_threshold_por_densidade(1.0, densidade)
+    entropia_threshold = ajustar_threshold_inferior_por_densidade(1.0, densidade)
     if metricas.get("entropia", 2.0) < entropia_threshold:
         alertas_graves += 1
         detalhes.append("baixa_entropia")
@@ -959,8 +960,8 @@ def _analise_estrutural(report: dict, numeros: list[int], config: GameConfig) ->
     densidade = config.density
     span_esperado = config.n_numbers * (len(numeros) - 1) / (len(numeros) + 1)
 
-    threshold_baixo = ajustar_threshold_por_densidade(0.4, densidade)
-    threshold_medio = ajustar_threshold_por_densidade(0.6, densidade)
+    threshold_baixo = ajustar_threshold_inferior_por_densidade(0.4, densidade)
+    threshold_medio = ajustar_threshold_inferior_por_densidade(0.6, densidade)
     threshold_alto = ajustar_threshold_por_densidade(1.4, densidade)
 
     if metricas_gaps["span"] < span_esperado * threshold_baixo:

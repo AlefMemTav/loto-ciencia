@@ -102,13 +102,30 @@ def ajustar_threshold_por_densidade(valor_base: float, densidade: float) -> floa
     0.3   # Sem ajuste
     """
     if densidade >= 0.5:
-        # Jogos muito densos (LotofÃ¡cil, Lotomania): +50% tolerância
+        # Jogos muito densos (Lotofácil, Lotomania): +50% tolerância
         return valor_base * 1.5
     elif densidade >= 0.3:
         # Jogos intermediários: +20% tolerância
         return valor_base * 1.2
     else:
         # Jogos esparsos (Mega-Sena, Quina): sem ajuste
+        return valor_base
+
+
+def ajustar_threshold_inferior_por_densidade(
+    valor_base: float, densidade: float
+) -> float:
+    """
+    Ajusta limiares INFERIORES (abaixo dos quais há penalidade) pela densidade.
+
+    Em limiares inferiores, relaxar tolerância para jogos densos significa
+    reduzir o piso (dividir pelo fator), nunca multiplicá-lo.
+    """
+    if densidade >= 0.5:
+        return valor_base / 1.5
+    elif densidade >= 0.3:
+        return valor_base / 1.2
+    else:
         return valor_base
 
 

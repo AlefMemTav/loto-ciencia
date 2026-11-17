@@ -281,8 +281,8 @@ def render_generator(ctx, svc):
         with col_s3:
             usar_coocorrencia = st.toggle(
                 "Coocorrência",
-                value=True,
-                help="Inclui pares históricos como inclinação fraca.",
+                value=False,
+                help="Inclui pares históricos como inclinação fraca (desligado por padrão: sem ganho em walk-forward; desligado melhora diversidade).",
                 on_change=limpar_sessao,
             )
             frequencia_recente = st.toggle(

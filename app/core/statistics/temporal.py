@@ -325,21 +325,11 @@ def detectar_tendencia_frequencia(
     if df.empty or len(df) < janela * 2:
         return None
 
-    # Calcula frequência móvel
+    # Calcula frequência móvel vetorizada
     n_janelas = len(df) // janela
-    frequencias = []
-
-    for i in range(n_janelas):
-        inicio = i * janela
-        fim = inicio + janela
-        df_janela = df.iloc[inicio:fim]
-
-        count = sum(
-            1
-            for _, row in df_janela.iterrows()
-            if numero in row[config.draw_cols].values
-        )
-        frequencias.append(count / janela)
+    draws = df[config.draw_cols].to_numpy(dtype=int)[: n_janelas * janela]
+    hits = (draws == numero).any(axis=1)
+    frequencias = hits.reshape(n_janelas, janela).mean(axis=1).tolist()
 
     if len(frequencias) < 3:
         return None

@@ -147,7 +147,9 @@ def avaliar_jogo_geometria_estatistica(
         if config.k != qtd_jogada and config.k > 0:
             fator_projecao = qtd_jogada / config.k
             mean_ajustada = dist.mean * fator_projecao
-            std_ajustada = dist.std * np.sqrt(fator_projecao)
+            denom = max(1, config.n_numbers - config.k)
+            fator_var = fator_projecao * max(0.0, (config.n_numbers - qtd_jogada) / denom)
+            std_ajustada = dist.std * np.sqrt(fator_var)
         else:
             mean_ajustada = dist.mean
             std_ajustada = dist.std

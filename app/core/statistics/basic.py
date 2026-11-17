@@ -600,40 +600,51 @@ def calcular_indice_compressibilidade(report: dict, config: "GameConfig") -> dic
         - 'flags_ativas': lista de regularidades detectadas
         - 'penalidade_total': soma das penalidades estruturais
     """
+    from app.core.statistics.constants import (
+        ajustar_threshold_inferior_por_densidade,
+        ajustar_threshold_por_densidade,
+    )
+
     metricas = report.get("metricas", {})
     flags = []
     penalidade_estrutural = 0
+    densidade = getattr(config, "density", 0.0) if config is not None else 0.0
 
     # Flag 1: Baixa entropia de gaps
     entropia = metricas.get("entropia", 2.0)
-    if entropia < 1.0:
+    lim_ent_baixo = ajustar_threshold_inferior_por_densidade(1.0, densidade)
+    lim_ent_mod = ajustar_threshold_inferior_por_densidade(1.5, densidade)
+    if entropia < lim_ent_baixo:
         flags.append("baixa_entropia")
         penalidade_estrutural += 15
-    elif entropia < 1.5:
+    elif entropia < lim_ent_mod:
         flags.append("entropia_moderada")
         penalidade_estrutural += 5
 
     # Flag 2: Gaps muito regulares (CV baixo)
     cv_gaps = metricas.get("cv_gaps", 0.5)
-    if cv_gaps is not None and cv_gaps < 0.2:
+    lim_cv_baixo = ajustar_threshold_inferior_por_densidade(0.2, densidade)
+    lim_cv_mod = ajustar_threshold_inferior_por_densidade(0.3, densidade)
+    if cv_gaps is not None and cv_gaps < lim_cv_baixo:
         flags.append("gaps_regulares")
         penalidade_estrutural += 15
-    elif cv_gaps is not None and cv_gaps < 0.3:
+    elif cv_gaps is not None and cv_gaps < lim_cv_mod:
         flags.append("gaps_pouco_variados")
         penalidade_estrutural += 8
 
     # Flag 3: Simetria por reflexão
     pares_simetricos = metricas.get("pares_simetricos", 0)
-    if pares_simetricos >= 2:
+    lim_sim = ajustar_threshold_por_densidade(2, densidade)
+    if pares_simetricos >= lim_sim:
         flags.append("simetria_forte")
         penalidade_estrutural += 12
-    elif pares_simetricos == 1:
+    elif pares_simetricos >= 1 and lim_sim <= 2:
         flags.append("simetria_leve")
         penalidade_estrutural += 5
 
     # Flag 4: Múltiplos concentrados
     multiplos = metricas.get("multiplos", {})
-    if multiplos.get("fracao_maxima", 0) >= 0.8:
+    if multiplos.get("fracao_maxima", 0) >= ajustar_threshold_por_densidade(0.8, densidade):
         flags.append("multiplos_concentrados")
         penalidade_estrutural += 15
 
@@ -646,17 +657,21 @@ def calcular_indice_compressibilidade(report: dict, config: "GameConfig") -> dic
 
     # Flag 6: Span muito baixo
     span_rel = metricas.get("span_relativo", 0.8)
-    if span_rel < 0.4:
+    lim_span_baixo = ajustar_threshold_inferior_por_densidade(0.4, densidade)
+    lim_span_mod = ajustar_threshold_inferior_por_densidade(0.5, densidade)
+    if span_rel < lim_span_baixo:
         flags.append("span_muito_baixo")
         penalidade_estrutural += 12
-    elif span_rel < 0.5:
+    elif span_rel < lim_span_mod:
         flags.append("span_baixo")
         penalidade_estrutural += 6
 
     # Flag 7: Concentração em linha/coluna
     max_linha = metricas.get("max_numa_linha", 0)
     max_coluna = metricas.get("max_numa_coluna", 0)
-    if max_linha >= 5 or max_coluna >= 4:
+    lim_grid_linha = ajustar_threshold_por_densidade(5, densidade)
+    lim_grid_coluna = ajustar_threshold_por_densidade(4, densidade)
+    if max_linha >= lim_grid_linha or max_coluna >= lim_grid_coluna:
         flags.append("concentracao_grid")
         penalidade_estrutural += 10
 
@@ -695,14 +710,19 @@ def calcular_probabilidade_vitoria(
 ) -> tuple[int, float]:
     """
     Calcula a probabilidade real de acerto do prêmio máximo.
-    Retorna: (total_combinacoes, chance_1_em_x)
+    Quando bet_size > k (ex.: Lotomania aposta 50, sorteia 20), usa
+    C(n, k) / C(bet_size, k).
+    Retorna: (total_combinacoes_equivalentes, chance_1_em_x)
     """
-    # Combinação Simples: C(n, k)
-    # Ex: Lotofácil 25 números, escolhe 15.
-    total_combinacoes = math.comb(config.n_numbers, config.bet_size)
+    if config.bet_size >= config.k:
+        denom_aposta = math.comb(config.bet_size, config.k)
+        espaco_k = math.comb(config.n_numbers, config.k)
+        chance_base = espaco_k / denom_aposta
+        total_combinacoes = round(chance_base)
+    else:
+        chance_base = float(math.comb(config.n_numbers, config.bet_size))
+        total_combinacoes = math.comb(config.n_numbers, config.bet_size)
 
-    # Se o jogo permitir apostas múltiplas (ex: jogar 16 números), a lógica muda,
-    # mas assumindo jogos simples aqui:
-    chance = total_combinacoes / max(1, qtd_apostas)
+    chance = chance_base / max(1, qtd_apostas)
 
     return total_combinacoes, chance

@@ -36,3 +36,4 @@ def render_volante_marcado(nums, config: GameConfig, figsize=(6, 3)):
         )
 
     st.pyplot(fig)
+    plt.close(fig)

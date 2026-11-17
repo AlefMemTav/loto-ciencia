@@ -239,12 +239,42 @@ def _package_index_matrix(
     return packages
 
 
-def _coverage_ratio(games: np.ndarray, group_size: int) -> float:
-    total_possible = len(games) * comb(games.shape[1], group_size)
+def _coverage_ratio(
+    games: np.ndarray, group_size: int, n_numbers: int | None = None
+) -> float:
+    arr = np.asarray(games, dtype=int)
+    if arr.ndim != 2 or len(arr) == 0:
+        return 0.0
+    total_possible = len(arr) * comb(arr.shape[1], group_size)
     if total_possible <= 0:
         return 0.0
+
+    if group_size in (2, 3):
+        n_max = int(n_numbers) if n_numbers is not None else int(arr.max())
+        if arr.min() >= 1 and int(arr.max()) <= n_max:
+            m, k = arr.shape
+            B = np.zeros((m, n_max), dtype=np.int32)
+            B[np.arange(m)[:, None], arr - 1] = 1
+            if np.all(B.sum(axis=1) == k):
+                if group_size == 2:
+                    P = B.T @ B
+                    np.fill_diagonal(P, 0)
+                    unique = int(np.count_nonzero(P)) // 2
+                    return unique / total_possible
+                else:
+                    col_counts = B.sum(axis=0)
+                    unique = 0
+                    for a in np.flatnonzero(col_counts[: max(0, n_max - 2)] > 0):
+                        Ra = B[B[:, a] == 1, a + 1 :]
+                        if Ra.shape[1] < 2:
+                            continue
+                        Pa = Ra.T @ Ra
+                        np.fill_diagonal(Pa, 0)
+                        unique += int(np.count_nonzero(Pa)) // 2
+                    return unique / total_possible
+
     seen = set()
-    for row in games:
+    for row in arr:
         for group in combinations(row.tolist(), group_size):
             seen.add(tuple(sorted(int(n) for n in group)))
     return len(seen) / total_possible
@@ -256,15 +286,25 @@ def _package_score(
     config,
     matriz_coocorrencia=None,
 ) -> tuple[float, dict[str, Any]]:
-    diag = portfolio_diagnostics(games, config, matriz_coocorrencia)
+    diag = portfolio_diagnostics(
+        games,
+        config,
+        matriz_coocorrencia,
+        include_higher_order=False,
+        include_dispersao=False,
+    )
     n_games = len(games)
     if n_games == 0:
         return -1e9, diag
 
     score_mean = float(np.mean(individual_scores))
     score_best = float(np.max(individual_scores))
-    pair_coverage = _coverage_ratio(games, 2)
-    triple_coverage = _coverage_ratio(games, 3) if config.bet_size >= 3 else 0.0
+    pair_coverage = _coverage_ratio(games, 2, n_numbers=config.n_numbers)
+    triple_coverage = (
+        _coverage_ratio(games, 3, n_numbers=config.n_numbers)
+        if config.bet_size >= 3
+        else 0.0
+    )
 
     if config.slug == "mega_sena_sorteio" and n_games >= 20:
         exposure_limit = 5
@@ -381,7 +421,7 @@ def generate_real_game_package(
         null_model_samples=null_model_samples,
         usar_quentes=payload_options.get("usar_quentes", False),
         usar_atrasados=payload_options.get("usar_atrasados", False),
-        usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
+        usar_coocorrencia=payload_options.get("usar_coocorrencia", False),
         historical_signal_strength=payload_options.get(
             "historical_signal_strength",
             1.0,
@@ -400,7 +440,7 @@ def generate_real_game_package(
         quantidade=quantidade,
         n_packages=tournament_packages,
     )
-    package_scores, package_diags = _score_packages(
+    package_scores, _package_diags = _score_packages(
         package_idxs,
         candidate_pool,
         candidate_scores,
@@ -410,6 +450,11 @@ def generate_real_game_package(
     best_idx = int(np.argmax(package_scores))
     selected_idxs = package_idxs[best_idx]
     selected_games = candidate_pool[selected_idxs]
+    selected_diag = portfolio_diagnostics(
+        selected_games,
+        ctx.config,
+        getattr(ctx, "matriz_coocorrencia", None),
+    )
 
     mc_games = _random_games_array(
         rng,
@@ -428,7 +473,7 @@ def generate_real_game_package(
         null_model_samples=null_model_samples,
         usar_quentes=payload_options.get("usar_quentes", False),
         usar_atrasados=payload_options.get("usar_atrasados", False),
-        usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
+        usar_coocorrencia=payload_options.get("usar_coocorrencia", False),
         historical_signal_strength=payload_options.get(
             "historical_signal_strength",
             1.0,
@@ -491,7 +536,7 @@ def generate_real_game_package(
                 "numeros_fixos": payload_options.get("numeros_fixos") or [],
                 "numeros_evitados": payload_options.get("numeros_evitados") or [],
             },
-            "diagnostico_portfolio": package_diags[best_idx],
+            "diagnostico_portfolio": selected_diag,
             "diagnostico_calibracao_score": calibration_diag,
         },
     }

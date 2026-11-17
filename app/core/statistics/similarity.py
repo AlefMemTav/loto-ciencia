@@ -236,12 +236,15 @@ def avaliar_quadrantes_estatistico(
 
         stat = stats_quadrantes[q]
 
-        # Ajuste para jogos grandes (Lotomania)
+        # Ajuste para jogos grandes (Lotomania): variância hipergeométrica exata
+        # Var(m) / Var(k) = (m / k) * (N - m) / (N - k)
         qtd_jogada = len(numeros)
         if config.k != qtd_jogada and config.k > 0:
             fator = qtd_jogada / config.k
             mean_ajustada = stat["mean"] * fator
-            std_ajustada = stat["std"] * np.sqrt(fator)
+            denom = max(1, config.n_numbers - config.k)
+            fator_var = fator * max(0.0, (config.n_numbers - qtd_jogada) / denom)
+            std_ajustada = stat["std"] * np.sqrt(fator_var)
         else:
             mean_ajustada = stat["mean"]
             std_ajustada = stat["std"]
@@ -322,10 +325,20 @@ def calcular_taxa_regressao(
     # Top 20% mais atrasados
     top_atrasados = set(atrasos_passado.nlargest(int(config.n_numbers * 0.2)).index)
 
-    # Quantos saíram nos próximos 'janela' sorteios?
-    saidas = set()
-    for _, row in df_futuro.iterrows():
-        saidas.update(row[config.draw_cols].values)
+    # Quantos saíram nos próximos 'janela' sorteios? (vetorizado)
+    draws_futuro = df_futuro[config.draw_cols].to_numpy(dtype=int)
+    n_num = int(config.n_numbers)
+    B_fut = np.zeros((draws_futuro.shape[0], n_num), dtype=np.int64)
+    valid = (draws_futuro >= 1) & (draws_futuro <= n_num)
+    if np.all(valid):
+        B_fut[np.arange(draws_futuro.shape[0])[:, None], draws_futuro - 1] = 1
+    else:
+        for r_i, row in enumerate(draws_futuro):
+            vals = row[(row >= 1) & (row <= n_num)]
+            B_fut[r_i, vals - 1] = 1
+
+    counts_fut = B_fut.sum(axis=0)
+    saidas = {int(i) + 1 for i in np.flatnonzero(counts_fut > 0)}
 
     retornaram = len(top_atrasados & saidas)
     taxa_retorno = retornaram / len(top_atrasados) if top_atrasados else 0
@@ -334,14 +347,7 @@ def calcular_taxa_regressao(
     try:
         from scipy.stats import spearmanr
 
-        freq_futura = []
-        for num in range(1, config.n_numbers + 1):
-            ocorrencias = sum(
-                1
-                for _, row in df_futuro.iterrows()
-                if num in row[config.draw_cols].values
-            )
-            freq_futura.append(ocorrencias)
+        freq_futura = counts_fut.tolist()
 
         atrasos_array = [
             atrasos_passado.get(i, 0) for i in range(1, config.n_numbers + 1)

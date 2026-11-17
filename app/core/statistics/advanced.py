@@ -24,6 +24,26 @@ from app.core.lottery import GameConfig
 # ============================================
 
 
+def _pair_count_matrix(df: pd.DataFrame, config: GameConfig) -> np.ndarray:
+    """Matriz simétrica (n, n) de co-ocorrências absolutas (diagonal zerada)."""
+    n = int(config.n_numbers)
+    draws = df[config.draw_cols].to_numpy(dtype=int)
+    if draws.size == 0:
+        return np.zeros((n, n), dtype=np.int64)
+    B = np.zeros((draws.shape[0], n), dtype=np.int64)
+    rows_idx = np.arange(draws.shape[0])[:, None]
+    valid = (draws >= 1) & (draws <= n)
+    if np.all(valid):
+        B[rows_idx, draws - 1] = 1
+    else:
+        for r_i, row in enumerate(draws):
+            vals = row[(row >= 1) & (row <= n)]
+            B[r_i, vals - 1] = 1
+    matriz = B.T @ B
+    np.fill_diagonal(matriz, 0)
+    return matriz
+
+
 def matriz_coocorrencia_numeros(df: pd.DataFrame, config: GameConfig) -> np.ndarray:
     """
     Calcula matriz de co-ocorrência normalizada entre números.
@@ -55,15 +75,7 @@ def matriz_coocorrencia_numeros(df: pd.DataFrame, config: GameConfig) -> np.ndar
         return np.zeros((config.n_numbers, config.n_numbers))
 
     n = config.n_numbers
-    matriz = np.zeros((n, n))
-
-    # Conta co-ocorrências
-    for _, row in df.iterrows():
-        nums = row[config.draw_cols].values
-        for i in nums:
-            for j in nums:
-                if i != j:
-                    matriz[i - 1][j - 1] += 1
+    matriz = _pair_count_matrix(df, config).astype(np.float64)
 
     # Normaliza pela frequência esperada
     n_sorteios = len(df)
@@ -109,13 +121,17 @@ def get_pares_mais_frequentes(
     if df.empty:
         return []
 
-    contador_pares = Counter()
+    P = _pair_count_matrix(df, config)
+    pi, pj = np.triu_indices(config.n_numbers, k=1)
+    counts = P[pi, pj]
+    nz_mask = counts > 0
+    if not np.any(nz_mask):
+        return []
 
-    for _, row in df.iterrows():
-        nums = sorted(row[config.draw_cols].values)
-        for i in range(len(nums)):
-            for j in range(i + 1, len(nums)):
-                contador_pares[(nums[i], nums[j])] += 1
+    pi_nz = pi[nz_mask]
+    pj_nz = pj[nz_mask]
+    counts_nz = counts[nz_mask]
+    order = np.argsort(-counts_nz, kind="stable")[:top_n]
 
     # Calcula esperado
     n_sorteios = len(df)
@@ -124,18 +140,14 @@ def get_pares_mais_frequentes(
     )
     esperado = n_sorteios * prob_esperada
 
-    # Monta resultado
-    resultado = []
-    for par, ocorrencias in contador_pares.most_common(top_n):
-        resultado.append(
-            {
-                "par": par,
-                "ocorrencias": ocorrencias,
-                "razao": round(ocorrencias / esperado, 3),
-            }
-        )
-
-    return resultado
+    return [
+        {
+            "par": (int(pi_nz[idx]) + 1, int(pj_nz[idx]) + 1),
+            "ocorrencias": int(counts_nz[idx]),
+            "razao": round(int(counts_nz[idx]) / esperado, 3) if esperado > 0 else 0,
+        }
+        for idx in order
+    ]
 
 
 def get_pares_que_se_repelem(
@@ -161,19 +173,10 @@ def get_pares_que_se_repelem(
     if df.empty:
         return []
 
-    contador_pares = Counter()
-
-    # Inicializa todos os pares possíveis com 0
-    for i in range(1, config.n_numbers + 1):
-        for j in range(i + 1, config.n_numbers + 1):
-            contador_pares[(i, j)] = 0
-
-    # Conta ocorrências
-    for _, row in df.iterrows():
-        nums = sorted(row[config.draw_cols].values)
-        for i in range(len(nums)):
-            for j in range(i + 1, len(nums)):
-                contador_pares[(nums[i], nums[j])] += 1
+    P = _pair_count_matrix(df, config)
+    pi, pj = np.triu_indices(config.n_numbers, k=1)
+    counts = P[pi, pj]
+    order = np.argsort(counts, kind="stable")[:top_n]
 
     # Calcula esperado
     n_sorteios = len(df)
@@ -182,20 +185,14 @@ def get_pares_que_se_repelem(
     )
     esperado = n_sorteios * prob_esperada
 
-    # Ordena do menor para o maior
-    pares_ordenados = sorted(contador_pares.items(), key=lambda x: x[1])
-
-    resultado = []
-    for par, ocorrencias in pares_ordenados[:top_n]:
-        resultado.append(
-            {
-                "par": par,
-                "ocorrencias": ocorrencias,
-                "razao": round(ocorrencias / esperado, 3) if esperado > 0 else 0,
-            }
-        )
-
-    return resultado
+    return [
+        {
+            "par": (int(pi[idx]) + 1, int(pj[idx]) + 1),
+            "ocorrencias": int(counts[idx]),
+            "razao": round(int(counts[idx]) / esperado, 3) if esperado > 0 else 0,
+        }
+        for idx in order
+    ]
 
 
 # ============================================

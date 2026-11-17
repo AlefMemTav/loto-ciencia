@@ -110,6 +110,8 @@ def render_bolao(ctx, svc):
 
         st.markdown("<br>", unsafe_allow_html=True)
 
+        validacoes = [svc.validate(slug, j) for j in jogos_validos]
+
         # Layout Gráfico + Técnico
         col_grafico, col_tecnica = st.columns([1.5, 1])
 
@@ -119,7 +121,9 @@ def render_bolao(ctx, svc):
 
         with col_tecnica:
             with st.container(border=True):
-                _renderizar_analise_qualidade(jogos_validos, todos_numeros, ctx, svc)
+                _renderizar_analise_qualidade(
+                    jogos_validos, todos_numeros, ctx, svc, validacoes=validacoes
+                )
 
         # Lista de Erros (se houver)
         if jogos_invalidos:
@@ -136,15 +140,16 @@ def render_bolao(ctx, svc):
                 )
 
         # Detalhamento Profundo
-        _renderizar_detalhes_profundos(jogos_validos, ctx, svc)
+        _renderizar_detalhes_profundos(
+            jogos_validos, ctx, svc, validacoes=validacoes
+        )
 
         st.markdown("---")
 
         # Compartilhar
         st.subheader("📱 Compartilhar no Grupo")
 
-        # Calcula média rápida para o texto
-        scores_temp = [svc.validate(slug, j)["score"] for j in jogos_validos]
+        scores_temp = [v["score"] for v in validacoes]
         media_temp = sum(scores_temp) / len(scores_temp) if scores_temp else 0
 
         msg_whats = _gerar_texto_whatsapp(stats, media_temp, config)
@@ -341,28 +346,33 @@ def _renderizar_heatmap_bolao(todos_numeros, config: GameConfig):
             )
 
     st.pyplot(fig)
+    plt.close(fig)
 
 
-def _renderizar_analise_qualidade(jogos, todos_numeros, ctx, svc):
+def _renderizar_analise_qualidade(
+    jogos, todos_numeros, ctx, svc, validacoes=None
+):
     """Calcula score médio e mostra números esquecidos."""
     st.markdown("##### 🌡️ Diagnóstico Técnico")
 
     config = ctx.config
     slug = config.slug
 
-    scores = []
+    if validacoes is None:
+        scores = []
+        # Processa barra de progresso
+        prog_bar = st.progress(0, text="Calculando qualidade...")
 
-    # Processa barra de progresso
-    prog_bar = st.progress(0, text="Calculando qualidade...")
+        total = len(jogos)
+        for i, jogo in enumerate(jogos):
+            val = svc.validate(slug, jogo)
+            scores.append(val["score"])
+            if i % 10 == 0:
+                prog_bar.progress((i + 1) / total)
 
-    total = len(jogos)
-    for i, jogo in enumerate(jogos):
-        val = svc.validate(slug, jogo)
-        scores.append(val["score"])
-        if i % 10 == 0:
-            prog_bar.progress((i + 1) / total)
-
-    prog_bar.empty()
+        prog_bar.empty()
+    else:
+        scores = [v["score"] for v in validacoes]
 
     media_score = sum(scores) / len(scores) if scores else 0
 
@@ -420,7 +430,7 @@ def _renderizar_analise_qualidade(jogos, todos_numeros, ctx, svc):
         st.success("🏆 Cobertura Total! Vocês cercaram todos os números do volante.")
 
 
-def _renderizar_detalhes_profundos(jogos, ctx, svc):
+def _renderizar_detalhes_profundos(jogos, ctx, svc, validacoes=None):
     """Exibe a lista detalhada com formatação visual."""
     st.subheader("Detalhes Jogo a Jogo")
 
@@ -429,7 +439,11 @@ def _renderizar_detalhes_profundos(jogos, ctx, svc):
 
     # Tabela visual customizada em vez de expanders padrão
     for i, jogo in enumerate(jogos, 1):
-        val = svc.validate(slug, jogo)
+        val = (
+            validacoes[i - 1]
+            if validacoes is not None
+            else svc.validate(slug, jogo)
+        )
         score = val["score"]
 
         # Definição de estilo por score

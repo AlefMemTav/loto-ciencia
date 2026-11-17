@@ -133,11 +133,39 @@ def calcular_chi_quadrado(df: pd.DataFrame, config: GameConfig) -> dict | None:
 
     f_obs = contagem.values
     total_bolas = len(todos_numeros)
-    f_esp = [total_bolas / config.n_numbers] * config.n_numbers
+    if total_bolas == 0:
+        return None
 
-    chi2_stat, p_chi = chisquare(f_obs, f_exp=f_esp)
+    n_num = config.n_numbers
+    f_esp = np.full(n_num, total_bolas / n_num, dtype=float)
 
-    ks_stat, p_ks = kstest(sorted(todos_numeros), lambda x: x / config.n_numbers)
+    chi2_raw, p_chi_raw = chisquare(f_obs, f_exp=f_esp)
+    if 0 < config.k < n_num and n_num > 1:
+        from scipy.stats import chi2 as chi2_dist
+
+        fator_hiper = (n_num - 1) / (n_num - config.k)
+        chi2_stat = float(chi2_raw * fator_hiper)
+        p_chi = float(chi2_dist.sf(chi2_stat, df=n_num - 1))
+        fator_var_ks = (n_num - config.k) / (n_num - 1)
+    else:
+        chi2_stat = float(chi2_raw)
+        p_chi = float(p_chi_raw)
+        fator_var_ks = 1.0
+
+    # KS discreto para distribuição uniforme em {1..n_numbers} sem reposição
+    cdf_obs = np.cumsum(f_obs) / total_bolas
+    cdf_esp = np.arange(1, n_num + 1, dtype=float) / n_num
+    ks_stat = float(np.max(np.abs(cdf_obs - cdf_esp)))
+
+    if n_num > 1 and fator_var_ks > 0:
+        rng = np.random.default_rng(42)
+        n_sim = 2000
+        sim_counts = rng.multinomial(total_bolas, np.full(n_num, 1.0 / n_num), size=n_sim)
+        sim_cdf = np.cumsum(sim_counts, axis=1) / total_bolas
+        ks_null = np.max(np.abs(sim_cdf - cdf_esp), axis=1) * np.sqrt(fator_var_ks)
+        p_ks = float((np.sum(ks_null >= ks_stat) + 1) / (n_sim + 1))
+    else:
+        p_ks = 1.0
 
     if p_chi > CHI2_HIGH_CONFIDENCE and p_ks > CHI2_HIGH_CONFIDENCE:
         status = "✅ Honesto (Aleatório)"

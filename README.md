@@ -65,12 +65,13 @@ de Hamming, geometria do volante, coocorrência, simetria e progressões.
 
 | Score | Classificação | Interpretação |
 | ---: | --- | --- |
-| 90–100 | Excelente | Distribuição estatisticamente bem equilibrada |
-| 70–89 | Bom | Aposta válida |
-| 50–69 | Regular | Considere revisar alguns critérios |
-| 0–49 | Baixo | Muitos padrões concentrados |
+| 85–100 | Excelente | Distribuição estruturalmente bem equilibrada |
+| 70–84 | Muito Bom | Aposta bem alinhada aos padrões típicos |
+| 55–69 | Bom | Aposta válida com pequenos desvios estruturais |
+| 40–54 | Razoável | Concentração ou padrão popular moderado |
+| 0–39 | Fraco | Muitos padrões concentrados ou populares |
 
-O score mede a qualidade estrutural da combinação; ele **não prevê o resultado** nem
+O score mede o equilíbrio estrutural e o risco de divisão da combinação; ele **não prevê o resultado** nem
 altera a chance de acerto.
 
 ## Instalação

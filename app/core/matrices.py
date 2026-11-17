@@ -82,7 +82,7 @@ def get_matriz_fechamento(
     Adapta-se automaticamente ao tamanho do jogo (k) configurado.
     """
     n = len(numeros_base)
-    k_jogo = config.k
+    k_jogo = config.bet_size
 
     # Tenta pegar matriz otimizada (apenas Lotofácil tem por enquanto)
     template = MatrixCatalog.get_template(n, config.slug)

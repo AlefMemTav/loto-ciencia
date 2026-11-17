@@ -143,8 +143,8 @@ def render_closures(ctx, svc):
                 # 2. Cálculos Financeiros (O Pulo do Gato)
                 custo_otimizado = len(jogos) * config.game_price
 
-                # Custo "Na Raça" (Combinação Total C(n,k))
-                comb_total = math.comb(len(base), config.k)
+                # Custo "Na Raça" (Combinação Total C(n, bet_size))
+                comb_total = math.comb(len(base), config.bet_size)
                 custo_bruto = comb_total * config.game_price
 
                 economia = custo_bruto - custo_otimizado
@@ -200,7 +200,7 @@ def render_closures(ctx, svc):
 
             # Garantia calculada a partir do que foi de fato gerado (sem promessa fixa)
             n_base = len(base)
-            if len(jogos) == math.comb(n_base, config.k):
+            if len(jogos) == math.comb(n_base, config.bet_size):
                 garantia = (
                     "total: todas as combinações da base. Se todos os números sorteados "
                     "estiverem na base, o prêmio máximo está garantido"

@@ -76,7 +76,7 @@ O registro `GAMES_REGISTRY` centraliza as quatro loterias suportadas e seus par�
 | **Mega-Sena** | `mega_sena_sorteio` | $60$ | $6$ | $6$ | $6 \times 10$ | $0.10$ ($10\%$) | $1$ em $50.063.860$ |
 | **Quina** | `quina_sorteio` | $80$ | $5$ | $5$ | $8 \times 10$ | $0.0625$ ($6.25\%$) | $1$ em $24.040.016$ |
 | **Lotofácil** | `loto_facil_sorteio` | $25$ | $15$ | $15$ | $5 \times 5$ | $0.60$ ($60\%$) | $1$ em $3.268.760$ |
-| **Lotomania** | `loto_mania_sorteio` | $100$ | $20$ | $50$ | $10 \times 10$ | $0.50$ ($50\%$) | $1$ em $11.372.635$ |
+| **Lotomania** | `loto_mania_sorteio` | $100$ | $20$ | $50$ | $10 \times 10$ | $0.50$ ($50\%$) | $1$ em $11.372.636$ |
 
 ### 3.2 Geometria do Volante (`BoardLayout` em `models.py`)
 Mapeia qualquer dezena $n \in \{1, \dots, N\}$ para coordenadas bidimensionais zero-based $(r, c)$:
@@ -129,7 +129,7 @@ Isso redefine os limiares críticos de Z-score (`compute_zscore` em `basic.py`, 
 * `ZSCORE_VERY_RARE` $= 2.39$ (evento de $\sim 1.7\%$; penalidade peso $2.0$).
 * `ZSCORE_RARE` $= 1.64$ (evento de $\sim 10\%$; penalidade peso $1.0$).
 
-Além disso, a função `ajustar_threshold_por_densidade(valor_base, densidade)` relaxa os limiares em $+50\%$ para jogos com $d \ge 0.50$ e em $+20\%$ para jogos com $0.30 \le d < 0.50$.
+Além disso, a função `ajustar_threshold_por_densidade(valor_base, densidade)` relaxa limiares **superiores** em $+50\%$ para jogos com $d \ge 0.50$ e em $+20\%$ para $0.30 \le d < 0.50$; inversamente, `ajustar_threshold_inferior_por_densidade(valor_base, densidade)` relaxa limiares **inferiores** (dividindo por $1.5$ ou $1.2$) para métricas como entropia, `cv_gaps` e `span_relativo`, onde jogos densos possuem naturalmente valores menores.
 
 ### 4.2 Tabela de Inteligência (`get_tabela_inteligencia` em `basic.py`)
 Para cada dezena $n \in \{1, \dots, N\}$, consolida:
@@ -141,9 +141,9 @@ Para cada dezena $n \in \{1, \dots, N\}$, consolida:
 
 ### 4.3 Testes de Honestidade e Distribuições (`distributions.py`)
 
-* **Teste Qui-Quadrado ($\chi^2$) e Kolmogorov-Smirnov (`calcular_chi_quadrado`)**: Compara a frequência observada $O_n$ de cada bola com a frequência uniforme esperada $E_n = \frac{T \cdot k}{N}$, onde $T$ é o total de sorteios:
-  \(\chi^2 = \sum_{n=1}^{N} \frac{(O_n - E_n)^2}{E_n}\)
-  Se $p_{\chi^2} > 0.05$ e $p_{\text{KS}} > 0.05$, classifica o sorteio como **Honesto (Aleatório)**.
+* **Teste Qui-Quadrado ($\chi^2$) sem reposição e Kolmogorov-Smirnov discreto (`calcular_chi_quadrado`)**: Compara a frequência observada $O_n$ de cada bola com a frequência uniforme esperada $E_n = \frac{T \cdot k}{N}$, corrigindo a estatística pelo fator de população finita $\frac{N - 1}{N - k}$:
+  \(\chi^2_{\text{hiper}} = \left(\frac{N - 1}{N - k}\right) \sum_{n=1}^{N} \frac{(O_n - E_n)^2}{E_n}\)
+  O $p$-valor de Kolmogorov-Smirnov é obtido para a distribuição **discreta** em $\{1, \dots, N\}$ comparando a FDA empírica com $2.000$ simulações multinomiais escalonadas por $\sqrt{(N - k)/(N - 1)}$. Se $p_{\chi^2} > 0.05$ e $p_{\text{KS}} > 0.05$, classifica o sorteio como **Honesto (Aleatório)**.
 
 * **Análise de Poisson nos Dígitos Finais (`analise_poisson`)**: Verifica se os terminais $0 \dots 9$ seguem a distribuição de Poisson $\text{Poisson}(\lambda_d)$, onde $\lambda_d = T \cdot k \cdot P_{\text{teórica}}(d)$, apontando déficits ou excessos bilaterais com $p < \alpha$.
 * **Estatísticas de Ordem (`calcular_order_statistics`)**: Para um bilhete ordenado $x_{(1)} < x_{(2)} < \dots < x_{(k)}$, a posição esperada da $i$-ésima menor dezena em um sorteio uniforme é:
@@ -283,8 +283,8 @@ A função `score_plausibility_batch` pontua lotes massivos de candidatos combin
 1. **Aderência Central e Penalidade de Caudas Combinatórias**: Premia candidatos próximos à mediana combinatória ($\text{percentil} = 50$) e penaliza violações fora da janela $[\text{percentil\_min}, \text{percentil\_max}]$ (padrão $[5\%, 95\%]$, expandido para $[3\%, 97\%]$ ou $[4\%, 96\%]$ nas estratégias de cauda).
 2. **Prior de Calibração Estrutural**: Soma $0.35 \times \text{calibration\_strength} \times \text{Prior}(b)$.
 3. **Penalidade Anti-Números da Sorte**: Desconta $1.5$ ponto se o bilhete contiver excesso de números culturais $\{3, 7, 9, 11, 13, 21, 27, 33\}$.
-4. **Sinais Históricos Controlados (Clipped)** — *desligados por padrão*: em walk-forward (2.700 a 6.800 sorteios por jogo) quentes, atrasados, Markov e ciclo não se separaram do acaso (coocorrência: nulo em 3 jogos; Lotofácil z = +2,69, que não passa na correção para 28 testes). Quando ligados, incorpora as médias de $Z_{\text{Freq}}$ (peso $0.30$) e $Z_{\text{Gap}}$ (peso $0.22$) truncadas em $[-2.0, 2.0]$ para evitar que uma única bola domine o bilhete.
-5. **Co-ocorrência com Controle de Cauda**: Calcula o Z-score da soma de co-ocorrências do bilhete (`cooc_z`) via indexação triangular superior (`np.triu_indices`). Na estratégia `cauda_controlada`, premia sinergia moderada, mas **penaliza excesso de co-ocorrência** acima de $2.0\sigma\text{--}2.5\sigma$ para evitar sobreposição em cliques viciados.
+4. **Sinais Históricos Controlados (Clipped)** — *desligados por padrão*: em walk-forward (2.700 a 6.800 sorteios por jogo) quentes, atrasados, Markov, ciclo e co-ocorrência não se separaram do acaso após correção para múltiplos testes (co-ocorrência: nulo em 3 jogos; Lotofácil z = +2,69, abaixo do corte de 28 testes). Quando ligados, incorpora as médias de $Z_{\text{Freq}}$ (peso $0.30$) e $Z_{\text{Gap}}$ (peso $0.22$) truncadas em $[-2.0, 2.0]$ para evitar que uma única bola domine o bilhete.
+5. **Co-ocorrência com Controle de Cauda** — *desligada por padrão (`usar_coocorrencia=False`)*: quando habilitada, calcula o Z-score da soma de co-ocorrências do bilhete (`cooc_z`) via indexação triangular superior (`np.triu_indices`). Na estratégia `cauda_controlada`, premia sinergia moderada e penaliza excesso acima de $2.0\sigma\text{--}2.5\sigma$.
 6. **Popularidade Medida, Corte e Ordem de Saída**: Desconta até $2.0 \times \text{força}$ para jogos com percentil de popularidade real acima de $60\%$ e aplica leve correção contra extremos posicionais ($< 5\%$ ou $> 95\%$). Na **Mega-Sena** e na **Quina** (R² de CV $\approx 0{,}18$ e $0{,}51$), há ainda um **corte**: jogos com razão de ganhadores prevista acima de $0{,}75$ (Mega) ou $0{,}80$ (Quina) levam penalidade de $100$ pontos e só entram no pacote se faltarem alternativas (`LIMIAR_RAZAO_GANHADORES`, `usar_corte_popularidade`). Os limiares são o percentil $10$ da razão de ganhadores entre $100$ mil bilhetes aleatórios dentro da faixa estrutural $5\text{--}95$. Lotofácil e Lotomania ficam sem corte (modelo fraco ou reprovado). O corte reduz a chance de **dividir** o prêmio; não altera a chance de acertar.
 7. **Eliminação de Jogos Já Sorteados**: Qualquer combinação presente em `ctx.historico_set` recebe score $-\infty$.
 
@@ -299,7 +299,7 @@ O módulo suporta $3$ estratégias (`balanceada`, `cauda_controlada` e `pura`). 
 
 ### 7.3 Motor 1: Geração Vetorial com Truque Gumbel-Max (`generator_fast.py`)
 O motor `gerar_jogos_vetorizado` realiza amostragem ponderada sem reposição em alta velocidade:
-1. Se habilitados (`usar_quentes`, `usar_atrasados`, `usar_markov`, `usar_ciclo`; **todos desligados por padrão**), combina $Z_{\text{Freq}}$, $Z_{\text{Gap}}$, probabilidades de transição de Markov do último sorteio ($+0.15$) e bônus de gravidade do Ciclo das Dezenas ($+0.80$ para densos, $+0.25$ para esparsos). Com tudo desligado, a amostragem de candidatos é uniforme e a escolha fica por conta dos filtros estruturais, da popularidade e da diversidade do pacote.
+1. Se habilitados (`usar_quentes`, `usar_atrasados`, `usar_markov`, `usar_ciclo`, `usar_coocorrencia`; **todos desligados por padrão**), combina $Z_{\text{Freq}}$, $Z_{\text{Gap}}$, probabilidades de transição de Markov do último sorteio ($+0.15$) e bônus de gravidade do Ciclo das Dezenas ($+0.80$ para densos, $+0.25$ para esparsos). Com tudo desligado, a amostragem de candidatos é uniforme e a escolha fica por conta dos filtros estruturais, da popularidade e da diversidade do pacote.
 2. Aplica **Softmax com Temperatura** ($\tau \in [1.15, 2.0]$ conforme a estratégia):
    \(p_i = \frac{\exp(s_i / \tau)}{\sum_{j=1}^{N} \exp(s_j / \tau)}\)
 3. **Truque Gumbel-Max**: Para gerar dezenas de milhares de jogos sem reposição sem usar loops lentos em Python, soma ruído Gumbel padrão $G_{b,i} = -\ln(-\ln(U_{b,i}))$ aos log-probabilidades:
@@ -322,13 +322,13 @@ Projetado para o momento da aposta real, evitando que o usuário rode o gerador 
 3. **Comparação contra Monte Carlo**: Gera até $5.000$ pacotes puramente aleatórios sob as mesmas restrições e informa o percentil exato e o $p$-valor empírico do pacote campeão.
 
 ### 7.6 Matrizes de Fechamento Combinatório (`matrices.py`)
-Quando o apostador seleciona $n > k$ dezenas base:
+Quando o apostador seleciona $n > k_{\text{bet}}$ dezenas base:
 
 * **Catálogo Otimizado Lotofácil (`MatrixCatalog`)**:
   * $16$ dezenas $\to 3$ jogos.
   * $17$ dezenas $\to 8$ jogos.
   * $18$ dezenas $\to 24$ jogos (Matriz $18\text{-}15\text{-}14\text{-}15$: garante matematicamente pelo menos $14$ acertos se as $15$ dezenas sorteadas estiverem entre as $18$ escolhidas).
-* **Fechamento Dinâmico Universal (`_gerar_fechamento_dinamico`)**: Se $\binom{n}{k} \le 5.000$, gera o desdobramento completo exato; caso contrário, aplica uma redução por **Janela Deslizante Circular** com passo $\lfloor i \cdot k / 2 \rfloor \bmod n$.
+* **Fechamento Dinâmico Universal (`_gerar_fechamento_dinamico`)**: Se $\binom{n}{k_{\text{bet}}} \le 5.000$, gera o desdobramento completo exato; caso contrário, aplica uma redução por **Janela Deslizante Circular** com passo $\lfloor i \cdot k_{\text{bet}} / 2 \rfloor \bmod n$.
 
 ---
 
@@ -341,26 +341,26 @@ A função `validar_jogo` parte de um score inicial de $100$ pontos e executa um
 1. **Verificação de Histórico O(1)**: Consulta se a tupla ordenada já saiu no passado (`ja_saiu = True` zera o score imediatamente).
 2. **Análise Técnica Básica (`_analise_tecnica`)**:
    * Soma dentro do $\text{IC}_{80\%}$ ($0$ pen), no $\text{IC}_{95\%}$ ($-10$ pts) ou fora do $\text{IC}_{95\%}$ ($-25$ pts).
-   * Equilíbrio Par/Ímpar ajustado por densidade ($-10$ a $-25$ pts se extremo).
+   * Equilíbrio Par/Ímpar na faixa proporcional $[\lfloor 0.35 \cdot k_{\text{bet}} \rfloor, \lceil 0.65 \cdot k_{\text{bet}} \rceil]$ ($-10$ a $-25$ pts se extremo).
    * Concentração vertical de linhas vazias ($-5$ pts) e equilíbrio entre metade superior e inferior ($-10$ a $-20$ pts).
    * Repetição excessiva de dígitos finais ($-5$ a $-15$ pts).
 3. **Entropia de Shannon dos Gaps (`_analise_entropia`)**:
    \(H(\text{gaps}) = -\sum_{g} p(g) \log_2 p(g)\)
-   Penaliza padrões regulares com baixa entropia ($-25$ pts e risco de divisão `ALTO`) e concede bônus ($+5$ pts) para alta entropia.
-4. **Heurísticas de Popularidade Humana (`_analise_popularidade` e `_analise_numeros_sortudos`)**: Detecta excesso de datas ($\le 31$), presença da combinação famosa da série *Lost* ($\{4, 8, 15, 16, 23, 42\}$), excesso de sequências consecutivas e concentração de números sortudos culturais.
+   Penaliza padrões regulares com baixa entropia ($-25$ pts e risco de divisão `ALTO`, com limiar inferior ajustado por `ajustar_threshold_inferior_por_densidade`) e concede bônus ($+5$ pts) para alta entropia.
+4. **Heurísticas de Popularidade Humana (`_analise_popularidade` e `_analise_numeros_sortudos`)**: Detecta excesso de datas ($\le 31$), presença da combinação famosa da série *Lost* ($\{4, 8, 15, 16, 23, 42\}$; em jogos densos $d \ge 0.50$, alerta apenas quando todos estão presentes), excesso de sequências consecutivas e concentração de números sortudos culturais.
 5. **Distribuição Espacial pelo Coeficiente de Gini (`_calcular_coeficiente_gini`)**:
    \(G = \frac{2 \sum_{i=1}^{k} i \cdot y_{(i)}}{k \sum_{i=1}^{k} y_{(i)}} - \frac{k + 1}{k}, \quad y_i = \frac{x_i - 1}{N - 1}\)
    Premia $G < 0.15$ ($+5$ pts) e penaliza alta concentração espacial $G > 0.50$ ($-10$ pts).
-6. **Geometria Empírica com Correção de Bonferroni (`_analise_geometrica`)**: Avalia Moldura, Miolo, Cruz, Xis, Cantos, Colunas, Xadrez e Metades contra a distribuição histórica real.
-7. **Propriedades Matemáticas (`_analise_primos`, `_analise_multiplos`, `_analise_quase_reta`)**: Audita quantidade de números primos, concentração de múltiplos de $d \in \{2, 3, 5, 10\}$ e formação de linhas ou colunas quase completas no volante.
-8. **Similaridade de Hamming, Quadrantes e Regressão (`_analises_avancadas`)**: Calcula a menor distância de Hamming $d_H(A, B) = |A \triangle B|$ contra os últimos $100$ sorteios (penalizando $-30$ pts se $d_H = 1$ e $-20$ pts se $d_H = 2$), avalia os $4$ quadrantes e concede bônus ($+5$ pts) se o jogo aproveitar números atrasados quando a regressão à média histórica for estatisticamente significativa ($\rho > 0.30, p < 0.05$).
+6. **Geometria Empírica com Correção de Bonferroni (`_analise_geometrica`)**: Avalia Moldura, Miolo, Cruz, Xis, Cantos, Colunas, Xadrez e Metades contra a distribuição histórica real, projetando média e desvio-padrão com o fator hipergeométrico exato $\sqrt{(k_{\text{bet}}/k)\cdot(N - k_{\text{bet}})/(N - k)}$ quando $k_{\text{bet}} \ne k$.
+7. **Propriedades Matemáticas (`_analise_primos`, `_analise_multiplos`, `_analise_quase_reta`)**: Audita quantidade de números primos (com expectativa hipergeométrica exata $k_{\text{bet}} \cdot M / N$ e tolerância mínima de $2\sigma_{\text{hiper}}$), concentração de múltiplos de $d \in \{2, 3, 5, 10\}$ e formação de linhas ou colunas quase completas no volante.
+8. **Similaridade de Hamming, Quadrantes e Regressão (`_analises_avancadas`)**: Calcula a menor distância de Hamming $d_H(A, B) = |A \triangle B|$ contra os últimos $100$ sorteios (penalizando $-30$ pts se $d_H = 1$ e $-20$ pts se $d_H = 2$), avalia os $4$ quadrantes (também com escala hipergeométrica exata para $k_{\text{bet}} \ne k$) e concede bônus ($+5$ pts) se o jogo aproveitar números atrasados quando a regressão à média histórica for estatisticamente significativa ($\rho > 0.30, p < 0.05$).
 9. **Co-ocorrência Rara e Pares Populares**: Alerta sobre pares que nunca saíram juntos ou pares excessivamente batidos.
 10. **Ordem de Saída e Popularidade Medida**: Integra os percentis de `ordem_saida.py` e `popularidade_medida.py`.
 11. **Análise Estrutural, Motifs, Simetria de Reflexão e Padrões Avançados (`patterns.py`)**:
     * **Simetria de Reflexão (`calcular_simetria_reflexao`)**: Conta quantos pares espelhados $(n, N + 1 - n)$ existem no bilhete.
     * **Progressão Aritmética Geral (`detectar_progressao_aritmetica_geral`)**: Detecta PAs completas de qualquer razão, múltiplos de bases altas via Máximo Divisor Comum ($\text{MDC}(x_1, \dots, x_k) > 1$) e PAs parciais ($\ge 70\%$ de gaps idênticos).
-    * **Sequências Longas, Diagonais e Bordas Extremas**: Penaliza sequências consecutivas $\ge 4$ (ou $\ge 6$ em jogos densos), alinhamentos nas diagonais do volante e concentração nos primeiros ou últimos $20\%$ do universo.
-12. **Raridade Conjunta (`_aplicar_raridade_conjunta`)**: Se $2$ ou $3+$ alertas estruturais graves ocorrerem simultaneamente no mesmo bilhete, aplica penalidade composta adicional de $-8$ a $-15$ pontos.
+    * **Sequências Longas, Diagonais e Bordas Extremas**: Penaliza sequências consecutivas $\ge 4$ em jogos esparsos ($\ge 6$ na Lotofácil e $\ge 8$ na Lotomania com $50$ dezenas), alinhamentos nas diagonais do volante e concentração nos primeiros ou últimos $20\%$ do universo.
+12. **Raridade Conjunta (`_aplicar_raridade_conjunta`)**: Se $2$ ou $3+$ alertas estruturais graves ocorrerem simultaneamente no mesmo bilhete (usando `ajustar_threshold_inferior_por_densidade` para `cv_gaps`, `span_relativo` e `entropia`), aplica penalidade composta adicional de $-8$ a $-15$ pontos.
 13. **Índice de Compressibilidade (`calcular_indice_compressibilidade`)**: Sintetiza todas as flags estruturais em um índice de $0$ a $100$ (`Excelente`, `Bom`, `Regular`, `Compressível`, `Ultra-compressível`).
 
 ---
