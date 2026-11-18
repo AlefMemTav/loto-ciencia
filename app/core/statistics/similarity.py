@@ -9,7 +9,12 @@ distribuição de quadrantes e regressão à média.
 import numpy as np
 import pandas as pd
 from app.core.lottery import GameConfig
-from app.core.statistics.basic import calcular_atrasos, compute_zscore, EPSILON
+from app.core.statistics.basic import (
+    build_draws_binary_matrix,
+    calcular_atrasos,
+    compute_zscore,
+    EPSILON,
+)
 from app.core.statistics.constants import (
     ZSCORE_VERY_RARE,
     PENALTY_SCALE_FACTOR,
@@ -27,6 +32,10 @@ from app.core.statistics.constants import (
 def distancia_hamming(jogo1: list[int], jogo2: list[int]) -> int:
     """
     Conta quantos números são DIFERENTES entre dois jogos.
+
+    Mede ``max(len(set1), len(set2)) - len(set1 & set2)`` (= ``k - |A ∩ B|``
+    quando ambos têm tamanho ``k``), alinhado à definição de número de trocas
+    necessárias e à similaridade ``1 - dist / k``.
 
     Parameters
     ----------
@@ -47,14 +56,18 @@ def distancia_hamming(jogo1: list[int], jogo2: list[int]) -> int:
     """
     set1 = set(jogo1)
     set2 = set(jogo2)
-    return len(set1.symmetric_difference(set2))
+    return max(len(set1), len(set2)) - len(set1 & set2)
 
 
 def calcular_distancia_minima_historico(
-    jogo: list[int], df: pd.DataFrame, config: GameConfig, top_n: int = 100
+    jogo: list[int],
+    df: pd.DataFrame,
+    config: GameConfig,
+    top_n: int | None = None,
+    draws_bin: np.ndarray | None = None,
 ) -> tuple[int, float]:
     """
-    Calcula a menor distância de Hamming entre o jogo e o histórico.
+    Calcula a menor distância de Hamming (em dezenas distintas) contra o histórico.
 
     Parameters
     ----------
@@ -64,85 +77,166 @@ def calcular_distancia_minima_historico(
         DataFrame com histórico de sorteios.
     config : GameConfig
         Configuração do jogo.
-    top_n : int, optional
-        Quantidade de sorteios recentes a verificar (default: 100).
+    top_n : int | None, optional
+        Quantidade de sorteios mais recentes a verificar (default: ``None`` = todo o histórico).
+    draws_bin : np.ndarray | None, optional
+        Matriz binária pré-computada ``(T, N)`` via ``build_draws_binary_matrix``.
 
     Returns
     -------
     tuple[int, float]
-        Tupla (distancia_minima, similaridade_maxima) onde:
-        - distancia_minima: menor distância de Hamming encontrada
-        - similaridade_maxima: 1 - (distancia_minima / tamanho_jogo)
+        Tupla ``(distancia_minima, similaridade_maxima)`` onde:
+        - ``distancia_minima``: ``k - max_acertos``
+        - ``similaridade_maxima``: ``max(0.0, 1 - (distancia_minima / tamanho_jogo))``
     """
-    if df.empty or config.bet_size != config.k:
+    if config.bet_size != config.k:
         return (config.bet_size, 0.0)
 
-    df_recente = df.tail(top_n)
-    jogo_set = set(jogo)
+    if draws_bin is None:
+        if df is None or df.empty:
+            return (config.bet_size, 0.0)
+        draws_bin, _ = build_draws_binary_matrix(df, config)
 
-    distancias = df_recente[config.draw_cols].apply(
-        lambda row: len(jogo_set.symmetric_difference(set(row))), axis=1
+    if len(draws_bin) == 0:
+        return (config.bet_size, 0.0)
+
+    if top_n is not None:
+        if top_n <= 0:
+            return (config.bet_size, 0.0)
+        matrix = draws_bin[-int(top_n) :]
+    else:
+        matrix = draws_bin
+
+    n_num = int(config.n_numbers)
+    valid_cols = np.array(
+        sorted({int(x) - 1 for x in jogo if 1 <= int(x) <= n_num}),
+        dtype=np.int64,
     )
+    if len(valid_cols) == 0 or len(matrix) == 0:
+        return (config.bet_size, 0.0)
 
-    min_dist = int(distancias.min())
-    max_sim = 1 - (min_dist / config.bet_size)
+    acertos = matrix[:, valid_cols].sum(axis=1, dtype=np.int16)
+    max_acertos = int(acertos.max())
+    min_dist = max(0, int(max(len(valid_cols), config.k) - max_acertos))
+    max_sim = max(0.0, 1.0 - (min_dist / config.bet_size))
 
     return (min_dist, max_sim)
 
 
 def penalizar_por_similaridade(
-    report: dict, numeros: list[int], df: pd.DataFrame, config: GameConfig
+    report: dict,
+    numeros: list[int],
+    df: pd.DataFrame,
+    config: GameConfig,
+    draws_bin: np.ndarray | None = None,
 ) -> None:
     """
-    Adiciona penalidades baseadas em distância de Hamming.
+    Adiciona métricas e penalidades calibradas baseadas em distância de Hamming.
 
-    Modifica o report in-place adicionando métricas de similaridade
-    e ajustando o score baseado na proximidade com sorteios anteriores.
-
-    Parameters
-    ----------
-    report : dict
-        Dicionário de relatório a ser modificado.
-    numeros : list[int]
-        Lista de números do jogo.
-    df : pd.DataFrame
-        DataFrame com histórico de sorteios.
-    config : GameConfig
-        Configuração do jogo.
+    Varre todo o histórico (``hamming_historico_min``) e a janela recente dos últimos
+    100 sorteios (``hamming_recente_100``), aplicando penalidades calibradas pela
+    raridade hipergeométrica (densidade e tamanho de sorteio ``k``).
     """
     # Só aplica se o jogo tem mesmo tamanho do sorteio
     if config.bet_size != config.k:
         report["metricas"]["hamming_min"] = "N/A"
+        report["metricas"]["hamming_historico_min"] = "N/A"
+        report["metricas"]["hamming_recente_100"] = "N/A"
         report["metricas"]["similaridade_max"] = "N/A"
         return
 
-    min_dist, max_sim = calcular_distancia_minima_historico(numeros, df, config)
+    if draws_bin is None and df is not None and not df.empty:
+        draws_bin, _ = build_draws_binary_matrix(df, config)
 
-    report["metricas"]["hamming_min"] = min_dist
-    report["metricas"]["similaridade_max"] = round(max_sim, 3)
+    if draws_bin is None or len(draws_bin) == 0:
+        report["metricas"]["hamming_min"] = config.bet_size
+        report["metricas"]["hamming_historico_min"] = config.bet_size
+        report["metricas"]["hamming_recente_100"] = config.bet_size
+        report["metricas"]["acertos_max_historico"] = 0
+        report["metricas"]["acertos_max_recente_100"] = 0
+        report["metricas"]["similaridade_max"] = 0.0
+        report["metricas"]["similaridade_recente_100"] = 0.0
+        return
+
+    min_dist_full, max_sim_full = calcular_distancia_minima_historico(
+        numeros, df, config, top_n=None, draws_bin=draws_bin
+    )
+    min_dist_100, max_sim_100 = calcular_distancia_minima_historico(
+        numeros, df, config, top_n=100, draws_bin=draws_bin
+    )
 
     k = config.bet_size
+    max_hits_full = max(0, k - min_dist_full)
+    max_hits_100 = max(0, k - min_dist_100)
 
-    if min_dist == 0:
-        # Jogo idêntico (já detectado por outro sistema)
-        pass
-    elif min_dist == 1:
-        report["score"] -= 30
+    report["metricas"]["hamming_min"] = min_dist_full
+    report["metricas"]["hamming_historico_min"] = min_dist_full
+    report["metricas"]["hamming_recente_100"] = min_dist_100
+    report["metricas"]["acertos_max_historico"] = max_hits_full
+    report["metricas"]["acertos_max_recente_100"] = max_hits_100
+    report["metricas"]["similaridade_max"] = round(max_sim_full, 3)
+    report["metricas"]["similaridade_recente_100"] = round(max_sim_100, 3)
+
+    if min_dist_full == 0:
+        if len(numeros) == config.k:
+            report["ja_saiu"] = True
+        return
+
+    if min_dist_100 == 1:
+        if config.is_dense:
+            report["score"] -= 12
+            report["msgs"].append(
+                f"⚠️ Quase idêntico a um dos últimos 100 sorteios ({max_hits_100}/{k} acertos, Hamming={min_dist_100})"
+            )
+            if report.get("risco_divisao") == "Baixo":
+                report["risco_divisao"] = "Médio"
+        else:
+            report["score"] -= 25
+            report["msgs"].append(
+                f"🚨 Quase idêntico a sorteio recente nos últimos 100 concursos ({max_hits_100}/{k} acertos; 1 número diferente)"
+            )
+            report["risco_divisao"] = "ALTO"
+    elif min_dist_full == 1:
+        if config.is_dense:
+            report["msgs"].append(
+                f"ℹ️ Já atingiu {max_hits_full}/{k} em concurso antigo (Hamming histórico={min_dist_full}, últimos 100={min_dist_100})"
+            )
+        elif k <= 5:
+            report["score"] -= 5
+            report["msgs"].append(
+                f"ℹ️ Quase idêntico ({max_hits_full}/{k}) a concurso antigo fora dos últimos 100 (Hamming histórico={min_dist_full}, recente={min_dist_100})"
+            )
+        else:
+            report["score"] -= 8
+            report["msgs"].append(
+                f"⚠️ Quase idêntico ({max_hits_full}/{k}) a concurso antigo no histórico (Hamming histórico={min_dist_full}, últimos 100={min_dist_100})"
+            )
+    elif min_dist_100 == 2:
+        if config.is_dense:
+            report["msgs"].append(
+                f"ℹ️ Similaridade natural nos últimos 100 concursos ({max_hits_100}/{k} acertos, Hamming={min_dist_100})"
+            )
+        elif k <= 5:
+            report["score"] -= 3
+            report["msgs"].append(
+                f"ℹ️ Similar a sorteio recente ({max_hits_100}/{k} nos últimos 100; Hamming={min_dist_100})"
+            )
+        else:
+            report["score"] -= 8
+            report["msgs"].append(
+                f"⚠️ Similar a sorteio recente nos últimos 100 concursos ({max_hits_100}/{k}; Hamming={min_dist_100})"
+            )
+            if report.get("risco_divisao") == "Baixo":
+                report["risco_divisao"] = "Médio"
+    elif (not config.is_dense and min_dist_full >= 3) or min_dist_100 >= 4:
         report["msgs"].append(
-            "🚨 Quase idêntico a um sorteio anterior (apenas 1 número diferente)"
+            f"✅ Boa unicidade frente ao histórico (Hamming histórico={min_dist_full}, últimos 100={min_dist_100})"
         )
-        report["risco_divisao"] = "ALTO"
-    elif min_dist == 2:
-        report["score"] -= 20
+    else:
         report["msgs"].append(
-            "⚠️ Muito similar a sorteio anterior (apenas 2 números diferentes)"
+            f"ℹ️ Similaridade dentro do esperado (Hamming histórico={min_dist_full}, últimos 100={min_dist_100})"
         )
-        report["risco_divisao"] = "Médio"
-    elif min_dist <= k // 3:  # Ex: ≤2 diferentes em jogo de 6
-        report["score"] -= 10
-        report["msgs"].append(f"⚠️ Similaridade alta com histórico (Hamming={min_dist})")
-    elif min_dist >= k // 2:
-        report["msgs"].append(f"✅ Jogo suficientemente único (Hamming={min_dist})")
+
 
 
 # ============================================
@@ -376,6 +470,59 @@ def calcular_taxa_regressao(
 # ============================================
 
 
+def _chi2_geometric_gof(
+    gaps_array: np.ndarray,
+    p_teorico: float,
+    min_expected: float = 5.0,
+) -> tuple[float, float]:
+    """Teste Qui-Quadrado agrupado de aderência à distribuição Geométrica(p)."""
+    from scipy.stats import chi2, geom
+
+    n_gaps = len(gaps_array)
+    if n_gaps < int(min_expected * 2):
+        return 0.0, 1.0
+
+    max_gap = int(np.max(gaps_array))
+    obs_counts = np.bincount(gaps_array, minlength=max_gap + 2)[1:]
+
+    grouped_obs: list[float] = []
+    grouped_exp: list[float] = []
+    acc_obs = 0.0
+    acc_prob = 0.0
+    covered_prob = 0.0
+
+    for g in range(1, max_gap + 1):
+        prob_g = float(geom.pmf(g, p_teorico))
+        acc_obs += float(obs_counts[g - 1])
+        acc_prob += prob_g
+        covered_prob += prob_g
+        if acc_prob * n_gaps >= min_expected:
+            grouped_obs.append(acc_obs)
+            grouped_exp.append(acc_prob * n_gaps)
+            acc_obs = 0.0
+            acc_prob = 0.0
+
+    tail_prob = max(0.0, 1.0 - covered_prob) + acc_prob
+    tail_exp = tail_prob * n_gaps
+    if grouped_exp and tail_exp < min_expected:
+        grouped_obs[-1] += acc_obs
+        grouped_exp[-1] += tail_exp
+    elif tail_exp > 0:
+        grouped_obs.append(acc_obs)
+        grouped_exp.append(tail_exp)
+
+    if len(grouped_exp) < 2:
+        return 0.0, 1.0
+
+    obs_arr = np.asarray(grouped_obs, dtype=float)
+    exp_arr = np.asarray(grouped_exp, dtype=float)
+    exp_arr = exp_arr * (obs_arr.sum() / max(1e-12, exp_arr.sum()))
+    chi2_stat = float(np.sum(((obs_arr - exp_arr) ** 2) / np.maximum(exp_arr, 1e-12)))
+    dof = max(1, len(exp_arr) - 1)
+    chi2_pvalue = float(np.clip(chi2.sf(chi2_stat, dof), 0.0, 1.0))
+    return chi2_stat, chi2_pvalue
+
+
 def analisar_gaps_geometricos(
     df: pd.DataFrame,
     config: GameConfig,
@@ -403,42 +550,50 @@ def analisar_gaps_geometricos(
         - 'gaps': lista de gaps observados
         - 'media_gap': média dos gaps
         - 'media_teorica': média teórica (1/p)
-        - 'ks_statistic': estatística do teste KS
-        - 'ks_pvalue': p-value do teste KS
+        - 'ks_statistic': estatística supremum discreta |F_n(g) - F_Geom(g)|
+        - 'ks_pvalue': p-value de aderência discreta
+        - 'chi2_statistic': estatística Qui-Quadrado agrupada
+        - 'chi2_pvalue': p-value Qui-Quadrado agrupado
         - 'conclusao': interpretação do resultado
     """
     if df.empty or numero < 1 or numero > config.n_numbers:
         return None
-    
-    # Encontra índices dos sorteios onde o número apareceu
-    aparicoes = []
-    for idx, row in df.iterrows():
-        if numero in row[config.draw_cols].values:
-            aparicoes.append(idx)
-    
+
+    draw_vals = df[config.draw_cols].to_numpy()
+    aparicoes = np.flatnonzero((draw_vals == numero).any(axis=1))
+
     if len(aparicoes) < 2:
         return {
             'erro': f'Número {numero} apareceu menos de 2 vezes',
-            'aparicoes': len(aparicoes)
+            'aparicoes': int(len(aparicoes))
         }
-    
+
     # Calcula gaps entre aparições consecutivas
-    gaps = [aparicoes[i+1] - aparicoes[i] for i in range(len(aparicoes)-1)]
-    
+    gaps_array = np.diff(aparicoes).astype(int)
+    gaps = gaps_array.tolist()
+    n_gaps = len(gaps_array)
+
     # Probabilidade teórica de aparecer em um sorteio
     p_teorico = config.k / config.n_numbers
-    
+
     # Média teórica do gap (distribuição geométrica)
     media_teorica = 1 / p_teorico
-    
-    # Teste de Kolmogorov-Smirnov
-    # Geom em scipy começa em 1, então ajustamos
+
     try:
-        from scipy.stats import geom, kstest
-        
-        gaps_array = np.array(gaps)
-        ks_stat, ks_pvalue = kstest(gaps_array, geom(p_teorico).cdf)
-        
+        from scipy.stats import geom, kstwo
+
+        max_gap = int(np.max(gaps_array))
+        support = np.arange(1, max_gap + 1, dtype=int)
+        counts = np.bincount(gaps_array, minlength=max_gap + 1)[1:]
+        emp_cdf = np.cumsum(counts) / float(n_gaps)
+        theo_cdf = geom.cdf(support, p_teorico)
+
+        # Estatística KS discreta: sup_{g >= 1} |F_n(g) - F_Geom(g)|
+        # (evita o falso positivo de scipy.stats.kstest em saltos discretos F_n(g^-))
+        ks_stat = float(np.max(np.abs(emp_cdf - theo_cdf)))
+        ks_pvalue = float(np.clip(kstwo.sf(ks_stat, n_gaps), 0.0, 1.0))
+        chi2_stat, chi2_pvalue = _chi2_geometric_gof(gaps_array, p_teorico)
+
         # Interpretação
         if ks_pvalue > 0.05:
             conclusao = "✅ Gaps seguem distribuição geométrica (aleatório)"
@@ -446,17 +601,19 @@ def analisar_gaps_geometricos(
             conclusao = "⚠️ Possível desvio da aleatoriedade"
         else:
             conclusao = "🚨 Gaps não seguem distribuição geométrica"
-        
+
         return {
             'numero': numero,
             'gaps': gaps,
-            'n_gaps': len(gaps),
-            'media_gap': float(np.mean(gaps)),
-            'std_gap': float(np.std(gaps)),
+            'n_gaps': n_gaps,
+            'media_gap': float(np.mean(gaps_array)),
+            'std_gap': float(np.std(gaps_array)),
             'media_teorica': round(media_teorica, 2),
             'p_teorico': round(p_teorico, 4),
             'ks_statistic': round(ks_stat, 4),
             'ks_pvalue': round(ks_pvalue, 4),
+            'chi2_statistic': round(chi2_stat, 4),
+            'chi2_pvalue': round(chi2_pvalue, 4),
             'conclusao': conclusao,
         }
     except ImportError:

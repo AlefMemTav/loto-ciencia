@@ -214,3 +214,37 @@ def test_real_game_mode_returns_auditable_package_without_validator(monkeypatch)
     assert 0 <= result["relatorio"]["percentil_vs_monte_carlo"] <= 100
     assert 0 <= result["relatorio"]["p_empirico_mc_supera_ou_iguala"] <= 1
     assert result["relatorio"]["diagnostico_calibracao_score"]["js_vs_alvo"] >= 0
+    assert "arquetipos_unicos" in result["relatorio"]["diagnostico_portfolio"]
+    assert "entropia_arquetipos" in result["relatorio"]["diagnostico_portfolio"]
+    assert "diagnostico_cobertura_historica" in result["relatorio"]
+    assert "diagnostico_antidivisao" in result["relatorio"]
+
+
+def test_genetic_miner_respects_evitados_and_isolates_global_rng():
+    ctx = _ctx()
+    service = LotteryService()
+
+    np.random.seed(2026)
+    expected_next = float(np.random.rand())
+    np.random.seed(2026)
+
+    evitados = [1, 2, 3, 4, 5, 10, 20, 30, 40, 50]
+    fixos = [7, 14]
+    jogos = service.generate_genetic(
+        MEGASENA.slug,
+        {
+            "quantidade": 3,
+            "estrategia": "balanceada",
+            "numeros_fixos": fixos,
+            "numeros_evitados": evitados,
+            "seed": 42,
+            "null_model_samples": 1000,
+        },
+        ctx=ctx,
+    )
+    actual_next = float(np.random.rand())
+    assert actual_next == expected_next
+    assert len(jogos) == 3
+    for j in jogos:
+        assert all(f in j for f in fixos)
+        assert all(e not in j for e in evitados)

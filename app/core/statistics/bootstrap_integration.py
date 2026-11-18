@@ -181,6 +181,73 @@ def _gerar_conclusao_ic(
         return "ℹ️ Análise inconclusiva"
 
 
+def avaliar_soma_com_ic_bootstrap(
+    soma_jogo: int,
+    ic_boot: Optional[dict],
+    ic_historico: Optional[dict] = None,
+) -> dict:
+    """
+    Avalia a soma do jogo usando um IC Bootstrap pré-computado.
+    """
+    resultado = {
+        "disponivel": False,
+        "ic_bootstrap": None,
+        "comparacao": None,
+        "score_ajuste": 0,
+        "mensagens": [],
+    }
+
+    if not ic_boot:
+        resultado["mensagens"].append(
+            "ℹ️ Bootstrap IC indisponível (histórico insuficiente)"
+        )
+        return resultado
+
+    resultado["disponivel"] = True
+    resultado["ic_bootstrap"] = ic_boot
+
+    no_ic_boot = ic_boot["ic_lower"] <= soma_jogo <= ic_boot["ic_upper"]
+
+    if no_ic_boot:
+        resultado["mensagens"].append(
+            f"✅ Soma ({soma_jogo}) dentro do IC Bootstrap 95% "
+            f"[{ic_boot['ic_lower']:.0f}, {ic_boot['ic_upper']:.0f}]"
+        )
+        resultado["score_ajuste"] = 0
+    else:
+        if soma_jogo < ic_boot["ic_lower"]:
+            distancia = ic_boot["ic_lower"] - soma_jogo
+            direcao = "abaixo"
+        else:
+            distancia = soma_jogo - ic_boot["ic_upper"]
+            direcao = "acima"
+
+        media_boot = ic_boot.get("media_bootstrap") or 1.0
+        desvio_relativo = distancia / media_boot
+
+        if desvio_relativo > 0.15:
+            resultado["score_ajuste"] = -8
+            resultado["mensagens"].append(
+                f"⚠️ Soma muito {direcao} do IC Bootstrap ({distancia:.0f} pontos de diferença)"
+            )
+        else:
+            resultado["score_ajuste"] = -3
+            resultado["mensagens"].append(
+                f"ℹ️ Soma ligeiramente {direcao} do IC Bootstrap"
+            )
+
+    if ic_historico:
+        comparacao = comparar_ic_bootstrap_vs_historico(
+            soma_jogo, ic_boot, ic_historico
+        )
+        resultado["comparacao"] = comparacao
+
+        if comparacao.get("divergencias"):
+            resultado["mensagens"].append(f"📊 {comparacao['conclusao']}")
+
+    return resultado
+
+
 def avaliar_soma_com_bootstrap(
     soma_jogo: int,
     df: pd.DataFrame,
@@ -192,85 +259,8 @@ def avaliar_soma_com_bootstrap(
     Pipeline completo de avaliação de soma com Bootstrap.
 
     Usado no validador quando checkbox está ativado.
-
-    Parameters
-    ----------
-    soma_jogo : int
-        Soma dos números do jogo.
-    df : pd.DataFrame
-        Histórico de sorteios.
-    config : GameConfig
-        Configuração do jogo.
-    ic_historico : dict, optional
-        IC histórico pré-calculado (para comparação).
-    n_iteracoes : int, default=5000
-        Número de reamostras bootstrap.
-
-    Returns
-    -------
-    dict
-        Relatório completo com score, mensagens e comparações.
     """
-    resultado = {
-        "disponivel": False,
-        "ic_bootstrap": None,
-        "comparacao": None,
-        "score_ajuste": 0,
-        "mensagens": [],
-    }
-
-    # Calcula Bootstrap IC
     ic_boot = calcular_bootstrap_ic_com_cache(df, config, n_iteracoes=n_iteracoes)
-
-    if not ic_boot:
-        resultado["mensagens"].append(
-            "ℹ️ Bootstrap IC indisponível (histórico insuficiente)"
-        )
-        return resultado
-
-    resultado["disponivel"] = True
-    resultado["ic_bootstrap"] = ic_boot
-
-    # Verifica se soma está no IC Bootstrap
-    no_ic_boot = ic_boot["ic_lower"] <= soma_jogo <= ic_boot["ic_upper"]
-
-    if no_ic_boot:
-        resultado["mensagens"].append(
-            f"✅ Soma ({soma_jogo}) dentro do IC Bootstrap 95% "
-            f"[{ic_boot['ic_lower']:.0f}, {ic_boot['ic_upper']:.0f}]"
-        )
-        resultado["score_ajuste"] = 0  # Neutro
-    else:
-        # Calcula distância do IC
-        if soma_jogo < ic_boot["ic_lower"]:
-            distancia = ic_boot["ic_lower"] - soma_jogo
-            direcao = "abaixo"
-        else:
-            distancia = soma_jogo - ic_boot["ic_upper"]
-            direcao = "acima"
-
-        # Penalidade proporcional à distância
-        desvio_relativo = distancia / ic_boot["media_bootstrap"]
-
-        if desvio_relativo > 0.15:  # >15% de desvio
-            resultado["score_ajuste"] = -8
-            resultado["mensagens"].append(
-                f"⚠️ Soma muito {direcao} do IC Bootstrap ({distancia:.0f} pontos de diferença)"
-            )
-        else:
-            resultado["score_ajuste"] = -3
-            resultado["mensagens"].append(
-                f"ℹ️ Soma ligeiramente {direcao} do IC Bootstrap"
-            )
-
-    # Comparação com IC Histórico (se disponível)
-    if ic_historico:
-        comparacao = comparar_ic_bootstrap_vs_historico(
-            soma_jogo, ic_boot, ic_historico
-        )
-        resultado["comparacao"] = comparacao
-
-        if comparacao["divergencias"]:
-            resultado["mensagens"].append(f"📊 {comparacao['conclusao']}")
-
-    return resultado
+    return avaliar_soma_com_ic_bootstrap(
+        soma_jogo, ic_boot, ic_historico=ic_historico
+    )

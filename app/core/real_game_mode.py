@@ -122,7 +122,7 @@ def _generate_candidate_pool(
             usar_atrasados=payload_options.get("usar_atrasados", False),
             usar_markov=payload_options.get("usar_markov", False),
             usar_ciclo=payload_options.get("usar_ciclo", False),
-            usar_coocorrencia=payload_options.get("usar_coocorrencia", True),
+            usar_coocorrencia=payload_options.get("usar_coocorrencia", False),
             historical_signal_strength=payload_options.get(
                 "historical_signal_strength", 1.0
             ),
@@ -211,23 +211,38 @@ def _package_index_matrix(
     if quantidade > n_games:
         raise ValueError("Pool de candidatos menor que a quantidade final.")
 
-    score_std = float(game_scores.std())
+    clean_mask = (game_scores > -50.0) & np.isfinite(game_scores)
+    clean_count = int(np.sum(clean_mask))
+    if clean_count >= quantidade:
+        clean_mean = float(game_scores[clean_mask].mean())
+        clean_std = float(game_scores[clean_mask].std())
+    else:
+        clean_mean = float(game_scores.mean())
+        clean_std = float(game_scores.std())
+
     score_z = (
         np.zeros_like(game_scores)
-        if score_std < 1e-9
-        else (game_scores - game_scores.mean()) / score_std
+        if clean_std < 1e-9
+        else (game_scores - clean_mean) / clean_std
     )
-    logits = np.clip(score_z / 1.35, -6.0, 6.0)
+    logits = np.clip(score_z / 1.35, -18.0, 6.0)
     weights = np.exp(logits - logits.max())
-    weights = weights / weights.sum()
+    if clean_count >= quantidade:
+        weights = np.where(clean_mask, weights, 0.0)
+    w_sum = float(weights.sum())
+    if w_sum > 0 and int(np.count_nonzero(weights > 0)) >= quantidade:
+        weights = weights / w_sum
+    else:
+        weights = np.full(n_games, 1.0 / n_games, dtype=float)
 
     packages = np.empty((n_packages, quantidade), dtype=int)
     top_order = np.argsort(game_scores)[::-1]
     packages[0] = top_order[:quantidade]
 
+    pool_cap = clean_count if clean_count >= quantidade else n_games
     for i in range(1, n_packages):
         if i % 5 == 0:
-            top_pool = top_order[: max(quantidade, min(n_games, quantidade * 8))]
+            top_pool = top_order[: max(quantidade, min(pool_cap, quantidade * 8))]
             packages[i] = rng.choice(top_pool, size=quantidade, replace=False)
         else:
             packages[i] = rng.choice(
@@ -299,11 +314,27 @@ def _universe_coverage_ratio(
     return min(1.0, _unique_group_count(arr, group_size, n_numbers=n_numbers) / total_universe)
 
 
+def _fast_js_divergence(p: np.ndarray, q: np.ndarray) -> float:
+    p_arr = np.asarray(p, dtype=float)
+    q_arr = np.asarray(q, dtype=float)
+    p_arr = p_arr / max(1e-12, float(p_arr.sum()))
+    q_arr = q_arr / max(1e-12, float(q_arr.sum()))
+    m = 0.5 * (p_arr + q_arr)
+    mask_p = p_arr > 0
+    mask_q = q_arr > 0
+    kl_pm = float(np.sum(p_arr[mask_p] * np.log2(p_arr[mask_p] / np.maximum(m[mask_p], 1e-12))))
+    kl_qm = float(np.sum(q_arr[mask_q] * np.log2(q_arr[mask_q] / np.maximum(m[mask_q], 1e-12))))
+    return max(0.0, 0.5 * (kl_pm + kl_qm))
+
+
 def _package_score(
     games: np.ndarray,
     individual_scores: np.ndarray,
     config,
     matriz_coocorrencia=None,
+    clusters_cache: dict | None = None,
+    pkg_buckets: np.ndarray | None = None,
+    target_bucket_probs: np.ndarray | None = None,
 ) -> tuple[float, dict[str, Any]]:
     diag = portfolio_diagnostics(
         games,
@@ -311,6 +342,7 @@ def _package_score(
         matriz_coocorrencia,
         include_higher_order=False,
         include_dispersao=False,
+        clusters_cache=clusters_cache,
     )
     n_games = len(games)
     if n_games == 0:
@@ -325,6 +357,7 @@ def _package_score(
         else 0.0
     )
     universe_pair_cov = _universe_coverage_ratio(games, 2, config.n_numbers)
+    arch_entropy = float(diag.get("entropia_arquetipos", 0.0))
 
     if config.slug == "mega_sena_sorteio" and n_games >= 20:
         exposure_limit = 5
@@ -346,16 +379,24 @@ def _package_score(
         pair_limit = 3
     pair_over = max(0, int(diag.get("max_repeticao_par", 0)) - pair_limit)
 
+    js_penalty = 0.0
+    if pkg_buckets is not None and target_bucket_probs is not None and len(pkg_buckets) > 0:
+        counts = np.bincount(pkg_buckets, minlength=len(target_bucket_probs)).astype(float)
+        js_div = _fast_js_divergence(counts, target_bucket_probs)
+        js_penalty = js_div * 2.50
+
     score = (
         score_mean
         + (score_best * 0.12)
         + (pair_non_redundancy * 1.40)
         + (triple_non_redundancy * 0.90)
         + (universe_pair_cov * 1.20)
+        + (arch_entropy * 0.25)
         - (exposure_std * 0.15)
         - (over_exposure * 1.20)
         - (overlap_over * 1.50)
         - (pair_over * 0.90)
+        - js_penalty
     )
     return float(score), diag
 
@@ -366,15 +407,22 @@ def _score_packages(
     game_scores: np.ndarray,
     config,
     matriz_coocorrencia=None,
+    clusters_cache: dict | None = None,
+    candidate_buckets: np.ndarray | None = None,
+    target_bucket_probs: np.ndarray | None = None,
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     scores = np.zeros(len(packages), dtype=float)
     diagnostics: list[dict[str, Any]] = []
     for i, idxs in enumerate(packages):
+        pkg_buckets = candidate_buckets[idxs] if candidate_buckets is not None else None
         score, diag = _package_score(
             games_pool[idxs],
             game_scores[idxs],
             config,
             matriz_coocorrencia,
+            clusters_cache=clusters_cache,
+            pkg_buckets=pkg_buckets,
+            target_bucket_probs=target_bucket_probs,
         )
         scores[i] = score
         diagnostics.append(diag)
@@ -390,6 +438,9 @@ def _refine_package_1opt(
     rng: np.random.Generator,
     matriz_coocorrencia=None,
     max_evals: int = 80,
+    clusters_cache: dict | None = None,
+    candidate_buckets: np.ndarray | None = None,
+    target_bucket_probs: np.ndarray | None = None,
 ) -> tuple[np.ndarray, float]:
     """Refinamento local 1-opt sobre o melhor pacote do torneio."""
     current = selected_idxs.copy()
@@ -400,7 +451,9 @@ def _refine_package_1opt(
 
     used = set(int(i) for i in current.tolist())
     top_order = np.argsort(game_scores)[::-1]
-    replacements = [int(i) for i in top_order if int(i) not in used][: max(16, n_selected * 4)]
+    clean_order = [int(i) for i in top_order if game_scores[int(i)] > -50.0]
+    base_order = clean_order if len(clean_order) > n_selected else [int(i) for i in top_order]
+    replacements = [i for i in base_order if i not in used][: max(16, n_selected * 4)]
     if not replacements:
         return current, best_score
 
@@ -417,11 +470,15 @@ def _refine_package_1opt(
             trial = current.copy()
             old_i = int(trial[pos])
             trial[pos] = cand_i
+            pkg_buckets = candidate_buckets[trial] if candidate_buckets is not None else None
             trial_score, _ = _package_score(
                 games_pool[trial],
                 game_scores[trial],
                 config,
                 matriz_coocorrencia,
+                clusters_cache=clusters_cache,
+                pkg_buckets=pkg_buckets,
+                target_bucket_probs=target_bucket_probs,
             )
             evals += 1
             if trial_score > best_score + 1e-9:
@@ -435,6 +492,111 @@ def _refine_package_1opt(
                 break
 
     return current, best_score
+
+
+def _compute_post_selection_historical_coverage(
+    selected_games: np.ndarray,
+    ctx,
+) -> dict[str, Any]:
+    """
+    Diagnóstico pós-seleção neutro de cobertura histórica do pacote selecionado.
+    Compara a distribuição de acertos máximos por concurso contra a expectativa hipergeométrica.
+    """
+    draws_bin = getattr(ctx, "draws_bin", None)
+    config = getattr(ctx, "config", None)
+    if (
+        draws_bin is None
+        or config is None
+        or not hasattr(draws_bin, "shape")
+        or len(draws_bin) == 0
+        or len(selected_games) == 0
+    ):
+        return {"disponivel": False}
+
+    n_draws, n_numbers = draws_bin.shape
+    m_games, bet_k = selected_games.shape
+    if int(selected_games.min()) < 1 or int(selected_games.max()) > n_numbers:
+        return {"disponivel": False}
+
+    B_sel = np.zeros((m_games, n_numbers), dtype=np.int16)
+    B_sel[np.arange(m_games)[:, None], selected_games - 1] = 1
+    hits_matrix = draws_bin.astype(np.int16, copy=False) @ B_sel.T
+    max_hits = hits_matrix.max(axis=1)
+
+    draw_k = int(config.k)
+    total_comb = max(1, comb(n_numbers, draw_k))
+
+    if draw_k <= 6:
+        tiers = [t for t in (3, 4, 5, 6) if t <= min(draw_k, bet_k)]
+    elif draw_k == 15:
+        tiers = [t for t in (11, 12, 13, 14, 15) if t <= min(draw_k, bet_k)]
+    elif draw_k == 20:
+        tiers = [t for t in (0, 15, 16, 17, 18, 19, 20) if t <= min(draw_k, bet_k)]
+    else:
+        tiers = [max(1, draw_k - 2), max(1, draw_k - 1), draw_k]
+
+    faixas: dict[str, Any] = {}
+    for h in tiers:
+        p_single = (
+            comb(bet_k, h) * comb(max(0, n_numbers - bet_k), draw_k - h) / float(total_comb)
+            if 0 <= draw_k - h <= n_numbers - bet_k
+            else 0.0
+        )
+        obs_tickets = int(np.sum(hits_matrix == h))
+        exp_tickets = float(n_draws * m_games * p_single)
+        obs_concursos = int(np.sum(np.any(hits_matrix == h, axis=1)))
+        p_any = 1.0 - ((1.0 - p_single) ** m_games)
+        exp_concursos = float(n_draws * p_any)
+        faixas[f"{h}_acertos"] = {
+            "bilhetes_observados": obs_tickets,
+            "bilhetes_esperados_h0": round(exp_tickets, 2),
+            "concursos_atingidos": obs_concursos,
+            "concursos_esperados_h0": round(exp_concursos, 2),
+        }
+
+    return {
+        "disponivel": True,
+        "concursos_avaliados": int(n_draws),
+        "media_melhor_acerto_por_concurso": round(float(np.mean(max_hits)), 4),
+        "max_acerto_historico_pacote": int(np.max(max_hits)),
+        "faixas": faixas,
+    }
+
+
+def _compute_post_selection_antidivision(
+    selected_games: np.ndarray,
+    ctx,
+) -> dict[str, Any]:
+    """
+    Diagnóstico pós-seleção de proteção contra divisão de prêmio (anti-multidão).
+    """
+    config = getattr(ctx, "config", None)
+    modelo = getattr(ctx, "modelo_popularidade", None)
+    if config is None or modelo is None or len(selected_games) == 0:
+        return {"disponivel": False}
+
+    from app.core.statistics.popularidade_medida import LIMIAR_RAZAO_GANHADORES
+
+    razoes = np.asarray(modelo.razao_ganhadores_batch(selected_games), dtype=float)
+    pop_pct = np.asarray(modelo.percentil_batch(selected_games), dtype=float)
+    limiar = LIMIAR_RAZAO_GANHADORES.get(getattr(config, "slug", ""))
+
+    # Fator esperado de retenção de prêmio condicional a Poisson(lambda = r) vs apostador médio (lambda = 1)
+    base_share = 1.0 - float(np.exp(-1.0))
+    safe_r = np.maximum(razoes, 1e-4)
+    shares = (1.0 - np.exp(-safe_r)) / safe_r
+    multiplicadores_ev = shares / base_share
+
+    return {
+        "disponivel": True,
+        "limiar_corte_popularidade": round(float(limiar), 4) if limiar is not None else None,
+        "jogos_acima_limiar_corte": int(np.sum(razoes > limiar)) if limiar is not None else 0,
+        "razao_ganhadores_media": round(float(np.mean(razoes)), 4),
+        "razao_ganhadores_min": round(float(np.min(razoes)), 4),
+        "razao_ganhadores_max": round(float(np.max(razoes)), 4),
+        "percentil_popularidade_medio": round(float(np.mean(pop_pct)), 2),
+        "multiplicador_retencao_premio_medio": round(float(np.mean(multiplicadores_ev)), 4),
+    }
 
 
 def generate_real_game_package(
@@ -513,6 +675,34 @@ def generate_real_game_package(
         ),
     )
 
+    clusters_cache = getattr(ctx, "clusters_historicos", None) or getattr(
+        ctx, "clusters_info", None
+    )
+    candidate_buckets = None
+    target_bucket_probs = None
+    if payload_options.get("usar_calibracao_score", True) and float(
+        payload_options.get("calibration_strength", 1.0)
+    ) > 0:
+        from app.core.generator_objective import score_structural_batch
+        from app.core.statistics.score_calibration import (
+            bucket_indices,
+            get_score_calibration_model,
+        )
+
+        cal_scores = score_structural_batch(
+            candidate_pool,
+            ctx.config,
+            n_samples=null_model_samples,
+        )
+        cal_model = get_score_calibration_model(
+            ctx.config,
+            df_historico=getattr(ctx, "df", None),
+            n_samples=null_model_samples,
+            target=payload_options.get("calibration_target", "historico_nulo"),
+        )
+        candidate_buckets = bucket_indices(cal_scores)
+        target_bucket_probs = cal_model.target_probabilities
+
     package_idxs = _package_index_matrix(
         rng,
         candidate_scores,
@@ -525,6 +715,9 @@ def generate_real_game_package(
         candidate_scores,
         ctx.config,
         getattr(ctx, "matriz_coocorrencia", None),
+        clusters_cache=clusters_cache,
+        candidate_buckets=candidate_buckets,
+        target_bucket_probs=target_bucket_probs,
     )
     best_idx = int(np.argmax(package_scores))
     selected_idxs, selected_score = _refine_package_1opt(
@@ -535,12 +728,16 @@ def generate_real_game_package(
         ctx.config,
         rng,
         getattr(ctx, "matriz_coocorrencia", None),
+        clusters_cache=clusters_cache,
+        candidate_buckets=candidate_buckets,
+        target_bucket_probs=target_bucket_probs,
     )
     selected_games = candidate_pool[selected_idxs]
     selected_diag = portfolio_diagnostics(
         selected_games,
         ctx.config,
         getattr(ctx, "matriz_coocorrencia", None),
+        clusters_cache=clusters_cache,
     )
     selected_diag["cobertura_pares_universo"] = round(
         _universe_coverage_ratio(selected_games, 2, ctx.config.n_numbers), 6
@@ -582,15 +779,33 @@ def generate_real_game_package(
             "historico_nulo",
         ),
     )
+    mc_buckets_all = None
+    if target_bucket_probs is not None:
+        from app.core.generator_objective import score_structural_batch
+        from app.core.statistics.score_calibration import bucket_indices
+
+        mc_struct_scores = score_structural_batch(
+            mc_games,
+            ctx.config,
+            n_samples=null_model_samples,
+        )
+        mc_buckets_all = bucket_indices(mc_struct_scores).reshape(
+            monte_carlo_packages, quantidade
+        )
+
     mc_pool = mc_games.reshape(monte_carlo_packages, quantidade, ctx.config.bet_size)
     mc_score_pool = mc_scores_games.reshape(monte_carlo_packages, quantidade)
     mc_package_scores = np.zeros(monte_carlo_packages, dtype=float)
     for i in range(monte_carlo_packages):
+        mc_pkg_buckets = mc_buckets_all[i] if mc_buckets_all is not None else None
         mc_package_scores[i], _diag = _package_score(
             mc_pool[i],
             mc_score_pool[i],
             ctx.config,
             getattr(ctx, "matriz_coocorrencia", None),
+            clusters_cache=clusters_cache,
+            pkg_buckets=mc_pkg_buckets,
+            target_bucket_probs=target_bucket_probs,
         )
 
     percentile_mc = float(
@@ -608,6 +823,14 @@ def generate_real_game_package(
         df_historico=getattr(ctx, "df", None),
         n_samples=null_model_samples,
         target=payload_options.get("calibration_target", "historico_nulo"),
+    )
+    cobertura_historica_diag = _compute_post_selection_historical_coverage(
+        selected_games,
+        ctx,
+    )
+    antidivisao_diag = _compute_post_selection_antidivision(
+        selected_games,
+        ctx,
     )
 
     return {
@@ -634,5 +857,7 @@ def generate_real_game_package(
             },
             "diagnostico_portfolio": selected_diag,
             "diagnostico_calibracao_score": calibration_diag,
+            "diagnostico_cobertura_historica": cobertura_historica_diag,
+            "diagnostico_antidivisao": antidivisao_diag,
         },
     }

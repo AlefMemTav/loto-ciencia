@@ -89,3 +89,16 @@ def test_sinais_podem_ser_religados(service, contextos):
     )
     assert len(desligado) == len(ligado) == 3
     assert desligado != ligado
+
+
+@pytest.mark.parametrize("slug", SLUGS_COM_CORTE)
+def test_corte_popularidade_respeita_limiar_cauda_controlada(service, contextos, slug):
+    ctx = contextos(slug)
+    jogos = service.generate(
+        slug,
+        {"quantidade": 12, "estrategia": "cauda_controlada", "seed": 42, "null_model_samples": 2000},
+        ctx=ctx,
+    )
+    razoes = ctx.modelo_popularidade.razao_ganhadores_batch(np.array(jogos))
+    assert len(jogos) == 12
+    assert (razoes <= LIMIAR_RAZAO_GANHADORES[slug] + 1e-9).all(), razoes

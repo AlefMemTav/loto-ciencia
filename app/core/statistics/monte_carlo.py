@@ -57,33 +57,34 @@ def bootstrap_ic_soma(
     """
     if df.empty:
         return None
-    
-    if random_state is not None:
-        np.random.seed(random_state)
-    
+
+    rng = np.random.default_rng(random_state)
+
     # Calcula somas dos sorteios históricos
-    somas = df[config.draw_cols].sum(axis=1).values
+    somas = df[config.draw_cols].sum(axis=1).to_numpy(dtype=float)
     n_sorteios = len(somas)
-    
-    # Bootstrap: reamostragem com reposição
-    medias_bootstrap = np.zeros(n_iteracoes)
-    for i in range(n_iteracoes):
-        amostra = np.random.choice(somas, size=n_sorteios, replace=True)
-        medias_bootstrap[i] = amostra.mean()
-    
+
+    # Bootstrap vetorizado em blocos para manter reprodutibilidade sem poluir RNG global
+    medias_bootstrap = np.zeros(n_iteracoes, dtype=float)
+    chunk_size = 500
+    for start in range(0, n_iteracoes, chunk_size):
+        end = min(n_iteracoes, start + chunk_size)
+        indices = rng.integers(0, n_sorteios, size=(end - start, n_sorteios))
+        medias_bootstrap[start:end] = somas[indices].mean(axis=1)
+
     # Calcula percentis para o intervalo de confiança
     alpha = 1 - nivel_confianca
     ic_lower = np.percentile(medias_bootstrap, (alpha / 2) * 100)
     ic_upper = np.percentile(medias_bootstrap, (1 - alpha / 2) * 100)
-    
+
     return {
-        'media_bootstrap': float(np.mean(medias_bootstrap)),
-        'std_bootstrap': float(np.std(medias_bootstrap)),
-        'ic_lower': float(ic_lower),
-        'ic_upper': float(ic_upper),
-        'nivel_confianca': nivel_confianca,
-        'n_iteracoes': n_iteracoes,
-        'mediana_bootstrap': float(np.median(medias_bootstrap)),
+        "media_bootstrap": float(np.mean(medias_bootstrap)),
+        "std_bootstrap": float(np.std(medias_bootstrap)),
+        "ic_lower": float(ic_lower),
+        "ic_upper": float(ic_upper),
+        "nivel_confianca": nivel_confianca,
+        "n_iteracoes": n_iteracoes,
+        "mediana_bootstrap": float(np.median(medias_bootstrap)),
     }
 
 

@@ -40,7 +40,7 @@ MIN_CONCURSOS = 300
 MEDIANA_MIN_GANHADORES = 300  # para o ruído de contagem (Poisson) ficar pequeno
 R2_MINIMO = 0.02
 # Corte de popularidade: nos jogos em que o modelo explica bem os ganhadores
-# (R2 de CV com números + estrutura: Quina ~0,54, Mega ~0,19, Lotofácil ~0,13).
+# (R2 de CV com números + estrutura: Quina ~0,55, Mega ~0,20, Lotofácil ~0,29).
 # Valor = razão de ganhadores prevista (1,0 = jogo médio) que deixa de fora
 # os ~85-90% de jogos mais populares dentro da faixa estrutural 5-95.
 # Lotomania permanece sem corte (sinal dos 20 sorteados é fraco para apostas de 50).
@@ -66,6 +66,16 @@ STRUCT_FEATURE_KEYS = (
     "max_final_repetido",
     "max_dezena_repetida",
     "compressibilidade_simples",
+    "moldura",
+    "cruz",
+    "xis",
+    "cantos",
+    "diag_principal",
+    "diag_secundaria",
+    "multiplos_5",
+    "finais_unicos",
+    "simetria_reflexao",
+    "std_linhas",
 )
 
 

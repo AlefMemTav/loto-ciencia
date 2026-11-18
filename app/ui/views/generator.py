@@ -54,7 +54,7 @@ def render_generator(ctx, svc):
             <h2 style="color: #1e293b; margin:0;">⛏️ Mineração de Jogos: <span style="color: {main_color};">{config.name}</span></h2>
             <p style="color: #475569; font-size: 1rem; margin-top: 5px;">
                 Esta engine evita jogos raros e jogos populares: mantém combinações plausíveis e
-                diversas e, na Mega-Sena e na Quina, afasta as que mais costumam ser divididas
+                diversas e, na Mega-Sena, Quina e Lotofácil, afasta as que mais costumam ser divididas
                 com outros apostadores. Não aumenta a chance de acertar.
             </p>
         </div>

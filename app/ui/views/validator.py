@@ -231,12 +231,50 @@ def _render_validator_results(relatorio, nums, ctx, svc):
         nivel_caos = "Alto (Bom)" if entropia > 3.5 else "Baixo (Previsível)"
         st.write(f"- **Imprevisibilidade:** {nivel_caos}")
 
-        # Hamming
-        hamming = metricas.get("hamming_min", 0)
-        if hamming != "N/A":
+        # Hamming (histórico completo vs últimos 100)
+        hamming_hist = metricas.get(
+            "hamming_historico_min", metricas.get("hamming_min", "N/A")
+        )
+        hamming_rec = metricas.get("hamming_recente_100")
+        if hamming_hist != "N/A":
+            if hamming_rec is not None and hamming_rec != "N/A":
+                st.write(
+                    f"- **Originalidade:** Difere {hamming_hist} número(s) no histórico completo "
+                    f"({hamming_rec} nos últimos 100 concursos)."
+                )
+            else:
+                st.write(
+                    f"- **Originalidade:** Difere {hamming_hist} números do sorteio mais parecido da história."
+                )
+
+        # Repetidas do último concurso
+        rep_ult = metricas.get("repetidas_ultimo_sorteio")
+        if isinstance(rep_ult, dict) and "qtd" in rep_ult:
             st.write(
-                f"- **Originalidade:** Difere {hamming} números do sorteio mais parecido da história."
+                f"- **Repetidas do Último Concurso:** {rep_ult['qtd']}/{config.k} "
+                f"(faixa P5–P95: {rep_ult['p5']:.0f}–{rep_ult['p95']:.0f})"
             )
+
+        # Popularidade Medida (ganhadores reais) vs Heurística Comportamental
+        pop_pct = metricas.get("popularidade_medida_percentil")
+        pop_raz = metricas.get("popularidade_medida_razao")
+        if pop_pct is not None:
+            razao_txt = (
+                f" · razão estimada {pop_raz:.2f}x"
+                if pop_raz is not None
+                else ""
+            )
+            st.write(
+                f"- **Popularidade Medida (Ganhadores Reais):** Percentil {pop_pct:.0f}{razao_txt}"
+            )
+
+        pop_heur = metricas.get("popularidade_heuristica")
+        if isinstance(pop_heur, dict):
+            alertas_h = pop_heur.get("alertas", [])
+            if alertas_h:
+                st.write(
+                    f"- **Heurística Comportamental:** {', '.join(alertas_h)}"
+                )
     # 4.CLUSTER PROFILE
     perfil = relatorio.get("perfil_cluster", {})
     if perfil.get("disponivel"):
@@ -387,22 +425,46 @@ def _render_advanced_metrics(metricas):
     """Renderiza métricas avançadas (Hamming, Quadrantes, Regressão)."""
 
     # 1. Distância de Hamming
-    hamming = metricas.get("hamming_min", None)
+    hamming_hist = metricas.get("hamming_historico_min", metricas.get("hamming_min", None))
+    hamming_rec = metricas.get("hamming_recente_100", None)
     similaridade = metricas.get("similaridade_max", None)
 
-    if hamming and hamming != "N/A":
+    if hamming_hist is not None and hamming_hist != "N/A":
         with st.expander("🔍 Análise de Similaridade (Hamming)", expanded=False):
-            col1, col2 = st.columns(2)
-            col1.metric(
-                "Distância Mínima",
-                hamming,
-                help="Quantos números diferentes do sorteio mais próximo",
+            sim_txt = (
+                f"{similaridade:.1%}"
+                if isinstance(similaridade, (int, float))
+                else str(similaridade)
             )
-            col2.metric(
-                "Similaridade Máx.",
-                f"{similaridade:.1%}",
-                help="0% = totalmente diferente, 100% = idêntico",
-            )
+            if hamming_rec is not None and hamming_rec != "N/A":
+                col1, col2, col3 = st.columns(3)
+                col1.metric(
+                    "Distância Mín. (Histórico)",
+                    hamming_hist,
+                    help="Quantos números diferentes do sorteio mais próximo em todo o histórico",
+                )
+                col2.metric(
+                    "Distância Mín. (Últimos 100)",
+                    hamming_rec,
+                    help="Quantos números diferentes do sorteio mais próximo nos últimos 100 concursos",
+                )
+                col3.metric(
+                    "Similaridade Máx.",
+                    sim_txt,
+                    help="0% = totalmente diferente, 100% = idêntico",
+                )
+            else:
+                col1, col2 = st.columns(2)
+                col1.metric(
+                    "Distância Mínima",
+                    hamming_hist,
+                    help="Quantos números diferentes do sorteio mais próximo",
+                )
+                col2.metric(
+                    "Similaridade Máx.",
+                    sim_txt,
+                    help="0% = totalmente diferente, 100% = idêntico",
+                )
 
     # 2. Quadrantes
     quadrantes = metricas.get("quadrantes", None)
@@ -431,8 +493,8 @@ def _render_advanced_metrics(metricas):
                 st.dataframe(df_quad, hide_index=True, width="stretch")
 
     # 3. Regressão à Média (informativo)
-    regressao = metricas.get("regressao", None)
-    if regressao:
+    regressao = metricas.get("regressao_media") or metricas.get("regressao")
+    if isinstance(regressao, dict) and "correlacao" in regressao:
         with st.expander("📈 Validação: Regressão à Média", expanded=False):
             st.caption("Evidência histórica de que números atrasados tendem a sair:")
             col1, col2, col3 = st.columns(3)
@@ -447,6 +509,15 @@ def _render_advanced_metrics(metricas):
                 help="% dos números atrasados que saíram",
             )
             col3.metric("Interpretação", regressao["interpretacao"])
+    elif isinstance(regressao, dict) and regressao.get("status"):
+        with st.expander("📈 Validação: Regressão à Média", expanded=False):
+            st.info(
+                f"{regressao['status']} (mínimo {regressao.get('minimo_necessario', 100)}, "
+                f"disponível {regressao.get('disponivel', 0)})."
+            )
+    elif isinstance(regressao, str) and regressao:
+        with st.expander("📈 Validação: Regressão à Média", expanded=False):
+            st.info(regressao)
 
 
 def _render_cluster_profile(perfil):

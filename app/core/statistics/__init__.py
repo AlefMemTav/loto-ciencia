@@ -6,6 +6,7 @@ incluindo frequências, atrasos, testes de aleatoriedade e análises geométrica
 """
 
 from app.core.statistics.basic import (
+    build_draws_binary_matrix,
     compute_zscore,
     get_numeros_quentes_frios,
     get_historico_jogos,
@@ -138,6 +139,7 @@ from app.core.statistics.clustering import (
 # Bootstrap IC
 from app.core.statistics.bootstrap_integration import (
     avaliar_soma_com_bootstrap,
+    avaliar_soma_com_ic_bootstrap,
     calcular_bootstrap_ic_com_cache,
 )
 
@@ -173,6 +175,7 @@ from app.core.statistics.multiple_testing import (
 
 __all__ = [
     # basic
+    "build_draws_binary_matrix",
     "compute_zscore",
     "get_numeros_quentes_frios",
     "get_historico_jogos",
@@ -263,6 +266,7 @@ __all__ = [
     "resolve_prize_table",
     # bootstrap iC
     "avaliar_soma_com_bootstrap",
+    "avaliar_soma_com_ic_bootstrap",
     "calcular_bootstrap_ic_com_cache",
     # gaps
     "analisar_gaps_geometricos",

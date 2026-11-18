@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import os
 from typing import Any
 
@@ -12,7 +12,7 @@ from app.core.lottery import GameConfig
 from app.core.statistics.feature_percentiles import batch_feature_percentiles
 
 
-SCORE_CALIBRATION_VERSION = "score-cal-v2"
+SCORE_CALIBRATION_VERSION = "score-cal-v3"
 DEFAULT_SCORE_CALIBRATION_SAMPLES = int(
     os.getenv("LOTOSCIENCE_SCORE_CALIBRATION_SAMPLES", "50000")
 )
@@ -33,6 +33,7 @@ class ScoreCalibrationModel:
     history_distribution: dict[str, float]
     null_distribution: dict[str, float]
     target_distribution: dict[str, float]
+    history_mode: str = "exato"
 
     @property
     def target_probabilities(self) -> np.ndarray:
@@ -64,8 +65,6 @@ def _sample_uniform_games(
 
 
 def _history_games(df_historico: Any, config: GameConfig) -> np.ndarray:
-    if config.bet_size != config.k:
-        return np.empty((0, config.bet_size), dtype=int)
     if df_historico is None or getattr(df_historico, "empty", True):
         return np.empty((0, config.k), dtype=int)
     cols = [col for col in config.draw_cols if col in df_historico.columns]
@@ -79,6 +78,16 @@ def _history_games(df_historico: Any, config: GameConfig) -> np.ndarray:
 
 
 def _history_signature(df_historico: Any, config: GameConfig) -> tuple:
+    if df_historico is None or getattr(df_historico, "empty", True):
+        return ("empty", 0)
+    cols = [col for col in config.draw_cols if col in df_historico.columns]
+    if len(cols) != config.k:
+        return ("empty", 0)
+    sub = df_historico[cols]
+    if not bool(sub.isna().to_numpy().any()):
+        first = tuple(sorted(int(n) for n in sub.iloc[0].to_numpy(dtype=int).tolist()))
+        last = tuple(sorted(int(n) for n in sub.iloc[-1].to_numpy(dtype=int).tolist()))
+        return (int(len(sub)), first, last)
     games = _history_games(df_historico, config)
     if len(games) == 0:
         return ("empty", 0)
@@ -177,6 +186,9 @@ def score_structural_from_percentiles(
         "gap_variety": 0.8,
         "entropia_gaps": 0.8,
         "max_quadrante": 0.7,
+        "moldura": 1.0,
+        "cruz": 0.6,
+        "std_linhas": 0.8,
     }
     high_bad_weights = {
         "max_final_repetido": 1.0,
@@ -184,10 +196,15 @@ def score_structural_from_percentiles(
         "max_linha": 0.8,
         "max_coluna": 0.7,
         "max_sequencia": 1.4,
+        "diag_principal": 0.5,
+        "diag_secundaria": 0.5,
+        "simetria_reflexao": 0.5,
+        "gap_regularidade": 0.8,
     }
     low_bad_weights = {
         "min_gap": 1.1,
         "compressibilidade_simples": 1.7,
+        "finais_unicos": 0.7,
     }
 
     for metric, weight in central_weights.items():
@@ -270,7 +287,22 @@ def get_score_calibration_model(
         return cached
 
     history_games = _history_games(df_historico, config)
-    history_scores = score_structural_batch(history_games, config, n_samples=n)
+    draw_config = (
+        replace(config, bet_k=None)
+        if config.bet_size != config.k
+        else config
+    )
+    history_scores = (
+        score_structural_batch(history_games, draw_config, n_samples=n)
+        if len(history_games) > 0
+        else np.array([], dtype=float)
+    )
+    if len(history_scores) == 0:
+        history_mode = "indisponivel"
+    elif config.bet_size != config.k:
+        history_mode = "escala_sorteio_k"
+    else:
+        history_mode = "exato"
 
     slug_seed = sum((i + 1) * ord(ch) for i, ch in enumerate(config.slug))
     rng = np.random.default_rng(DEFAULT_SCORE_CALIBRATION_SEED + slug_seed + n)
@@ -290,6 +322,8 @@ def get_score_calibration_model(
         target_probs = history_probs
     elif target == "nulo":
         target_probs = null_probs
+    elif history_mode == "escala_sorteio_k":
+        target_probs = (history_probs * 0.50) + (null_probs * 0.50)
     else:
         target_probs = (history_probs * 0.70) + (null_probs * 0.30)
 
@@ -302,6 +336,7 @@ def get_score_calibration_model(
         history_distribution=history_dist,
         null_distribution=null_dist,
         target_distribution=_probs_to_dist(target_probs),
+        history_mode=history_mode,
     )
     _CACHE[key] = model
     return model
@@ -362,6 +397,7 @@ def summarize_score_calibration(
         "distribuicao_alvo": model.target_distribution,
         "modelo_version": model.version,
         "n_historico": model.n_history,
+        "modo_historico": model.history_mode,
         "n_amostras_modelo_nulo": model.n_null,
         "target": model.target,
     }
@@ -418,6 +454,7 @@ def score_calibration_diagnostics(
         "chi_square_vs_alvo": chi_square_distance(generated_dist, model.target_distribution),
         "modelo_version": model.version,
         "n_historico": model.n_history,
+        "modo_historico": model.history_mode,
         "n_amostras_modelo_nulo": model.n_null,
         "target": model.target,
     }

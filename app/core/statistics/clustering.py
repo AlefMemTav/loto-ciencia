@@ -75,6 +75,63 @@ def extrair_features_jogo(numeros: List[int], config: GameConfig) -> np.ndarray:
     ])
 
 
+def extrair_features_jogos_batch(
+    jogos: List[List[int]] | np.ndarray,
+    config: GameConfig,
+) -> np.ndarray:
+    """
+    Extrai a matriz (M, 9) de features numéricas de um lote de jogos de forma vetorizada.
+    """
+    if len(jogos) == 0:
+        return np.empty((0, 9), dtype=float)
+
+    try:
+        arr = np.asarray(jogos, dtype=int)
+    except ValueError:
+        return np.array([extrair_features_jogo(list(j), config) for j in jogos], dtype=float)
+
+    if arr.ndim != 2 or arr.shape[1] == 0:
+        return np.array([extrair_features_jogo(list(j), config) for j in jogos], dtype=float)
+
+    arr = np.sort(arr, axis=1)
+    m, n = arr.shape
+    soma = arr.sum(axis=1, dtype=float)
+    media = soma / n
+    prop_pares = (arr % 2 == 0).sum(axis=1, dtype=float) / n
+    metade = config.n_numbers // 2
+    prop_baixos = (arr <= metade).sum(axis=1, dtype=float) / n
+
+    if n > 1:
+        diffs = np.diff(arr, axis=1)
+        gap_medio = diffs.mean(axis=1)
+        gap_std = diffs.std(axis=1)
+        sequencias = (diffs == 1).sum(axis=1, dtype=float)
+    else:
+        gap_medio = np.zeros(m, dtype=float)
+        gap_std = np.zeros(m, dtype=float)
+        sequencias = np.zeros(m, dtype=float)
+
+    finais = arr % 10
+    digits = np.arange(10, dtype=int)[None, None, :]
+    finais_unicos = np.sum(np.any(finais[:, :, None] == digits, axis=1), axis=1, dtype=float)
+    prop_finais_unicos = finais_unicos / n
+    amplitude_rel = (arr[:, -1] - arr[:, 0]).astype(float) / max(1, config.n_numbers)
+
+    return np.column_stack(
+        [
+            soma,
+            media,
+            prop_pares,
+            prop_baixos,
+            gap_medio,
+            gap_std,
+            sequencias,
+            prop_finais_unicos,
+            amplitude_rel,
+        ]
+    )
+
+
 def clusterizar_jogos_kmeans(
     jogos: List[List[int]],
     config: GameConfig,
@@ -101,18 +158,22 @@ def clusterizar_jogos_kmeans(
         Resultado da clusterização:
         - 'labels': cluster de cada jogo
         - 'centroides': características médias de cada cluster
-        - 'silhouette': score de silhouette
+        - 'centroides_norm': centróides no espaço Z padronizado
+        - 'scaler_mean' / 'scaler_scale': parâmetros do StandardScaler
+        - 'dist_p90' / 'dist_p95': limiares empíricos de distância Euclidiana no espaço Z
+        - 'silhouette_score': score de silhouette
         - 'distribuicao': contagem de jogos por cluster
     """
     if len(jogos) < n_clusters:
         return {'erro': 'Número de jogos insuficiente para clusterização'}
     
-    # Extrai features
-    features = np.array([extrair_features_jogo(j, config) for j in jogos])
+    # Extrai features (vetorizado)
+    features = extrair_features_jogos_batch(jogos, config)
     
     # Normaliza
     scaler = StandardScaler()
     features_norm = scaler.fit_transform(features)
+    safe_scale = np.where(scaler.scale_ > 1e-9, scaler.scale_, 1.0)
     
     # K-Means
     kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
@@ -127,8 +188,9 @@ def clusterizar_jogos_kmeans(
     # Distribuição por cluster
     distribuicao = {i: int(np.sum(labels == i)) for i in range(n_clusters)}
     
-    # Características médias por cluster (desnormalizadas)
+    # Características médias por cluster (desnormalizadas e no espaço Z)
     centroides = {}
+    centroides_norm = {}
     feature_names = [
         'soma', 'media', 'prop_pares', 'prop_baixos', 
         'gap_medio', 'gap_std', 'sequencias', 
@@ -139,14 +201,44 @@ def clusterizar_jogos_kmeans(
         mask = labels == i
         if np.sum(mask) > 0:
             centro = features[mask].mean(axis=0)
+            centro_norm = features_norm[mask].mean(axis=0)
             centroides[i] = {name: round(float(val), 3) for name, val in zip(feature_names, centro)}
-    
+            centroides_norm[i] = [round(float(val), 6) for val in centro_norm]
+        else:
+            centro_norm = kmeans.cluster_centers_[i]
+            centro = centro_norm * safe_scale + scaler.mean_
+            centroides[i] = {name: round(float(val), 3) for name, val in zip(feature_names, centro)}
+            centroides_norm[i] = [round(float(val), 6) for val in centro_norm]
+
+    assigned_centers = np.array(
+        [centroides_norm[int(lbl)] for lbl in labels],
+        dtype=float,
+    )
+    dists_norm = np.linalg.norm(features_norm - assigned_centers, axis=1)
+    dist_media = float(np.mean(dists_norm)) if len(dists_norm) else 0.0
+    dist_std = float(np.std(dists_norm)) if len(dists_norm) else 0.0
+    dist_p90 = float(np.percentile(dists_norm, 90)) if len(dists_norm) else 3.5
+    dist_p95 = float(np.percentile(dists_norm, 95)) if len(dists_norm) else 4.0
+    dist_quantis = (
+        [round(float(q), 6) for q in np.quantile(dists_norm, np.linspace(0.0, 1.0, 21))]
+        if len(dists_norm)
+        else []
+    )
+
     return {
         'labels': labels.tolist(),
         'n_clusters': n_clusters,
         'silhouette_score': round(silhouette, 4),
         'distribuicao': distribuicao,
         'centroides': centroides,
+        'centroides_norm': centroides_norm,
+        'scaler_mean': [round(float(x), 6) for x in scaler.mean_],
+        'scaler_scale': [round(float(x), 6) for x in safe_scale],
+        'dist_media': round(dist_media, 4),
+        'dist_std': round(dist_std, 4),
+        'dist_p90': round(dist_p90, 4),
+        'dist_p95': round(dist_p95, 4),
+        'distancias_quantis': dist_quantis,
         'feature_names': feature_names,
     }
 
@@ -183,7 +275,7 @@ def clusterizar_jogos_dbscan(
         return {'erro': 'Número de jogos insuficiente'}
     
     # Extrai e normaliza features
-    features = np.array([extrair_features_jogo(j, config) for j in jogos])
+    features = extrair_features_jogos_batch(jogos, config)
     scaler = StandardScaler()
     features_norm = scaler.fit_transform(features)
     
@@ -240,7 +332,7 @@ def encontrar_numero_otimo_clusters(
     dict
         Análise com inércias, silhouettes e k ótimo sugerido.
     """
-    features = np.array([extrair_features_jogo(j, config) for j in jogos])
+    features = extrair_features_jogos_batch(jogos, config)
     scaler = StandardScaler()
     features_norm = scaler.fit_transform(features)
     

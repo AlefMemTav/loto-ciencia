@@ -7,9 +7,7 @@ Versão 2.2: OTIMIZAÇÕES DE PERFORMANCE
 """
 
 import numpy as np
-import random
 from typing import List, Optional
-from app.core.logger import logger
 from app.core.generator_objective import score_plausibility_batch
 from app.core.strategies import normalizar_estrategia
 
@@ -19,92 +17,19 @@ class GeneticMiner:
         self,
         ctx,
         estrategia: str = "balanceada",
-        seed: int = None,
+        seed: Optional[int] = None,
         objective_options: dict | None = None,
     ):
-        # Reprodutibilidade: define seed se fornecido
-        if seed is not None:
-            import random
-
-            np.random.seed(seed)
-            random.seed(seed)
+        self.rng = np.random.default_rng(seed)
         self.ctx = ctx
         self.config = ctx.config
         estrategia = normalizar_estrategia(estrategia)
         self.estrategia = estrategia
-        self.objective_options = objective_options or {}
+        self.objective_options = dict(objective_options or {})
 
         self.bet_k = self.config.bet_size
         self.n_numbers = self.config.n_numbers
-
-        # Pesos + Estratégia
-        raw_pesos = (
-            getattr(ctx, "pesos_dinamicos", None)
-            if hasattr(ctx, "pesos_dinamicos")
-            else None
-        )
-        if not raw_pesos:
-            raw_pesos = {"w_freq": 0.5, "w_gap": 0.5}
-
-        if estrategia == "cauda_controlada":
-            w_freq_temp, w_gap_temp = 0.2, 0.8
-        elif estrategia == "pura":
-            w_freq_temp, w_gap_temp = 0.5, 0.5
-        else:
-            densidade = self.config.density
-            if densidade < 0.15:
-                w_freq_temp = max(float(raw_pesos.get("w_freq", 0.5)), 0.7)
-                w_gap_temp = min(float(raw_pesos.get("w_gap", 0.5)), 0.3)
-            else:
-                w_freq_temp = float(raw_pesos.get("w_freq", 0.5))
-                w_gap_temp = float(raw_pesos.get("w_gap", 0.5))
-
-        total_w = w_freq_temp + w_gap_temp
-        if not np.isfinite(total_w) or total_w <= 0:
-            total_w = 1.0
-            w_freq_temp, w_gap_temp = 0.5, 0.5
-
-        self.pesos = {"w_freq": w_freq_temp / total_w, "w_gap": w_gap_temp / total_w}
-
-        # Modo pura: fitness caótico + penalidades atenuadas
         self.modo_pura = estrategia == "pura"
-
-        # Blindagem de Alinhamento (Scatter)
-        self.z_freq_aligned = np.zeros(self.n_numbers, dtype=np.float64)
-        self.z_gap_aligned = np.zeros(self.n_numbers, dtype=np.float64)
-
-        df_raw = ctx.tabela.copy()
-        # Padronizado: cada coluna já representa a bola 1, 2, ..., N
-        bolas_indices = np.arange(1, self.n_numbers + 1)
-
-        vals_freq = df_raw["Z_Freq"].values
-        vals_gap = df_raw["Z_Gap"].values
-
-        mask_safe = (bolas_indices >= 1) & (bolas_indices <= self.n_numbers)
-        dest_indices = bolas_indices[mask_safe] - 1
-
-        self.z_freq_aligned[dest_indices] = vals_freq[mask_safe]
-        self.z_gap_aligned[dest_indices] = vals_gap[mask_safe]
-
-        # Pré-cálculo de vetores Markov e Ciclo
-        self.z_markov = np.zeros(self.n_numbers, dtype=np.float64)
-        self.z_ciclo = np.zeros(self.n_numbers, dtype=np.float64)
-
-        if hasattr(ctx, "matriz_transicao") and ctx.matriz_transicao is not None:
-            last_draw = ctx.df.iloc[-1][self.config.draw_cols].values
-            for num_ant in last_draw:
-                if 1 <= num_ant <= self.n_numbers:
-                    self.z_markov += ctx.matriz_transicao[num_ant - 1]
-            if self.z_markov.max() > 0:
-                self.z_markov /= self.z_markov.max()
-
-        if hasattr(ctx, "ciclo_atual") and ctx.ciclo_atual:
-            faltam = ctx.ciclo_atual.get("faltam_sair", [])
-            if faltam:
-                peso = 2.0 if self.config.is_dense else 0.5
-                indices = np.array(faltam) - 1
-                validos = indices[(indices >= 0) & (indices < self.n_numbers)]
-                self.z_ciclo[validos] = peso
 
     def _fitness(
         self, populacao: np.ndarray, fixos: Optional[List[int]] = None
@@ -140,14 +65,14 @@ class GeneticMiner:
         genes_uniao = np.union1d(pai1, pai2)
 
         if len(genes_uniao) >= k_game:
-            filho = np.random.choice(genes_uniao, k_game, replace=False)
+            filho = self.rng.choice(genes_uniao, k_game, replace=False)
         else:
             faltam = k_game - len(genes_uniao)
             candidatos_extra = np.setdiff1d(pool_livre, genes_uniao)
             if len(candidatos_extra) < faltam:
                 filho = pai1.copy()
             else:
-                extra = np.random.choice(candidatos_extra, faltam, replace=False)
+                extra = self.rng.choice(candidatos_extra, faltam, replace=False)
                 filho = np.concatenate([genes_uniao, extra])
 
         filho.sort()
@@ -168,25 +93,30 @@ class GeneticMiner:
         geracoes: int = 50,
         qtd_final: int = 5,
         fixos: Optional[List[int]] = None,
+        evitados: Optional[List[int]] = None,
     ) -> List[List[int]]:
 
         n_numbers = self.n_numbers
         k = self.bet_k
 
-        fixos = sorted(fixos) if fixos else []
+        fixos = sorted(set(int(x) for x in (fixos or [])))
+        evitados = sorted(set(int(x) for x in (evitados or [])) - set(fixos))
         n_fixos = len(fixos)
         k_livre = k - n_fixos
 
         if k_livre <= 0:
-            return [fixos] * qtd_final
+            return [fixos[:k]] * qtd_final
 
-        pool = np.arange(1, n_numbers + 1)
-        pool_livre = np.setdiff1d(pool, fixos) if fixos else pool
+        pool = np.arange(1, n_numbers + 1, dtype=int)
+        bloqueados = sorted(set(fixos + evitados))
+        pool_livre = np.setdiff1d(pool, bloqueados) if bloqueados else pool
+        if len(pool_livre) < k_livre:
+            raise ValueError("Restrições de fixos/evitados impossibilitam preencher o jogo.")
 
         # Gênese
         populacao = np.array(
             [
-                np.random.choice(pool_livre, k_livre, replace=False)
+                self.rng.choice(pool_livre, k_livre, replace=False)
                 for _ in range(tamanho_populacao)
             ],
             dtype=int,
@@ -205,27 +135,29 @@ class GeneticMiner:
             pool_livre_arr = np.array(pool_livre, dtype=int)
 
             while len(filhos) < (tamanho_populacao - n_elite):
-                pai1 = populacao[np.random.randint(0, n_elite)]
-                pai2 = populacao[np.random.randint(0, tamanho_populacao)]
+                pai1 = populacao[int(self.rng.integers(0, n_elite))]
+                pai2 = populacao[int(self.rng.integers(0, tamanho_populacao))]
                 filho = self._crossover_set(pai1, pai2, pool_livre_arr)
                 filhos.append(filho)
 
             populacao_nova = np.vstack([elite, np.array(filhos, dtype=int)])
 
             # Mutação
-            mask_mutacao = np.random.rand(tamanho_populacao) < 0.20
+            mask_mutacao = self.rng.random(tamanho_populacao) < 0.20
             mask_mutacao[:3] = False
 
-            indices_mutar = np.where(mask_mutacao)[0]
-            for idx in indices_mutar:
-                genes_troca = 2 if np.random.random() > 0.5 else 1
-                for _ in range(genes_troca):
-                    gene_idx = np.random.randint(0, k_livre)
-                    novo_gene = np.random.choice(pool_livre)
-                    while novo_gene in populacao_nova[idx]:
-                        novo_gene = np.random.choice(pool_livre)
-                    populacao_nova[idx, gene_idx] = novo_gene
-                populacao_nova[idx].sort()
+            if len(pool_livre) > k_livre:
+                indices_mutar = np.where(mask_mutacao)[0]
+                for idx in indices_mutar:
+                    genes_troca = 2 if self.rng.random() > 0.5 else 1
+                    for _ in range(genes_troca):
+                        disponiveis_mut = np.setdiff1d(pool_livre, populacao_nova[idx])
+                        if len(disponiveis_mut) == 0:
+                            break
+                        gene_idx = int(self.rng.integers(0, k_livre))
+                        novo_gene = int(self.rng.choice(disponiveis_mut))
+                        populacao_nova[idx, gene_idx] = novo_gene
+                    populacao_nova[idx].sort()
 
             populacao = populacao_nova
 
@@ -236,6 +168,7 @@ class GeneticMiner:
 
         best_score = float(scores_finais[ranking_final[0]])
         populacao_ordenada = populacao[ranking_final]
+        scores_ordenados = scores_finais[ranking_final]
 
         jogos_unicos_livres: List[np.ndarray] = []
         hashes_vistos = set()
@@ -243,7 +176,9 @@ class GeneticMiner:
         fator_overlap = self.config.get_overlap_limit() / self.config.bet_size
         limite_comum = int(k_livre * fator_overlap)
 
-        for jogo_arr in populacao_ordenada:
+        for jogo_arr, sc in zip(populacao_ordenada, scores_ordenados):
+            if float(sc) <= -1e8:
+                continue
             t = tuple(jogo_arr.tolist())
             if t in hashes_vistos:
                 continue
@@ -260,37 +195,36 @@ class GeneticMiner:
         # Fallback
         tentativas = 0
         max_tentativas = 500
-        pool_lista = pool_livre.tolist()
 
         while len(jogos_unicos_livres) < qtd_final and tentativas < max_tentativas:
             tentativas += 1
 
-            if jogos_unicos_livres:
+            if jogos_unicos_livres and len(pool_livre) > k_livre:
                 base = jogos_unicos_livres[0].tolist()
-                idx_rem = random.randint(0, len(base) - 1)
+                idx_rem = int(self.rng.integers(0, len(base)))
                 base.pop(idx_rem)
 
-                cand = random.choice(pool_lista)
-                while cand in base:
-                    cand = random.choice(pool_lista)
-                base.append(cand)
-                base.sort()
+                cands_livres = [int(x) for x in pool_livre if int(x) not in base]
+                if cands_livres:
+                    cand = int(self.rng.choice(cands_livres))
+                    base.append(cand)
+                    base.sort()
 
-                arr = np.array(base, dtype=int)
-                t = tuple(arr.tolist())
+                    arr = np.array(base, dtype=int)
+                    t = tuple(arr.tolist())
 
-                if t not in hashes_vistos:
-                    min_score = -9999 if self.modo_pura else (best_score - 40)
-                    score_arr = self._fitness(np.array([arr], dtype=int), fixos=fixos)
-                    if float(score_arr[0]) > min_score:
-                        if self._passa_overlap(
-                            arr, jogos_unicos_livres, limite_comum=limite_comum
-                        ):
-                            hashes_vistos.add(t)
-                            jogos_unicos_livres.append(arr)
-                            continue
+                    if t not in hashes_vistos:
+                        min_score = -9999 if self.modo_pura else (best_score - 40)
+                        score_arr = self._fitness(np.array([arr], dtype=int), fixos=fixos)
+                        if float(score_arr[0]) > max(min_score, -1e8):
+                            if self._passa_overlap(
+                                arr, jogos_unicos_livres, limite_comum=limite_comum
+                            ):
+                                hashes_vistos.add(t)
+                                jogos_unicos_livres.append(arr)
+                                continue
 
-            novo_random = np.random.choice(pool_livre, k_livre, replace=False)
+            novo_random = self.rng.choice(pool_livre, k_livre, replace=False)
             novo_random.sort()
             t_rand = tuple(novo_random.tolist())
 
@@ -300,6 +234,15 @@ class GeneticMiner:
                 ):
                     hashes_vistos.add(t_rand)
                     jogos_unicos_livres.append(novo_random)
+
+        if len(jogos_unicos_livres) < qtd_final:
+            for jogo_arr in populacao_ordenada:
+                t = tuple(jogo_arr.tolist())
+                if t not in hashes_vistos:
+                    hashes_vistos.add(t)
+                    jogos_unicos_livres.append(jogo_arr.copy())
+                if len(jogos_unicos_livres) >= qtd_final:
+                    break
 
         # Montagem final com fixos
         resultado_final: List[List[int]] = []
@@ -319,6 +262,8 @@ def gerar_jogos_geneticos(
     quantidade=10,
     estrategia="balanceada",
     fixos=None,
+    evitados=None,
+    numeros_evitados=None,
     seed=None,
     objective_options: dict | None = None,
 ):
@@ -329,9 +274,11 @@ def gerar_jogos_geneticos(
         objective_options=objective_options,
     )
     n_gens = 60 if ctx.config.n_numbers >= 60 else 30
+    evitados_final = evitados if evitados is not None else numeros_evitados
     return miner.evoluir(
         tamanho_populacao=300,
         geracoes=n_gens,
         qtd_final=quantidade,
         fixos=fixos,
+        evitados=evitados_final,
     )

@@ -321,7 +321,7 @@ class TestNumeroOtimoClusters:
 
 
 class TestIntegracaoLotofacil:
-    """Testes de integração com Lotofácil."""
+    """Testes de integração com Lotofácil e clusterização padronizada no espaço Z."""
     
     def test_bootstrap_lotofacil(self, df_mock_lotofacil):
         resultado = bootstrap_ic_soma(df_mock_lotofacil, LOTOFACIL, n_iteracoes=100, random_state=42)
@@ -331,8 +331,38 @@ class TestIntegracaoLotofacil:
     def test_gaps_lotofacil(self, df_mock_lotofacil):
         resultado = analisar_gaps_geometricos(df_mock_lotofacil, LOTOFACIL, numero=10)
         assert isinstance(resultado, dict)
+        assert 'chi2_statistic' in resultado
+        assert 'chi2_pvalue' in resultado
+
+        resumo = analisar_gaps_todos_numeros(df_mock_lotofacil, LOTOFACIL)
+        # Sob sorteios uniformes simulados, a taxa de falsos positivos em gaps discretos deve ser baixa (< 25%)
+        assert resumo['percentual_anomalos'] < 25.0
     
     def test_clustering_lotofacil(self, df_mock_lotofacil):
-        jogos = [row[LOTOFACIL.draw_cols].tolist() for idx, row in df_mock_lotofacil.head(30).iterrows()]
+        from app.core.statistics.clustering import extrair_features_jogos_batch
+        from app.core.statistics.cluster_profile import analisar_perfil_cluster, assign_clusters_batch
+
+        jogos = [row[LOTOFACIL.draw_cols].tolist() for idx, row in df_mock_lotofacil.head(40).iterrows()]
+        batch_feats = extrair_features_jogos_batch(jogos[:5], LOTOFACIL)
+        single_feats = np.array([extrair_features_jogo(j, LOTOFACIL) for j in jogos[:5]])
+        assert np.allclose(batch_feats, single_feats)
+
         resultado = clusterizar_jogos_kmeans(jogos, LOTOFACIL, n_clusters=3, random_state=42)
         assert isinstance(resultado, dict)
+        assert 'scaler_mean' in resultado
+        assert 'scaler_scale' in resultado
+        assert 'centroides_norm' in resultado
+        assert 'dist_p95' in resultado
+
+        perfil = analisar_perfil_cluster(
+            jogos[0],
+            df_mock_lotofacil,
+            LOTOFACIL,
+            clusters_cache=resultado,
+        )
+        assert perfil['disponivel'] is True
+        assert perfil['espaco_padronizado_z'] is True
+        assert 0.0 <= perfil['tipicidade_percentil'] <= 100.0
+
+        cids = assign_clusters_batch(jogos[:10], LOTOFACIL, resultado)
+        assert len(cids) == 10

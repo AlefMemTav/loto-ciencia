@@ -9,7 +9,10 @@ from app.core.statistics.feature_percentiles import summarize_feature_percentile
 from app.core.statistics.score_calibration import summarize_score_calibration
 
 from app.core.statistics import (
+    analisar_perfil_cluster,
     avaliar_jogo_geometria_estatistica,
+    avaliar_soma_com_ic_bootstrap,
+    build_draws_binary_matrix,
     penalizar_por_similaridade,
     calcular_distribuicao_quadrantes,
     avaliar_quadrantes_estatistico,
@@ -759,14 +762,23 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
 
 
 def _analises_avancadas(
-    report, numeros, config: GameConfig, df_historico, stats_quadrantes=None
+    report,
+    numeros,
+    config: GameConfig,
+    df_historico,
+    stats_quadrantes=None,
+    draws_bin=None,
+    taxa_regressao=None,
+    atrasos=None,
 ):
     """Módulo completo de análises avançadas baseadas em dados."""
     if df_historico is None or df_historico.empty:
         return
 
-    # 1. Distância de Hamming
-    penalizar_por_similaridade(report, numeros, df_historico, config)
+    # 1. Distância de Hamming (varre histórico completo + últimos 100)
+    penalizar_por_similaridade(
+        report, numeros, df_historico, config, draws_bin=draws_bin
+    )
 
     # 2. Quadrantes estatísticos
     if stats_quadrantes:
@@ -782,9 +794,10 @@ def _analises_avancadas(
         report["score"] -= 5
         report["msgs"].append("⚠️ Distribuição de quadrantes atípica")
 
-    # 3. Validação de Regressão (COM AJUSTE DE SCORE)
+    # 3. Validação de Regressão (informativa)
     if len(df_historico) >= 100:
-        taxa_regressao = calcular_taxa_regressao(df_historico, config, janela=100)
+        if taxa_regressao is None:
+            taxa_regressao = calcular_taxa_regressao(df_historico, config, janela=100)
 
         if taxa_regressao:
             report["metricas"]["regressao_media"] = {
@@ -796,7 +809,8 @@ def _analises_avancadas(
 
             # Análise baseada em evidência estatística
             if taxa_regressao["correlacao"] > 0.3 and taxa_regressao["p_value"] < 0.05:
-                atrasos = calcular_atrasos(df_historico, config)
+                if atrasos is None or getattr(atrasos, "empty", True):
+                    atrasos = calcular_atrasos(df_historico, config)
                 mediana_atrasos = atrasos.median()
 
                 atrasados_no_jogo = [
@@ -845,12 +859,83 @@ def _analises_avancadas(
         }
 
 
-def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico):
+def _analise_repetidas_ultimo_sorteio(
+    report: dict,
+    numeros: list[int],
+    config: GameConfig,
+    df_historico,
+    draws_bin=None,
+) -> None:
+    """Analisa sobreposição empírica R_{t-1} com o concurso mais recente."""
+    if len(numeros) != config.k:
+        return
+    if draws_bin is None:
+        if df_historico is None or df_historico.empty:
+            return
+        draws_bin, _ = build_draws_binary_matrix(df_historico, config)
+
+    if draws_bin is None or len(draws_bin) == 0:
+        return
+
+    n_num = int(config.n_numbers)
+    valid_cols = np.array(
+        sorted({int(x) - 1 for x in numeros if 1 <= int(x) <= n_num}),
+        dtype=np.int64,
+    )
+    if len(valid_cols) == 0:
+        return
+
+    qtd = int(draws_bin[-1, valid_cols].sum())
+    if len(draws_bin) >= 20:
+        r_hist = (draws_bin[:-1] & draws_bin[1:]).sum(axis=1, dtype=np.int16)
+        media_hist = float(r_hist.mean())
+        p5 = float(np.percentile(r_hist, 5))
+        p95 = float(np.percentile(r_hist, 95))
+    else:
+        media_hist = float((config.k * config.k) / max(1, n_num))
+        p5 = max(0.0, math.floor(media_hist - 2.0))
+        p95 = min(float(config.k), math.ceil(media_hist + 2.0))
+
+    report["metricas"]["repetidas_ultimo_sorteio"] = {
+        "qtd": qtd,
+        "media_historica": round(media_hist, 2),
+        "p5": round(p5, 1),
+        "p95": round(p95, 1),
+    }
+
+    if len(draws_bin) >= 20:
+        limiar_extremo = min(
+            config.k - 1,
+            max(int(math.ceil(p95)) + 2, 3 if config.is_sparse else config.k - 2),
+        )
+        if qtd >= limiar_extremo and config.k >= 5:
+            report["score"] -= 6
+            report["msgs"].append(
+                f"⚠️ Alta repetição do último concurso ({qtd}/{config.k}; P95 histórico={p95:.0f})"
+            )
+        elif qtd < p5 or qtd > p95:
+            report["msgs"].append(
+                f"ℹ️ Repetidas do último sorteio: {qtd}/{config.k} (faixa típica P5–P95: {p5:.0f}–{p95:.0f})"
+            )
+        else:
+            report["msgs"].append(
+                f"✅ Repetidas do último sorteio na faixa típica ({qtd}/{config.k}; P5–P95: {p5:.0f}–{p95:.0f})"
+            )
+
+
+def _analise_coocorrencia_rara(
+    report,
+    numeros,
+    config: GameConfig,
+    df_historico,
+    pares_repelentes=None,
+):
     """Detecta se o jogo contém múltiplos pares que NUNCA ou RARAMENTE saíram juntos."""
     if df_historico is None or df_historico.empty or len(df_historico) < 50:
         return
 
-    pares_repelentes = get_pares_que_se_repelem(df_historico, config, top_n=100)
+    if pares_repelentes is None:
+        pares_repelentes = get_pares_que_se_repelem(df_historico, config, top_n=100)
 
     if not pares_repelentes:
         return
@@ -866,7 +951,7 @@ def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico
     pares_do_jogo = []
     for i in range(len(numeros)):
         for j in range(i + 1, len(numeros)):
-            par = (numeros[i], numeros[j])
+            par = (min(numeros[i], numeros[j]), max(numeros[i], numeros[j]))
             if par in pares_muito_raros:
                 pares_do_jogo.append(par)
 
@@ -908,29 +993,36 @@ def _analise_coocorrencia_rara(report, numeros, config: GameConfig, df_historico
         )
 
 
-def _analise_pares_populares(report, numeros, config: GameConfig, df_historico):
+def _analise_pares_populares(
+    report,
+    numeros,
+    config: GameConfig,
+    df_historico,
+    pares_populares=None,
+):
     """Detecta se o jogo contém muitos pares POPULARES."""
     if df_historico is None or df_historico.empty or len(df_historico) < 50:
         return
 
-    pares_frequentes = get_pares_mais_frequentes(df_historico, config, top_n=50)
-
-    if not pares_frequentes:
-        return
-
-    pares_populares = set()
-    for item in pares_frequentes:
-        if item["razao"] >= 1.3:
-            pares_populares.add(item["par"])
+    if pares_populares is None:
+        pares_populares = get_pares_mais_frequentes(df_historico, config, top_n=50)
 
     if not pares_populares:
+        return
+
+    pares_comuns = set()
+    for item in pares_populares:
+        if item["razao"] >= 1.3:
+            pares_comuns.add(item["par"])
+
+    if not pares_comuns:
         return
 
     pares_do_jogo = []
     for i in range(len(numeros)):
         for j in range(i + 1, len(numeros)):
-            par = (numeros[i], numeros[j])
-            if par in pares_populares:
+            par = (min(numeros[i], numeros[j]), max(numeros[i], numeros[j]))
+            if par in pares_comuns:
                 pares_do_jogo.append(par)
 
     n_pares_populares = len(pares_do_jogo)
@@ -1289,6 +1381,13 @@ def validar_jogo(
     stats_quadrantes=None,
     perfil_posicional=None,
     modelo_popularidade=None,
+    clusters_cache=None,
+    bootstrap_ic=None,
+    taxa_regressao=None,
+    atrasos=None,
+    pares_repelentes=None,
+    pares_populares=None,
+    draws_bin=None,
 ):
     """
     Validador genérico para qualquer jogo.
@@ -1300,6 +1399,7 @@ def validar_jogo(
     - Padrões avançados (sequências longas, diagonais, bordas)
     - Validação de regressão à média
     """
+    numeros = sorted(numeros)
     logger.debug(f"🔍 [VALIDATOR] Validando jogo {numeros} ({config.name})")
 
     report = {
@@ -1315,7 +1415,7 @@ def validar_jogo(
     # 1. Verificação de histórico
     if historico_jogos:
         if len(numeros) == config.k:
-            jogo_tuple = tuple(sorted(numeros))
+            jogo_tuple = tuple(numeros)
             if jogo_tuple in historico_jogos:
                 report["ja_saiu"] = True
 
@@ -1341,21 +1441,49 @@ def validar_jogo(
     _analise_quase_reta(report, numeros, config)
 
     # ============================================
-    # 5. ANÁLISES AVANÇADAS (Hamming, Quadrantes, Regressão)
+    # 5. ANÁLISES AVANÇADAS (Hamming, Quadrantes, Regressão, R_{t-1})
     # ============================================
-    _analises_avancadas(report, numeros, config, df_historico, stats_quadrantes)
+    _analises_avancadas(
+        report,
+        numeros,
+        config,
+        df_historico,
+        stats_quadrantes,
+        draws_bin=draws_bin,
+        taxa_regressao=taxa_regressao,
+        atrasos=atrasos,
+    )
+    _analise_repetidas_ultimo_sorteio(
+        report, numeros, config, df_historico, draws_bin=draws_bin
+    )
 
     # ============================================
     # 6. ANÁLISE DE CO-OCORRÊNCIA
     # ============================================
-    _analise_coocorrencia_rara(report, numeros, config, df_historico)
-    _analise_pares_populares(report, numeros, config, df_historico)
+    _analise_coocorrencia_rara(
+        report, numeros, config, df_historico, pares_repelentes=pares_repelentes
+    )
+    _analise_pares_populares(
+        report, numeros, config, df_historico, pares_populares=pares_populares
+    )
 
     # ============================================
-    # 6b. ORDEM DE SAÍDA E POPULARIDADE MEDIDA
+    # 6b. ORDEM DE SAÍDA, POPULARIDADE MEDIDA, CLUSTERS & BOOTSTRAP
     # ============================================
     _analise_ordem_saida(report, numeros, config, perfil_posicional)
     _analise_popularidade_medida(report, numeros, config, modelo_popularidade)
+
+    if clusters_cache and not clusters_cache.get("erro"):
+        report["perfil_cluster"] = analisar_perfil_cluster(
+            numeros, df_historico, config, clusters_cache=clusters_cache
+        )
+
+    if bootstrap_ic:
+        res_boot = avaliar_soma_com_ic_bootstrap(
+            sum(numeros), bootstrap_ic, ic_historico=ic_info
+        )
+        # Mantém score técnico intacto para evitar dupla contagem com o IC de _analise_tecnica
+        report["bootstrap"] = {**res_boot, "score_ajuste": 0}
 
     # ============================================
     # 7. ANÁLISES ESTRUTURAIS

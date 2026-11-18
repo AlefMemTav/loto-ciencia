@@ -177,7 +177,7 @@ def _render_relatorio(pacote: dict) -> str:
     linhas += [
         "",
         "\\* Previsão do modelo de popularidade (1,00 = jogo médio; menor = tende a dividir o prêmio com menos gente). "
-        "Só existe para Mega-Sena e Quina.",
+        "Disponível para Mega-Sena, Quina e Lotofácil.",
         "",
     ]
     if pacote["erros"]:

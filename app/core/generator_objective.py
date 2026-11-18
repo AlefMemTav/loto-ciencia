@@ -80,6 +80,8 @@ def score_plausibility_batch(
         "gap_variety": 0.8,
         "entropia_gaps": 0.8,
         "max_quadrante": 0.7,
+        "moldura": 0.8,
+        "cruz": 0.5,
     }
     high_bad_weights = {
         "max_final_repetido": 1.0,
@@ -87,10 +89,15 @@ def score_plausibility_batch(
         "max_linha": 0.8,
         "max_coluna": 0.7,
         "max_sequencia": 1.4,
+        "diag_principal": 0.7,
+        "diag_secundaria": 0.7,
+        "simetria_reflexao": 0.7,
+        "gap_regularidade": 0.9,
     }
     low_bad_weights = {
         "min_gap": 1.1,
         "compressibilidade_simples": 1.7,
+        "finais_unicos": 0.7,
     }
 
     def _bounds_for(metric: str) -> tuple[float, float]:
@@ -221,6 +228,33 @@ def score_plausibility_batch(
         forca = float(np.clip(ordem_strength, 0.0, 3.0))
         scores -= np.maximum(0.0, np.abs(pos_pct - 50.0) - 45.0) / 5.0 * 0.4 * forca
 
+    if k == config.k:
+        recent_bin = None
+        draws_bin = getattr(ctx, "draws_bin", None)
+        if draws_bin is not None and len(draws_bin) > 0:
+            recent_bin = draws_bin[-10:]
+        else:
+            df_hist = getattr(ctx, "df", None)
+            if (
+                df_hist is not None
+                and not getattr(df_hist, "empty", True)
+                and all(col in df_hist.columns for col in config.draw_cols)
+            ):
+                from app.core.statistics.basic import build_draws_binary_matrix
+
+                recent_bin, _ = build_draws_binary_matrix(df_hist.tail(10), config)
+
+        if recent_bin is not None and len(recent_bin) > 0 and recent_bin.shape[1] == n:
+            valid_idx = np.clip(indices, 0, n - 1)
+            recent_hits = (
+                recent_bin.astype(np.int16, copy=False).T[valid_idx].sum(axis=1)
+            )
+            max_recent_hits = recent_hits.max(axis=1)
+            near_clone = max_recent_hits >= (config.k - 1)
+            if np.any(near_clone):
+                pen_clone = 2.5 if getattr(config, "is_dense", False) else 3.5
+                scores[near_clone] -= pen_clone
+
     historico = getattr(ctx, "historico_set", None) or set()
     if k == config.k and historico:
         for i, row in enumerate(candidates):
@@ -251,7 +285,7 @@ def select_diverse_portfolio(
     if len(candidates) == 0:
         return []
 
-    finite_mask = np.isfinite(scores)
+    finite_mask = np.isfinite(scores) & (scores > -1e8)
     candidates = candidates[finite_mask]
     scores = scores[finite_mask]
     if len(candidates) == 0:
@@ -277,7 +311,48 @@ def select_diverse_portfolio(
     }.get(estrategia, 0.85)
     adjusted_scores = scores + rng.gumbel(0.0, noise_scale, size=len(scores))
     order = np.argsort(adjusted_scores)[::-1]
-    ordered = candidates[order]
+    pool_limit = min(len(order), max(quantidade * 180, 1200))
+    ordered = candidates[order[:pool_limit]]
+
+    calibration_bucket_idx = None
+    bucket_quotas = None
+    bucket_counts = np.zeros(len(BUCKET_LABELS), dtype=int)
+    calibration_strength = float(np.clip(calibration_strength, 0.0, 2.0))
+    if usar_calibracao_score and calibration_strength > 0 and estrategia != "pura":
+        from app.core.statistics.score_calibration import (
+            bucket_indices,
+            get_score_calibration_model,
+        )
+
+        cal_scores = score_structural_batch(
+            ordered,
+            config,
+            n_samples=null_model_samples,
+        )
+        cal_model = get_score_calibration_model(
+            config,
+            df_historico=getattr(ctx, "df", None),
+            n_samples=null_model_samples,
+            target=calibration_target,
+        )
+        calibration_bucket_idx = bucket_indices(cal_scores)
+        raw_quotas = cal_model.target_probabilities * quantidade
+        bucket_quotas = np.floor(raw_quotas).astype(int)
+        rem = int(max(0, quantidade - int(bucket_quotas.sum())))
+        if rem > 0:
+            rem_order = np.argsort(raw_quotas - bucket_quotas)[::-1][:rem]
+            bucket_quotas[rem_order] += 1
+
+    from app.core.statistics.cluster_profile import assign_clusters_batch
+
+    ordered_archetypes = assign_clusters_batch(
+        ordered,
+        config,
+        getattr(ctx, "clusters_historicos", None) or getattr(ctx, "clusters_info", None),
+    )
+    n_arch_unique = max(1, len(np.unique(ordered_archetypes)))
+    arch_limit = max(1, int(np.ceil(quantidade / n_arch_unique)) + 1)
+    archetype_counts: dict[int, int] = {}
 
     selected: list[np.ndarray] = []
     seen: set[tuple[int, ...]] = set()
@@ -306,34 +381,73 @@ def select_diverse_portfolio(
     def _fits_feature_exposure(idx: int, limit: int) -> bool:
         return feature_exposure.get(_feature_key(idx), 0) < limit
 
-    def _add(row: np.ndarray) -> None:
+    def _fits_bucket_quota(idx: int, slack: int = 0) -> bool:
+        if calibration_bucket_idx is None or bucket_quotas is None:
+            return True
+        b = int(calibration_bucket_idx[idx])
+        return int(bucket_counts[b]) < int(bucket_quotas[b]) + slack
+
+    def _add(idx: int, row: np.ndarray) -> None:
         selected.append(row.copy())
         seen.add(tuple(row.tolist()))
         for n in row:
             nn = int(n)
             exposure[nn] = exposure.get(nn, 0) + 1
+        key = _feature_key(idx)
+        feature_exposure[key] = feature_exposure.get(key, 0) + 1
+        if calibration_bucket_idx is not None:
+            bucket_counts[int(calibration_bucket_idx[idx])] += 1
+        arch_id = int(ordered_archetypes[idx])
+        archetype_counts[arch_id] = archetype_counts.get(arch_id, 0) + 1
 
+    # Passo 1: respeita cota exata de bucket de calibração, limite de arquétipo, exposição e overlap
     for idx, row in enumerate(ordered):
         if len(selected) >= quantidade:
             break
         t = tuple(row.tolist())
         if t in seen:
             continue
+        if not _fits_bucket_quota(idx, slack=0):
+            continue
         if not _fits_exposure(row, exposure_limit):
             continue
         if not _fits_feature_exposure(idx, 1):
+            continue
+        arch_id = int(ordered_archetypes[idx])
+        if archetype_counts.get(arch_id, 0) >= arch_limit:
             continue
         s = set(t)
         if all(
             len(s.intersection(set(prev.tolist()))) <= overlap_limit
             for prev in selected
         ):
-            _add(row)
-            key = _feature_key(idx)
-            feature_exposure[key] = feature_exposure.get(key, 0) + 1
+            _add(idx, row)
 
-    # Se restrições/fixos tornarem a diversidade impossível, completa com os mais
-    # plausíveis ainda únicos. Isso evita falhar quando muitos números são fixados.
+    # Passo 2: relaxa feature_exposure e arquétipo mantendo cota de bucket (slack=0 ou 1) e overlap
+    if len(selected) < quantidade:
+        for slack in (0, 1):
+            if len(selected) >= quantidade:
+                break
+            for idx, row in enumerate(ordered):
+                if len(selected) >= quantidade:
+                    break
+                t = tuple(row.tolist())
+                if t in seen:
+                    continue
+                if not _fits_bucket_quota(idx, slack=slack):
+                    continue
+                if not _fits_exposure(row, exposure_limit + slack):
+                    continue
+                if not _fits_feature_exposure(idx, 2):
+                    continue
+                s = set(t)
+                if all(
+                    len(s.intersection(set(prev.tolist()))) <= overlap_limit
+                    for prev in selected
+                ):
+                    _add(idx, row)
+
+    # Passo 3: se restrições/fixos tornarem a diversidade estrita impossível, relaxa cota de bucket
     if len(selected) < quantidade:
         relaxed_limit = exposure_limit + 1
         for idx, row in enumerate(ordered):
@@ -346,9 +460,7 @@ def select_diverse_portfolio(
                 continue
             if not _fits_feature_exposure(idx, 2):
                 continue
-            _add(row)
-            key = _feature_key(idx)
-            feature_exposure[key] = feature_exposure.get(key, 0) + 1
+            _add(idx, row)
 
     if len(selected) < quantidade:
         for idx, row in enumerate(ordered):
@@ -357,7 +469,18 @@ def select_diverse_portfolio(
             t = tuple(row.tolist())
             if t in seen:
                 continue
-            _add(row)
+            _add(idx, row)
+
+    if len(selected) < quantidade and pool_limit < len(order):
+        for raw_idx in order[pool_limit:]:
+            if len(selected) >= quantidade:
+                break
+            row = candidates[raw_idx]
+            t = tuple(row.tolist())
+            if t in seen:
+                continue
+            selected.append(row.copy())
+            seen.add(t)
 
     return [row.tolist() for row in selected[:quantidade]]
 
@@ -416,11 +539,17 @@ def _select_tail_controlled_portfolio(
     noise_scale = 0.65
     base_cooc_weight = 0.20
     noise = rng.gumbel(0.0, noise_scale, size=len(scores))
-    score_std = scores.std()
+    clean_mask = scores > -50.0
+    if np.any(clean_mask):
+        clean_mean = float(scores[clean_mask].mean())
+        clean_std = float(scores[clean_mask].std())
+    else:
+        clean_mean = float(scores.mean())
+        clean_std = float(scores.std())
     score_z = (
         np.zeros_like(scores)
-        if score_std < 1e-9
-        else (scores - scores.mean()) / score_std
+        if clean_std < 1e-9
+        else (scores - clean_mean) / clean_std
     )
     cooc_z = _cooccurrence_z(candidates, ctx)
     base_rank = score_z + np.clip(cooc_z, -1.0, 2.0) * base_cooc_weight + noise
@@ -434,6 +563,7 @@ def _select_tail_controlled_portfolio(
     calibration_bucket_idx = None
     calibration_target_probs = None
     calibration_counts = None
+    bucket_quotas = None
     calibration_strength = float(np.clip(calibration_strength, 0.0, 2.0))
     if usar_calibracao_score and calibration_strength > 0:
         from app.core.statistics.score_calibration import (
@@ -455,6 +585,22 @@ def _select_tail_controlled_portfolio(
         calibration_bucket_idx = bucket_indices(calibration_scores)
         calibration_target_probs = model.target_probabilities
         calibration_counts = np.zeros(len(BUCKET_LABELS), dtype=float)
+        raw_quotas = calibration_target_probs * quantidade
+        bucket_quotas = np.floor(raw_quotas).astype(int)
+        rem = int(max(0, quantidade - int(bucket_quotas.sum())))
+        if rem > 0:
+            rem_order = np.argsort(raw_quotas - bucket_quotas)[::-1][:rem]
+            bucket_quotas[rem_order] += 1
+
+    from app.core.statistics.cluster_profile import assign_clusters_batch
+
+    ordered_archetypes = assign_clusters_batch(
+        ordered,
+        config,
+        getattr(ctx, "clusters_historicos", None) or getattr(ctx, "clusters_info", None),
+    )
+    n_archetypes = max(1, len(np.unique(ordered_archetypes)))
+    archetype_counts: dict[int, int] = {}
 
     selected: list[np.ndarray] = []
     seen: set[tuple[int, ...]] = set()
@@ -496,7 +642,23 @@ def _select_tail_controlled_portfolio(
         over = max(0.0, calibration_counts[bucket] + 1.0 - expected_next - 0.75)
         if quantidade <= 2:
             return under * 0.08 * calibration_strength
-        return (under * 0.16 - over * 0.24) * calibration_strength
+        quota_adjust = 0.0
+        if bucket_quotas is not None:
+            if calibration_counts[bucket] < bucket_quotas[bucket]:
+                quota_adjust = 0.35
+            elif calibration_counts[bucket] >= bucket_quotas[bucket] + 1:
+                quota_adjust = -0.95
+            elif calibration_counts[bucket] >= bucket_quotas[bucket]:
+                quota_adjust = -0.45
+        return (under * 0.22 - over * 0.32 + quota_adjust) * calibration_strength
+
+    def _archetype_marginal(idx: int) -> float:
+        arch_id = int(ordered_archetypes[idx])
+        count = archetype_counts.get(arch_id, 0)
+        expected_arch = (len(selected) + 1) / float(n_archetypes)
+        if count < expected_arch:
+            return 0.10
+        return -0.05 * max(0.0, count - expected_arch)
 
     def _overlap_penalty(row: np.ndarray) -> float:
         """Penalidade infinita (1e6) se o jogo repete demais com um já escolhido."""
@@ -521,6 +683,7 @@ def _select_tail_controlled_portfolio(
             ordered_score_z[idx]
             + cluster_bonus
             + _calibration_marginal(idx)
+            + _archetype_marginal(idx)
             - exposure_penalty
             - pair_penalty
             - _overlap_penalty(row)
@@ -536,8 +699,15 @@ def _select_tail_controlled_portfolio(
             pair_exposure[pair] = pair_exposure.get(pair, 0) + 1
         if calibration_counts is not None and calibration_bucket_idx is not None:
             calibration_counts[int(calibration_bucket_idx[idx])] += 1
+        arch_id = int(ordered_archetypes[idx])
+        archetype_counts[arch_id] = archetype_counts.get(arch_id, 0) + 1
 
-    remaining = set(range(len(ordered)))
+    non_cut_indices = [i for i in range(len(ordered)) if ordered_score_z[i] > -10.0]
+    if len(non_cut_indices) >= quantidade:
+        remaining = set(non_cut_indices)
+    else:
+        remaining = set(range(len(ordered)))
+
     while len(selected) < quantidade and remaining:
         best_idx = None
         best_score = -np.inf
@@ -558,12 +728,46 @@ def _select_tail_controlled_portfolio(
         remaining.discard(best_idx)
         _register(best_idx, ordered[best_idx].copy())
 
+    # Fallback progressivo: relaxa pair_hard_cap/hard_cap priorizando candidatos aprovados no corte
     if len(selected) < quantidade:
-        for idx, row in enumerate(ordered):
+        candidate_indices = (
+            non_cut_indices + [i for i in range(len(ordered)) if ordered_score_z[i] <= -10.0]
+            if non_cut_indices
+            else list(range(len(ordered)))
+        )
+        for slack in (1, 2, 4):
             if len(selected) >= quantidade:
                 break
+            for idx in candidate_indices:
+                if len(selected) >= quantidade:
+                    break
+                row = ordered[idx]
+                t = tuple(row.tolist())
+                if t in seen:
+                    continue
+                if _overlap_penalty(row) > 0:
+                    continue
+                if any(exposure.get(int(n), 0) >= hard_cap + slack for n in row):
+                    continue
+                if any(
+                    pair_exposure.get(pair, 0) >= pair_hard_cap + slack * 2
+                    for pair in _pair_keys(row)
+                ):
+                    continue
+                _register(idx, row.copy())
+
+    if len(selected) < quantidade:
+        candidate_indices = (
+            non_cut_indices + [i for i in range(len(ordered)) if ordered_score_z[i] <= -10.0]
+            if non_cut_indices
+            else list(range(len(ordered)))
+        )
+        for idx in candidate_indices:
+            if len(selected) >= quantidade:
+                break
+            row = ordered[idx]
             t = tuple(row.tolist())
-            if t in seen or _would_break_hard_caps(row):
+            if t in seen:
                 continue
             _register(idx, row.copy())
 
@@ -576,8 +780,9 @@ def portfolio_diagnostics(
     matriz_coocorrencia=None,
     include_higher_order: bool = True,
     include_dispersao: bool = True,
+    clusters_cache: dict | None = None,
 ) -> dict:
-    """Resume concentração e diversidade de um pacote de jogos."""
+    """Resume concentração, diversidade combinatória e arquétipos estruturais de um pacote."""
     if games is None or len(games) == 0:
         return {}
 
@@ -699,6 +904,28 @@ def portfolio_diagnostics(
                 "max": round(float(np.max(vals)), 4),
             }
 
+    from app.core.statistics.cluster_profile import assign_clusters_batch
+
+    arch_ids = assign_clusters_batch(arr, config, clusters_cache)
+    if len(arch_ids) > 0:
+        uniq_arch, arch_counts = np.unique(arch_ids, return_counts=True)
+        arch_probs = arch_counts / float(len(arch_ids))
+        raw_entropy = float(-np.sum(arch_probs * np.log(np.maximum(arch_probs, 1e-12))))
+        max_k = (
+            max(2, int(clusters_cache.get("n_clusters", 5)))
+            if isinstance(clusters_cache, dict) and "n_clusters" in clusters_cache
+            else 6
+        )
+        entropia_arquetipos = round(min(1.0, raw_entropy / float(np.log(max_k))), 4)
+        arquetipos_unicos = int(len(uniq_arch))
+        distribuicao_arquetipos = {
+            str(int(cid)): int(cnt) for cid, cnt in zip(uniq_arch, arch_counts)
+        }
+    else:
+        entropia_arquetipos = 0.0
+        arquetipos_unicos = 0
+        distribuicao_arquetipos = {}
+
     cooc_media = 0.0
     if (
         matriz_coocorrencia is not None
@@ -730,5 +957,8 @@ def portfolio_diagnostics(
         "quadras_repetidas": quadras_repetidas,
         "max_repeticao_quadra": max_repeticao_quadra,
         "coocorrencia_media": round(cooc_media, 4),
+        "arquetipos_unicos": arquetipos_unicos,
+        "entropia_arquetipos": entropia_arquetipos,
+        "distribuicao_arquetipos": distribuicao_arquetipos,
         "dispersao_features": feature_summary,
     }

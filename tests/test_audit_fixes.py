@@ -308,13 +308,19 @@ def test_fechamento_dinamico_guloso_sem_ciclo_curto():
 
 
 def test_ticket_features_batch_equivale_ao_escalar():
+    from app.core.statistics.geometry import calcular_simetria_reflexao
     from app.core.ticket_features import (
         extract_ticket_features,
         extract_ticket_features_batch,
     )
 
     rng = np.random.default_rng(314)
-    for cfg in (MEGASENA, LOTOFACIL, LOTOMANIA):
+    for cfg in (MEGASENA, QUINA, LOTOFACIL, LOTOMANIA):
+        moldura_set = set(cfg.layout.moldura)
+        cruz_set = set(cfg.layout.cruz)
+        xis_set = set(cfg.layout.xis)
+        cantos_set = set(cfg.layout.cantos)
+
         lote = np.array(
             [
                 sorted(rng.choice(cfg.n_numbers, size=cfg.bet_size, replace=False) + 1)
@@ -323,16 +329,72 @@ def test_ticket_features_batch_equivale_ao_escalar():
         )
         batch = extract_ticket_features_batch(lote, cfg)
         for i in range(len(lote)):
-            esc = extract_ticket_features(lote[i].tolist(), cfg)
+            nums = lote[i].tolist()
+            esc = extract_ticket_features(nums, cfg)
             assert batch["soma"][i] == esc.soma
             assert batch["pares"][i] == esc.pares
             assert batch["span"][i] == esc.span
             assert batch["max_sequencia"][i] == esc.max_sequencia
             assert batch["max_final_repetido"][i] == esc.max_final_repetido
+            assert batch["finais_unicos"][i] == esc.finais_unicos
             assert batch["entropia_gaps"][i] == pytest.approx(esc.entropia_gaps, abs=1e-12)
             assert batch["compressibilidade_simples"][i] == pytest.approx(
                 esc.compressibilidade_simples, abs=1e-4
             )
+            assert batch["moldura"][i] == esc.moldura == len(set(nums) & moldura_set)
+            assert batch["cruz"][i] == esc.cruz == len(set(nums) & cruz_set)
+            assert batch["xis"][i] == esc.xis == len(set(nums) & xis_set)
+            assert batch["cantos"][i] == esc.cantos == len(set(nums) & cantos_set)
+            assert batch["diag_principal"][i] == esc.diag_principal
+            assert batch["diag_secundaria"][i] == esc.diag_secundaria
+            assert batch["multiplos_5"][i] == esc.multiplos_5
+            assert (
+                batch["simetria_reflexao"][i]
+                == esc.simetria_reflexao
+                == calcular_simetria_reflexao(nums, cfg)["n_pares"]
+            )
+            assert batch["std_linhas"][i] == pytest.approx(esc.std_linhas, abs=1e-12)
+            assert batch["gap_regularidade"][i] == pytest.approx(
+                esc.gap_regularidade, abs=1e-12
+            )
+
+
+def test_verificar_historico_vetorizado_equivale_referencia():
+    from app.core.statistics.basic import (
+        build_draws_binary_matrix,
+        verificar_historico,
+    )
+
+    for cfg, alvos in (
+        (MEGASENA, [6, 5, 4]),
+        (LOTOFACIL, [15, 14, 13]),
+        (LOTOMANIA, [20, 19, 18, 0]),
+    ):
+        df = _mock_draws_df(cfg, n_draws=120, seed=77)
+        rng = np.random.default_rng(88)
+        jogo = sorted(
+            rng.choice(
+                np.arange(1, cfg.n_numbers + 1), size=cfg.bet_size, replace=False
+            ).tolist()
+        )
+        # Garante também uma batida exata nos mocks de mesmo tamanho
+        if cfg.bet_size == cfg.k:
+            jogo = sorted(int(x) for x in df.iloc[10][cfg.draw_cols].tolist())
+
+        ref = {a: [] for a in alvos}
+        jogo_set = set(jogo)
+        for conc, row in df.iterrows():
+            hits = len(jogo_set & set(int(x) for x in row[cfg.draw_cols].tolist()))
+            if hits in ref:
+                ref[hits].append(f"Conc. {conc}")
+
+        res_direto = verificar_historico(jogo, df, cfg, alvos=alvos)
+        draws_bin, draws_index = build_draws_binary_matrix(df, cfg)
+        res_cache = verificar_historico(
+            jogo, df, cfg, alvos=alvos, draws_bin=draws_bin, draws_index=draws_index
+        )
+        assert res_direto == ref
+        assert res_cache == ref
 
 
 def test_validador_separa_popularidade_heuristica_e_real_game_cobertura():

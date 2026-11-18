@@ -135,11 +135,46 @@ def get_historico_jogos(df: pd.DataFrame, config: GameConfig) -> set[tuple]:
     return set(tuple(sorted(jogo)) for jogo in jogos)
 
 
+def build_draws_binary_matrix(
+    df: pd.DataFrame, config: GameConfig
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Constrói a matriz binária ``(T, N)`` ``uint8`` e o vetor de índices de concursos.
+
+    Cada linha ``t`` marca ``1`` nas colunas ``dezena - 1`` sorteadas naquele concurso.
+    Preserva a ordem das linhas de ``df``.
+    """
+    n_num = int(config.n_numbers)
+    if df is None or df.empty:
+        return (
+            np.zeros((0, n_num), dtype=np.uint8),
+            np.array([], dtype=np.int64),
+        )
+
+    draws = df[config.draw_cols].to_numpy(dtype=np.int64)
+    n_draws = draws.shape[0]
+    draws_bin = np.zeros((n_draws, n_num), dtype=np.uint8)
+    valid = (draws >= 1) & (draws <= n_num)
+    if np.all(valid):
+        rows_idx = np.arange(n_draws, dtype=np.int64)[:, None]
+        draws_bin[rows_idx, draws - 1] = 1
+    else:
+        for r_i, row in enumerate(draws):
+            vals = row[(row >= 1) & (row <= n_num)]
+            if len(vals) > 0:
+                draws_bin[r_i, vals - 1] = 1
+
+    draws_index = df.index.to_numpy()
+    return draws_bin, draws_index
+
+
 def verificar_historico(
     numeros: list[int],
     df: pd.DataFrame,
     config: GameConfig,
     alvos: list[int] | None = None,
+    draws_bin: np.ndarray | None = None,
+    draws_index: np.ndarray | None = None,
 ) -> dict[int, list[str]]:
     """
     Verifica quantos acertos o jogo teria com sorteios históricos.
@@ -155,23 +190,48 @@ def verificar_historico(
     alvos : list[int] | None, optional
         Lista de quantidades de acertos a verificar.
         Se None, usa [k, k-1, k-2] onde k é o tamanho do sorteio.
+    draws_bin : np.ndarray | None, optional
+        Matriz binária pré-computada ``(T, N)`` via ``build_draws_binary_matrix``.
+    draws_index : np.ndarray | None, optional
+        Vetor com os identificadores de concurso correspondentes às linhas de ``draws_bin``.
 
     Returns
     -------
     dict[int, list[str]]
         Dicionário mapeando quantidade de acertos para lista de concursos.
     """
-    meus = set(numeros)
     if alvos is None:
         alvos = [config.k, config.k - 1, config.k - 2]
 
     res = {a: [] for a in alvos}
-    for idx, row in df.iterrows():
-        sorteio = set(row[config.draw_cols].values)
-        acertos = len(meus.intersection(sorteio))
-        if acertos in res:
-            res[acertos].append(f"Conc. {idx}")
+    if draws_bin is None:
+        if df is None or df.empty:
+            return res
+        draws_bin, draws_index = build_draws_binary_matrix(df, config)
+    elif draws_index is None:
+        if df is not None and not df.empty:
+            draws_index = df.index.to_numpy()
+        else:
+            draws_index = np.arange(1, len(draws_bin) + 1)
+
+    if len(draws_bin) == 0:
+        return res
+
+    n_num = int(config.n_numbers)
+    valid_cols = np.array(
+        sorted({int(x) - 1 for x in numeros if 1 <= int(x) <= n_num}),
+        dtype=np.int64,
+    )
+    if len(valid_cols) == 0:
+        acertos = np.zeros(len(draws_bin), dtype=np.int16)
+    else:
+        acertos = draws_bin[:, valid_cols].sum(axis=1, dtype=np.int16)
+
+    for alvo in alvos:
+        positions = np.flatnonzero(acertos == alvo)
+        res[alvo] = [f"Conc. {draws_index[pos]}" for pos in positions]
     return res
+
 
 
 def get_reis_da_sequencia(df: pd.DataFrame, config: GameConfig) -> list[int]:

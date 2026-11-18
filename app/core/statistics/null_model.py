@@ -17,7 +17,7 @@ from app.core.lottery import GameConfig
 from app.core.ticket_features import extract_ticket_features_batch
 
 
-NULL_MODEL_VERSION = "comb-null-v1"
+NULL_MODEL_VERSION = "comb-null-v2"
 DEFAULT_NULL_MODEL_SAMPLES = int(os.getenv("LOTOSCIENCE_NULL_MODEL_SAMPLES", "50000"))
 DEFAULT_NULL_MODEL_SEED = 20260607
 _CACHE: dict[tuple, "NullModel"] = {}

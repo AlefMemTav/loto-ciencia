@@ -22,10 +22,14 @@ from app.core.statistics.clustering import clusterizar_jogos_kmeans
 from app.services.data_loader import carregar_dados_loteria_excel
 
 from app.core.statistics import (
+    build_draws_binary_matrix,
+    calcular_bootstrap_ic_com_cache,
     calcular_distribuicao_quadrantes,
     calcular_distribuicoes_geometricas,
     calcular_taxa_regressao,
     get_numeros_quentes_frios,
+    get_pares_mais_frequentes,
+    get_pares_que_se_repelem,
     analise_poisson,
     get_tabela_inteligencia,
     get_historico_jogos,
@@ -75,6 +79,11 @@ class GameContext:
     matriz_transicao: Optional[Any] = None
     perfil_posicional: Optional[Any] = None
     modelo_popularidade: Optional[Any] = None
+    draws_bin: Optional[Any] = None
+    draws_index: Optional[Any] = None
+    bootstrap_ic: Optional[dict] = None
+    pares_repelentes: Optional[list[dict]] = None
+    pares_populares: Optional[list[dict]] = None
 
 
 def _calcular_novos_sinais(df, config):
@@ -155,6 +164,7 @@ class LotteryService:
         analise_repetidos = analise_temporal_repetidos(df, config, janela=30)
         matriz_cooc = matriz_coocorrencia_numeros(df, config)
         matriz_transicao = calcular_matriz_transicao(df, config)
+        draws_bin, draws_index = build_draws_binary_matrix(df, config)
         perfil_pos, modelo_pop = _calcular_novos_sinais(df, config)
         return GameContext(
             config=config,
@@ -181,6 +191,8 @@ class LotteryService:
             matriz_transicao=matriz_transicao,
             perfil_posicional=perfil_pos,
             modelo_popularidade=modelo_pop,
+            draws_bin=draws_bin,
+            draws_index=draws_index,
         )
 
     """
@@ -263,6 +275,10 @@ class LotteryService:
         analise_repetidos = analise_temporal_repetidos(df, config, janela=30)
         matriz_cooc = matriz_coocorrencia_numeros(df, config)
         matriz_transicao = calcular_matriz_transicao(df, config)
+        draws_bin, draws_index = build_draws_binary_matrix(df, config)
+        bootstrap_ic = calcular_bootstrap_ic_com_cache(df, config, n_iteracoes=5000)
+        pares_repelentes = get_pares_que_se_repelem(df, config, top_n=100)
+        pares_populares = get_pares_mais_frequentes(df, config, top_n=50)
         perfil_pos, modelo_pop = _calcular_novos_sinais(df, config)
 
         todos_jogos = [sorted(row.tolist()) for row in df[config.draw_cols].values]
@@ -318,6 +334,11 @@ class LotteryService:
             matriz_transicao=matriz_transicao,
             perfil_posicional=perfil_pos,
             modelo_popularidade=modelo_pop,
+            draws_bin=draws_bin,
+            draws_index=draws_index,
+            bootstrap_ic=bootstrap_ic,
+            pares_repelentes=pares_repelentes,
+            pares_populares=pares_populares,
         )
 
     def get_context(self, slug: str) -> GameContext:
@@ -370,6 +391,13 @@ class LotteryService:
             stats_quadrantes=ctx.stats_quadrantes,
             perfil_posicional=ctx.perfil_posicional,
             modelo_popularidade=ctx.modelo_popularidade,
+            clusters_cache=ctx.clusters_historicos,
+            bootstrap_ic=ctx.bootstrap_ic,
+            taxa_regressao=ctx.taxa_regressao,
+            atrasos=ctx.atrasos,
+            pares_repelentes=ctx.pares_repelentes,
+            pares_populares=ctx.pares_populares,
+            draws_bin=ctx.draws_bin,
         )
 
     def generate(
@@ -547,6 +575,7 @@ class LotteryService:
 
         qtd_alvo = int(payload.get("quantidade", 1))
         fixos = payload.get("numeros_fixos")
+        evitados = payload.get("numeros_evitados")
         estrategia = payload.get("estrategia", "balanceada")
         seed = payload.get("seed", None)
         objective_options = {
@@ -581,11 +610,19 @@ class LotteryService:
             raise ValueError("calibration_target inválido.")
 
         fixos = sorted(set(fixos or []))
+        evitados = sorted(set(evitados or []))
         if len(fixos) > ctx.config.bet_size:
-            raise ValueError(f"Quantidade de fixos maior que o tamanho do jogo.")
-        fora_range = [n for n in fixos if n < 1 or n > ctx.config.n_numbers]
+            raise ValueError("Quantidade de fixos maior que o tamanho do jogo.")
+        fora_range = [n for n in fixos + evitados if n < 1 or n > ctx.config.n_numbers]
         if fora_range:
             raise ValueError(f"Números fora do intervalo permitido: {fora_range}")
+        conflito = sorted(set(fixos) & set(evitados))
+        if conflito:
+            raise ValueError(f"Números não podem ser fixos e evitados: {conflito}")
+        vagas = ctx.config.bet_size - len(fixos)
+        disponiveis = ctx.config.n_numbers - len(fixos) - len(evitados)
+        if disponiveis < vagas:
+            raise ValueError("Restrições impossibilitam preencher o jogo.")
 
         try:
             jogos = gerar_jogos_geneticos(
@@ -593,6 +630,7 @@ class LotteryService:
                 quantidade=qtd_alvo,
                 estrategia=estrategia,
                 fixos=fixos,
+                evitados=evitados,
                 seed=seed,
                 objective_options=objective_options,
             )
@@ -621,7 +659,14 @@ class LotteryService:
             else:
                 targets = [ctx.config.k, ctx.config.k - 1, ctx.config.k - 2]
 
-        return verificar_historico(numbers, ctx.df, ctx.config, alvos=targets)
+        return verificar_historico(
+            numbers,
+            ctx.df,
+            ctx.config,
+            alvos=targets,
+            draws_bin=ctx.draws_bin,
+            draws_index=ctx.draws_index,
+        )
 
     def analyze_distributions(self, slug: str, grupos: dict) -> dict:
         ctx = self.get_context(slug)

@@ -87,3 +87,50 @@ def test_score_calibration_diagnostics_reports_divergence():
     assert diagnostics["distribuicao_gerada"]
     assert diagnostics["js_vs_alvo"] >= 0
     assert diagnostics["chi_square_vs_alvo"] >= 0
+    assert diagnostics["modo_historico"] == "exato"
+
+
+def test_lotomania_draw_scale_historical_calibration():
+    from app.core.lottery.catalog import LOTOMANIA
+
+    rng = np.random.default_rng(123)
+    draws = np.array(
+        [sorted(rng.choice(np.arange(1, 101), size=LOTOMANIA.k, replace=False).tolist()) for _ in range(12)],
+        dtype=int,
+    )
+    df_lm = pd.DataFrame(draws, columns=LOTOMANIA.draw_cols)
+    model = get_score_calibration_model(
+        LOTOMANIA,
+        df_historico=df_lm,
+        n_samples=1000,
+    )
+    assert model.n_history == 12
+    assert model.history_mode == "escala_sorteio_k"
+    assert abs(sum(model.history_distribution.values()) - 100.0) < 0.001
+    assert abs(sum(model.target_distribution.values()) - 100.0) < 0.001
+
+
+def test_balanceada_portfolio_calibrates_lotofacil_buckets():
+    from app.core.generator_objective import select_diverse_portfolio
+    from app.core.lottery.catalog import LOTOFACIL
+
+    rng = np.random.default_rng(77)
+    candidates = np.array(
+        [sorted(rng.choice(np.arange(1, 26), size=15, replace=False).tolist()) for _ in range(900)],
+        dtype=int,
+    )
+    scores = score_structural_batch(candidates, LOTOFACIL, n_samples=1000) / 15.0
+    selected = select_diverse_portfolio(
+        candidates=candidates,
+        scores=scores,
+        config=LOTOFACIL,
+        quantidade=12,
+        rng=rng,
+        estrategia="balanceada",
+        usar_calibracao_score=True,
+        calibration_strength=1.0,
+        null_model_samples=1000,
+    )
+    diag = score_calibration_diagnostics(selected, LOTOFACIL, n_samples=1000)
+    assert len(selected) == 12
+    assert diag["js_vs_alvo"] < 0.06
