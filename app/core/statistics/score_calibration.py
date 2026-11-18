@@ -12,7 +12,7 @@ from app.core.lottery import GameConfig
 from app.core.statistics.feature_percentiles import batch_feature_percentiles
 
 
-SCORE_CALIBRATION_VERSION = "score-cal-v1"
+SCORE_CALIBRATION_VERSION = "score-cal-v2"
 DEFAULT_SCORE_CALIBRATION_SAMPLES = int(
     os.getenv("LOTOSCIENCE_SCORE_CALIBRATION_SAMPLES", "50000")
 )
@@ -140,18 +140,24 @@ def score_structural_batch(
         arr = arr.reshape(1, -1)
     arr = np.sort(arr, axis=1)
 
-    features, percentiles, _model = batch_feature_percentiles(
+    features, percentiles, model = batch_feature_percentiles(
         arr,
         config,
         n_samples=n_samples,
     )
-    return score_structural_from_percentiles(features, percentiles, len(arr))
+    return score_structural_from_percentiles(
+        features,
+        percentiles,
+        len(arr),
+        null_model=model,
+    )
 
 
 def score_structural_from_percentiles(
     features: dict[str, np.ndarray],
     percentiles: dict[str, np.ndarray],
     n_rows: int | None = None,
+    null_model: Any = None,
 ) -> np.ndarray:
     """Compute structural score from precomputed feature percentiles."""
     if n_rows is None:
@@ -212,12 +218,22 @@ def score_structural_from_percentiles(
         return np.full(n_rows, 50.0, dtype=float)
 
     score = weighted / total_weight * 100.0
+    seq_cut = 3.0
+    final_cut = 3.0
+    if null_model is not None and getattr(null_model, "metrics", None):
+        seq_arr = null_model.metrics.get("max_sequencia")
+        if seq_arr is not None and len(seq_arr) > 0:
+            seq_cut = max(3.0, float(np.percentile(seq_arr, 99)))
+        fin_arr = null_model.metrics.get("max_final_repetido")
+        if fin_arr is not None and len(fin_arr) > 0:
+            final_cut = max(3.0, float(np.percentile(fin_arr, 99)))
+
     max_seq = features.get("max_sequencia")
     max_final = features.get("max_final_repetido")
     if max_seq is not None:
-        score -= np.maximum(0.0, max_seq - 3.0) * 10.0
+        score -= np.maximum(0.0, max_seq - seq_cut) * 10.0
     if max_final is not None:
-        score -= np.maximum(0.0, max_final - 3.0) * 6.0
+        score -= np.maximum(0.0, max_final - final_cut) * 6.0
     return np.clip(np.nan_to_num(score, nan=0.0), 0.0, 100.0)
 
 

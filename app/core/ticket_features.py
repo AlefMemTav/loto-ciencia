@@ -110,6 +110,21 @@ def extract_ticket_features(numbers: list[int], config: GameConfig) -> TicketFea
     )
 
 
+def _max_bucket_count_batch(values: np.ndarray, n_bins: int) -> np.ndarray:
+    m = len(values)
+    if m == 0 or values.shape[1] == 0:
+        return np.zeros(m, dtype=float)
+    if int(values.min()) >= 0 and int(values.max()) < n_bins:
+        offsets = np.arange(m, dtype=np.int64)[:, None] * n_bins
+        flat = (values.astype(np.int64, copy=False) + offsets).ravel()
+        counts = np.bincount(flat, minlength=m * n_bins).reshape(m, n_bins)
+        return counts.max(axis=1).astype(float)
+    return np.array(
+        [np.unique(row, return_counts=True)[1].max() for row in values],
+        dtype=float,
+    )
+
+
 def extract_ticket_features_batch(
     candidates: np.ndarray, config: GameConfig
 ) -> dict[str, np.ndarray]:
@@ -118,78 +133,81 @@ def extract_ticket_features_batch(
         return {}
 
     arr = np.asarray(candidates, dtype=int)
-    k = arr.shape[1]
-    gaps = np.diff(arr, axis=1) if k >= 2 else np.empty((len(arr), 0), dtype=int)
+    m, k = arr.shape
+    gaps = np.diff(arr, axis=1) if k >= 2 else np.empty((m, 0), dtype=int)
 
     soma = arr.sum(axis=1).astype(float)
     pares = (arr % 2 == 0).sum(axis=1).astype(float)
-    span = (arr[:, -1] - arr[:, 0]).astype(float) if k >= 2 else np.zeros(len(arr))
+    span = (arr[:, -1] - arr[:, 0]).astype(float) if k >= 2 else np.zeros(m, dtype=float)
 
-    if gaps.shape[1] > 0:
+    g = gaps.shape[1]
+    if g > 0:
         min_gap = gaps.min(axis=1).astype(float)
         max_gap = gaps.max(axis=1).astype(float)
         gap_medio = gaps.mean(axis=1).astype(float)
-        unique_gaps = np.array([len(np.unique(row)) for row in gaps], dtype=float)
-        gap_variety = unique_gaps / max(1, gaps.shape[1])
-        entropia_gaps = np.array([_entropy(row.tolist()) for row in gaps], dtype=float)
-        max_sequencia = np.ones(len(arr), dtype=float)
-        for i, row in enumerate(gaps):
-            run = 1
-            best = 1
-            for gap in row:
-                if gap == 1:
-                    run += 1
-                    best = max(best, run)
-                else:
-                    run = 1
-            max_sequencia[i] = best
+
+        sorted_gaps = np.sort(gaps, axis=1)
+        run_starts_mask = np.ones((m, g), dtype=bool)
+        if g > 1:
+            run_starts_mask[:, 1:] = sorted_gaps[:, 1:] != sorted_gaps[:, :-1]
+        unique_gaps = run_starts_mask.sum(axis=1).astype(float)
+        gap_variety = unique_gaps / max(1, g)
+
+        flat_starts = np.flatnonzero(run_starts_mask.ravel())
+        run_lengths = np.diff(np.append(flat_starts, m * g))
+        run_rows = flat_starts // g
+        probs = run_lengths.astype(float) / float(g)
+        entropia_gaps = np.bincount(
+            run_rows,
+            weights=-probs * np.log2(probs),
+            minlength=m,
+        ).astype(float)
+
+        padded = np.zeros((m, g + 2), dtype=np.int8)
+        padded[:, 1:-1] = (gaps == 1)
+        transitions = np.diff(padded, axis=1)
+        seq_starts = np.flatnonzero(transitions.ravel() == 1)
+        seq_ends = np.flatnonzero(transitions.ravel() == -1)
+        max_sequencia = np.ones(m, dtype=float)
+        if len(seq_starts) > 0:
+            np.maximum.at(
+                max_sequencia,
+                seq_starts // (g + 1),
+                1.0 + (seq_ends - seq_starts).astype(float),
+            )
     else:
-        min_gap = np.zeros(len(arr), dtype=float)
-        max_gap = np.zeros(len(arr), dtype=float)
-        gap_medio = np.zeros(len(arr), dtype=float)
-        gap_variety = np.zeros(len(arr), dtype=float)
-        entropia_gaps = np.zeros(len(arr), dtype=float)
-        max_sequencia = np.zeros(len(arr), dtype=float)
+        min_gap = np.zeros(m, dtype=float)
+        max_gap = np.zeros(m, dtype=float)
+        gap_medio = np.zeros(m, dtype=float)
+        gap_variety = np.zeros(m, dtype=float)
+        entropia_gaps = np.zeros(m, dtype=float)
+        max_sequencia = np.ones(m, dtype=float) if k >= 1 else np.zeros(m, dtype=float)
 
     finais = arr % 10
-    max_final_repetido = np.array(
-        [np.unique(row, return_counts=True)[1].max() for row in finais],
-        dtype=float,
-    )
+    max_final_repetido = _max_bucket_count_batch(finais, 10)
 
     meio = config.n_numbers // 2
     superior = (arr <= meio).sum(axis=1).astype(float)
     inferior = k - superior
 
-    faixa = np.ceil(arr / 10).astype(int)
-    max_dezena_repetida = np.array(
-        [np.unique(row, return_counts=True)[1].max() for row in faixa],
-        dtype=float,
-    )
+    faixa = ((arr - 1) // 10).astype(int)
+    n_dezenas_bins = max(1, (config.n_numbers + 9) // 10)
+    max_dezena_repetida = _max_bucket_count_batch(faixa, n_dezenas_bins)
 
     layout = config.layout
     if layout and layout.rows > 0 and layout.cols > 0:
         rows = ((arr - 1) // layout.cols).astype(int)
         cols = ((arr - 1) % layout.cols).astype(int)
-        max_linha = np.array(
-            [np.unique(row, return_counts=True)[1].max() for row in rows],
-            dtype=float,
-        )
-        max_coluna = np.array(
-            [np.unique(row, return_counts=True)[1].max() for row in cols],
-            dtype=float,
-        )
+        max_linha = _max_bucket_count_batch(rows, layout.rows)
+        max_coluna = _max_bucket_count_batch(cols, layout.cols)
         quad_ids = (rows >= (layout.rows // 2)).astype(int) * 2 + (
             cols >= (layout.cols // 2)
         ).astype(int)
-        max_quadrante = np.array(
-            [np.unique(row, return_counts=True)[1].max() for row in quad_ids],
-            dtype=float,
-        )
+        max_quadrante = _max_bucket_count_batch(quad_ids, 4)
     else:
-        max_linha = np.zeros(len(arr), dtype=float)
-        max_coluna = np.zeros(len(arr), dtype=float)
-        max_quadrante = np.zeros(len(arr), dtype=float)
+        max_linha = np.zeros(m, dtype=float)
+        max_coluna = np.zeros(m, dtype=float)
+        max_quadrante = np.zeros(m, dtype=float)
 
     entropy_norm = np.divide(
         entropia_gaps,

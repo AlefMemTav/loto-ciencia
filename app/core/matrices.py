@@ -115,44 +115,78 @@ def _gerar_fechamento_dinamico(
     """
     Gera fechamento combinatório genérico respeitando o K do jogo.
     """
-    # Se o número de combinações for seguro, gera todas
-    from math import comb
+    import numpy as np
 
-    total_combs = comb(len(numeros), k)
+    nums = sorted({int(x) for x in numeros})
+    n = len(nums)
+    if n < k or k <= 0:
+        return []
+
+    total_combs = comb(n, k)
 
     if total_combs <= limite:
-        return [list(c) for c in combinations(numeros, k)]
+        return [list(c) for c in combinations(nums, k)]
 
-    # Se for muito grande, gera uma redução inteligente (Janela Deslizante Circular)
-    # Isso garante cobertura espalhada sem explodir a memória
-    jogos = []
-    n = len(numeros)
-    n_jogos_alvo = (
-        limite if limite < 100 else 50
-    )  # Gera 50 jogos otimizados se for gigante
+    # Acima do limite combinatório: construção gulosa determinística maximizando
+    # pares inéditos entre as dezenas-base e equilibrando a exposição individual.
+    n_jogos_alvo = min(total_combs, limite if limite < 100 else 50)
+    seed_val = (sum((i + 1) * x for i, x in enumerate(nums)) + k * 997) % (2**32)
+    rng = np.random.default_rng(seed_val)
+    nums_arr = np.asarray(nums, dtype=int)
 
-    for i in range(n_jogos_alvo):
-        # Cria jogos "deslizando" sobre a lista circularmente
-        # Isso mantém vizinhos juntos e varre toda a lista
-        shift = (i * k // 2) % n
-        jogo = []
-        for j in range(k):
-            idx = (shift + j) % n
-            jogo.append(numeros[idx])
+    pair_covered = np.zeros((n, n), dtype=np.int32)
+    exposure = np.zeros(n, dtype=np.int32)
+    jogos: list[list[int]] = []
+    seen: set[tuple[int, ...]] = set()
+    pool_size = min(200, max(40, total_combs))
 
-        # Garante que não tenha duplicados e ordena
-        jogo = sorted(list(set(jogo)))
+    for step in range(n_jogos_alvo):
+        inv_exp = 1.0 / (1.0 + exposure.astype(float))
+        priorities = rng.random((pool_size, n)) * inv_exp[None, :]
+        cand_indices = np.argpartition(priorities, -k, axis=1)[:, -k:]
+        cand_indices.sort(axis=1)
 
-        # Se por acaso o jogo ficou menor que k (raro, mas possível em inputs pequenos), completa
-        if len(jogo) < k:
-            faltam = k - len(jogo)
-            # Pega os primeiros que não estão no jogo
-            extras = [x for x in numeros if x not in jogo][:faltam]
-            jogo.extend(extras)
-            jogo.sort()
+        # Inclui um candidato determinístico puramente pelas menores exposições
+        least_used = np.argsort(exposure, kind="stable")[:k]
+        least_used.sort()
+        cand_indices[0] = least_used
 
-        if len(jogo) == k and jogo not in jogos:
-            jogos.append(jogo)
+        best_idx = None
+        best_tuple = None
+        best_key = None
+
+        for row in cand_indices:
+            tup = tuple(int(nums_arr[idx]) for idx in row)
+            if tup in seen:
+                continue
+            sub = pair_covered[row[:, None], row[None, :]]
+            # Subtrai diagonal (sempre 0) para contar pares inéditos ordenados / 2
+            new_pairs = int((sub == 0).sum()) - k
+            reuse_sum = int(sub.sum())
+            exp_sum = int(exposure[row].sum())
+            key = (new_pairs, -reuse_sum, -exp_sum)
+            if best_key is None or key > best_key:
+                best_key = key
+                best_idx = row
+                best_tuple = tup
+
+        if best_idx is None:
+            # Fallback determinístico caso todas as amostras colidam
+            for _ in range(128):
+                row = np.sort(rng.choice(n, size=k, replace=False))
+                tup = tuple(int(nums_arr[idx]) for idx in row)
+                if tup not in seen:
+                    best_idx = row
+                    best_tuple = tup
+                    break
+            if best_idx is None:
+                break
+
+        seen.add(best_tuple)
+        jogos.append(list(best_tuple))
+        exposure[best_idx] += 1
+        pair_covered[best_idx[:, None], best_idx[None, :]] += 1
+        np.fill_diagonal(pair_covered, 0)
 
     return jogos
 

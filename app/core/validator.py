@@ -280,7 +280,7 @@ def _analise_entropia(report, numeros, config: GameConfig):
 
 
 def _analise_popularidade(report, numeros, config: GameConfig):
-    """Detecta padrões populares que aumentam risco de divisão."""
+    """Detecta padrões heurísticos populares (não medidos em rateios) que sugerem risco de divisão."""
     seqs = sum(1 for i in range(len(numeros) - 1) if numeros[i + 1] == numeros[i] + 1)
     datas = len([n for n in numeros if n <= 31])
     lost_nums = {4, 8, 15, 16, 23, 42}
@@ -288,6 +288,7 @@ def _analise_popularidade(report, numeros, config: GameConfig):
 
     pontos_risco = 0
     qtd = len(numeros)
+    alertas_heuristicos = []
 
     # Calcula densidade para ajustar thresholds
     densidade = config.density
@@ -302,7 +303,8 @@ def _analise_popularidade(report, numeros, config: GameConfig):
 
     if seqs > limite_seq:
         pontos_risco += 2
-        report["msgs"].append(f"⚠️ Muitas sequências ({seqs}).")
+        alertas_heuristicos.append("sequencias")
+        report["msgs"].append(f"⚠️ Muitas sequências ({seqs}) [heurística comportamental].")
 
     # Datas (1-31) - ajustado por densidade
     limite_datas = int(qtd * ajustar_threshold_por_densidade(0.70, densidade))
@@ -311,22 +313,38 @@ def _analise_popularidade(report, numeros, config: GameConfig):
 
     if config.n_numbers >= 50 and datas >= limite_datas:
         pontos_risco += 2
-        report["msgs"].append(f"⚠️ Foco excessivo em datas ({datas} números <= 31).")
+        alertas_heuristicos.append("datas")
+        report["msgs"].append(
+            f"⚠️ Foco excessivo em datas ({datas} números <= 31) [heurística comportamental]."
+        )
 
-    # Lost numbers - ajusta threshold baseado na densidade
+    # Lost numbers - heurística cultural (sem peso medido isoladamente nos rateios)
     lost_disponivel = len([n for n in lost_nums if n <= config.n_numbers])
     if densidade >= 0.5:
-        # Alta densidade: só penaliza se tem todos os Lost disponíveis
+        # Alta densidade: só sinaliza se tem todos os Lost disponíveis
         if qtd_lost == lost_disponivel and lost_disponivel >= 4:
             pontos_risco += 1
+            alertas_heuristicos.append("lost_cultural")
             report["msgs"].append(
-                f"ℹ️ Contém todos números Lost ({qtd_lost}/{lost_disponivel})."
+                f"ℹ️ Contém todos números 'Lost' ({qtd_lost}/{lost_disponivel}) [heurística cultural]."
             )
     else:
         # Baixa densidade: 4+ já é suspeito
         if qtd_lost >= 4:
             pontos_risco += 3
-            report["msgs"].append("⚠️ Padrão 'Lost' detectado.")
+            alertas_heuristicos.append("lost_cultural")
+            report["msgs"].append(
+                "⚠️ Padrão cultural 'Lost' detectado [heurística cultural]."
+            )
+
+    report["metricas"]["popularidade_heuristica"] = {
+        "fonte": "heuristica_comportamental",
+        "sequencias": seqs,
+        "datas_le_31": datas if config.n_numbers >= 50 else None,
+        "qtd_lost": qtd_lost,
+        "pontos_risco": pontos_risco,
+        "alertas": alertas_heuristicos,
+    }
 
     current_risk = report.get("risco_divisao", "Baixo")
 
@@ -334,7 +352,7 @@ def _analise_popularidade(report, numeros, config: GameConfig):
         report["risco_divisao"] = "ALTO"
         if pontos_risco >= 3:
             report["msgs"].append(
-                "💸 Jogo popular (padrões comuns). Risco alto de divisão."
+                "💸 Jogo popular por heurísticas comuns. Risco alto de divisão."
             )
             report["score"] -= 20
     elif pontos_risco >= 1:
@@ -347,7 +365,7 @@ def _analise_popularidade(report, numeros, config: GameConfig):
 
 
 def _analise_numeros_sortudos(report, numeros, config: GameConfig):
-    """Penaliza excesso de números sortudos culturais."""
+    """Sinaliza excesso de números culturalmente populares (heurística sem peso empírico direto)."""
     sortudos = {7, 3, 13, 21, 33, 11, 27, 9}
     qtd_sortudos = len(set(numeros) & sortudos)
 
@@ -357,7 +375,8 @@ def _analise_numeros_sortudos(report, numeros, config: GameConfig):
     if qtd_sortudos >= threshold:
         report["score"] -= 12
         report["msgs"].append(
-            f"🍀 EXCESSO de números 'sortudos': {sorted(set(numeros) & sortudos)} ({qtd_sortudos})"
+            f"🍀 EXCESSO de números culturalmente 'sortudos': {sorted(set(numeros) & sortudos)} "
+            f"({qtd_sortudos}) [heurística cultural]"
         )
         if report.get("risco_divisao") != "ALTO":
             report["risco_divisao"] = "Médio"

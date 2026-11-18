@@ -129,6 +129,7 @@ def score_plausibility_batch(
                 features,
                 percentiles,
                 len(candidates),
+                null_model=_model,
             )
             model = get_score_calibration_model(
                 config,

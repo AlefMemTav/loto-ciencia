@@ -236,13 +236,13 @@ Todo jogo é transformado em um vetor de $9$ features (`extrair_features_jogo`):
 * **DBSCAN (`clusterizar_jogos_dbscan`)**: Agrupamento baseado em densidade que isola automaticamente jogos aberrantes como ruído (`label = -1`).
 
 ### 5.7 Modelo Econométrico de Popularidade Medida (`popularidade_medida.py`)
-Em vez de depender apenas de regras fixas sobre o que os apostadores jogam, este módulo estima a popularidade real de cada dezena a partir dos dados de rateio da Caixa (`data/detalhes/<loteria>_detalhes.csv`):
+Em vez de depender apenas de regras fixas sobre o que os apostadores jogam, este módulo estima a popularidade real de cada combinação a partir dos dados de rateio da Caixa (`data/detalhes/<loteria>_detalhes.csv`):
 1. **Seleção de Faixa (`_escolher_faixa`)**: Escolhe a faixa de premiação com mediana de ganhadores $\ge 300$ (ex.: Quadra da Mega-Sena), onde a lei dos grandes números reduz o ruído de Poisson.
-2. **Especificação Econométrica (Regressão Ridge)**: Como as dezenas sorteadas são independentes do volume arrecadado, modela-se a taxa logarítmica de ganhadores por milhão arrecadado:
-   \(y_t = \log\left(\frac{\text{Ganhadores}_t + 0.5}{\text{Arrecadado}_t} \times 10^6\right) = \beta_0 + \sum_{n=1}^{N} \beta_n X_{t,n} + \gamma_1 \widetilde{\log(\text{Arrecadado}_t)} + \gamma_2 \tilde{t} + \varepsilon_t\)
-   Onde $X_{t,n} \in \{0, 1\}$ indica se a dezena $n$ foi sorteada no concurso $t$. A penalização Ridge ($\lambda \in \{1, 10, 100, 1000\}$) incide apenas sobre os pesos das dezenas $\beta_1 \dots \beta_N$, deixando o intercepto e os controles livres.
-3. **Validação Cruzada Temporal Estrita (`treinar_modelo_popularidade`)**: Divide o histórico em $6$ blocos expansivos (sem vazamento de dados futuros). O modelo só é ativado se superar o modelo nulo (apenas controles) em mais da metade dos *folds* e atingir ganho fora da amostra $R^2_{\text{CV}} \ge 0.02$.
-4. **Razão de Divisão de Prêmio (`avaliar`)**: Para qualquer bilhete candidato, $\exp\left(\sum_{n \in \text{jogo}} \hat{\beta}_n\right)$ estima o multiplicador esperado de ganhadores caso aquele jogo seja sorteado.
+2. **Especificação Econométrica (Regressão Ridge Híbrida)**: Como as dezenas sorteadas são independentes do volume arrecadado, modela-se a taxa logarítmica de ganhadores por milhão arrecadado combinando pesos por dezena ($X_{t,n}$) e atributos estruturais/quadráticos padronizados do bilhete ($Z_{t,j}$, incluindo concentração em linhas/colunas, sequências, soma, paridade, datas $\le 31$ e termos quadráticos centralizados):
+   \(y_t = \log\left(\frac{\text{Ganhadores}_t + 0.5}{\text{Arrecadado}_t} \times 10^6\right) = \beta_0 + \sum_{n=1}^{N} \beta_n X_{t,n} + \sum_{j} \theta_j Z_{t,j} + \gamma_1 \widetilde{\log(\text{Arrecadado}_t)} + \gamma_2 \tilde{t} + \varepsilon_t\)
+   A penalização Ridge ($\lambda_{\text{num}} \in \{1, 10, 100, 1000\}$, $\lambda_{\text{str}} \in \{100, 1000\}$ com $\lambda_{\text{str}} \ge \lambda_{\text{num}}$) incide apenas sobre os pesos das dezenas e métricas estruturais, deixando o intercepto e os controles livres. Quando o tamanho da aposta difere de $k$ do sorteio (ex.: Lotomania $50/20$ ou apostas múltiplas), a inferência recorre exclusivamente aos pesos individuais por dezena.
+3. **Validação Cruzada Temporal Estrita (`treinar_modelo_popularidade`)**: Divide o histórico em $6$ blocos expansivos, padronizando as métricas estruturais apenas com média e desvio de cada bloco de treino (zero vazamento de dados futuros). O modelo só é ativado se superar o modelo nulo (apenas controles) em mais da metade dos *folds* e atingir ganho fora da amostra $R^2_{\text{CV}} \ge 0.02$.
+4. **Razão de Divisão de Prêmio (`avaliar`)**: Para qualquer bilhete candidato, $\exp(\hat{\eta}_{\text{jogo}} - \bar{\eta}_{\text{nulo}})$ estima o multiplicador esperado de ganhadores frente a um jogo aleatório médio ($\approx 1{,}0$).
 
 ---
 
@@ -251,7 +251,7 @@ Em vez de depender apenas de regras fixas sobre o que os apostadores jogam, este
 **Arquivos**: `ticket_features.py`, `null_model.py`, `feature_percentiles.py`, `score_calibration.py`
 
 ### 6.1 Extração Vetorizada de Features (`ticket_features.py`)
-A função `extract_ticket_features_batch` processa dezenas de milhares de candidatos simultaneamente em NumPy, extraindo $17$ métricas objetivas:
+A função `extract_ticket_features_batch` processa dezenas de milhares de candidatos simultaneamente em NumPy puro (sem loops por linha, via contagem por `np.bincount` e detecção vetorizada de sequências/gaps), extraindo $17$ métricas objetivas:
 `soma`, `pares`, `span`, `min_gap`, `max_gap`, `gap_medio`, `gap_variety`, `entropia_gaps`, `max_sequencia`, `max_final_repetido`, `superior`, `inferior`, `max_dezena_repetida`, `max_linha`, `max_coluna`, `max_quadrante` e o índice contínuo `compressibilidade_simples` $\in [0, 1]$:
 
 \[\text{Compressibilidade} = \text{clip}\left(0.55 \cdot \hat{H}(\text{gaps}) + 0.35 \cdot \text{VarGaps} - 0.20 \cdot \text{Pen}_{\text{seq}} - 0.10 \cdot \text{Pen}_{\text{final}}, \, 0, \, 1\right)\]
@@ -264,7 +264,7 @@ Para saber se uma métrica é "rara" ou "comum" sem usar limiares arbitrários:
 
 ### 6.3 Calibração de Score Estrutural (`score_calibration.py`)
 Impede que o gerador produza apenas bilhetes "artificialmente perfeitos" (concentrados na faixa $85\text{--}100$), forçando a distribuição do pacote gerado a imitar a distribuição real da natureza:
-1. Calcula um score estrutural independente do validador (`score_structural_from_percentiles`), combinando métricas centrais (ótimo em torno do percentil $50$), métricas onde valores altos são ruins (ex.: `max_sequencia`, `max_final_repetido`) e métricas onde valores baixos são ruins (`min_gap`, `compressibilidade_simples`).
+1. Calcula um score estrutural independente do validador (`score_structural_from_percentiles`, versão `score-cal-v2`), combinando métricas centrais (ótimo em torno do percentil $50$), métricas onde valores altos são ruins e métricas onde valores baixos são ruins (`min_gap`, `compressibilidade_simples`). As penalidades de cauda extrema em `max_sequencia` e `max_final_repetido` usam o **percentil $99$ do modelo nulo** da própria modalidade (com piso $3$), evitando distorcer jogos densos como Lotofácil e Lotomania.
 2. Divide o score em $5$ *buckets*: `0-39`, `40-54`, `55-69`, `70-84`, `85-100`.
 3. Define a distribuição alvo como uma mistura convexa:
    \(P_{\text{alvo}}(b) = 0.70 \cdot P_{\text{histórico}}(b) + 0.30 \cdot P_{\text{modelo\_nulo}}(b)\)
@@ -285,7 +285,7 @@ A função `score_plausibility_batch` pontua lotes massivos de candidatos combin
 3. **Penalidade Anti-Números da Sorte**: Desconta $1.5$ ponto se o bilhete contiver excesso de números culturais $\{3, 7, 9, 11, 13, 21, 27, 33\}$.
 4. **Sinais Históricos Controlados (Clipped)** — *desligados por padrão*: em walk-forward (2.700 a 6.800 sorteios por jogo) quentes, atrasados, Markov, ciclo e co-ocorrência não se separaram do acaso após correção para múltiplos testes (co-ocorrência: nulo em 3 jogos; Lotofácil z = +2,69, abaixo do corte de 28 testes). Quando ligados, incorpora as médias de $Z_{\text{Freq}}$ (peso $0.30$) e $Z_{\text{Gap}}$ (peso $0.22$) truncadas em $[-2.0, 2.0]$ para evitar que uma única bola domine o bilhete.
 5. **Co-ocorrência com Controle de Cauda** — *desligada por padrão (`usar_coocorrencia=False`)*: quando habilitada, calcula o Z-score da soma de co-ocorrências do bilhete (`cooc_z`) via indexação triangular superior (`np.triu_indices`). Na estratégia `cauda_controlada`, premia sinergia moderada e penaliza excesso acima de $2.0\sigma\text{--}2.5\sigma$.
-6. **Popularidade Medida, Corte e Ordem de Saída**: Desconta até $2.0 \times \text{força}$ para jogos com percentil de popularidade real acima de $60\%$ e aplica leve correção contra extremos posicionais ($< 5\%$ ou $> 95\%$). Na **Mega-Sena** e na **Quina** (R² de CV $\approx 0{,}18$ e $0{,}51$), há ainda um **corte**: jogos com razão de ganhadores prevista acima de $0{,}75$ (Mega) ou $0{,}80$ (Quina) levam penalidade de $100$ pontos e só entram no pacote se faltarem alternativas (`LIMIAR_RAZAO_GANHADORES`, `usar_corte_popularidade`). Os limiares são o percentil $10$ da razão de ganhadores entre $100$ mil bilhetes aleatórios dentro da faixa estrutural $5\text{--}95$. Lotofácil e Lotomania ficam sem corte (modelo fraco ou reprovado). O corte reduz a chance de **dividir** o prêmio; não altera a chance de acertar.
+6. **Popularidade Medida, Corte e Ordem de Saída**: Desconta até $2.0 \times \text{força}$ para jogos com percentil de popularidade real acima de $60\%$ e aplica leve correção contra extremos posicionais ($< 5\%$ ou $> 95\%$). Na **Mega-Sena** ($R^2_{\text{CV}} \approx 0{,}19$), na **Quina** ($R^2_{\text{CV}} \approx 0{,}54$) e na **Lotofácil** ($R^2_{\text{CV}} \approx 0{,}20$ com métricas estruturais), há ainda um **corte**: jogos com razão de ganhadores prevista acima de $0{,}75$ (Mega-Sena e Lotofácil) ou $0{,}80$ (Quina) levam penalidade de $100$ pontos e só entram no pacote se faltarem alternativas (`LIMIAR_RAZAO_GANHADORES`, `usar_corte_popularidade`). Os limiares ficam próximos ao percentil $10$ da razão de ganhadores dentro da faixa estrutural $5\text{--}95$. A **Lotomania** permanece sem corte (o sinal nos $20$ sorteados é fraco para apostas de $50$ dezenas). O corte reduz a chance de **dividir** o prêmio; não altera a chance de acertar.
 7. **Eliminação de Jogos Já Sorteados**: Qualquer combinação presente em `ctx.historico_set` recebe score $-\infty$.
 
 ### 7.2 Seleção de Portfólio e Estratégias de Cauda (`select_diverse_portfolio`)
@@ -317,8 +317,8 @@ A classe `GeneticMiner` implementa um algoritmo evolucionário sobre conjuntos:
 ### 7.5 Modo Jogo Real — Torneio Fechado de Pacotes (`real_game_mode.py`)
 Projetado para o momento da aposta real, evitando que o usuário rode o gerador várias vezes até escolher um resultado por viés visual:
 1. **Seed Determinística Auditável (`_default_seed`)**: Gera uma *seed* SHA-256 única combinando a data do dia, o slug do jogo, a quantidade de bilhetes, o perfil de esforço (`rapido`, `forte` ou `maximo`), o tamanho do histórico e as dezenas do último sorteio.
-2. **Torneio de Pacotes (`_package_score`)**: Gera um pool de candidatos e monta até $800$ pacotes concorrentes (no perfil `maximo`). Cada pacote é avaliado pela função de utilidade global:
-   \(\text{Score}_{\text{pacote}} = \bar{S} + 0.12 \cdot S_{\max} + 0.80 \cdot \text{Cob}_{\text{pares}} + 0.55 \cdot \text{Cob}_{\text{trincas}} - 0.80 \cdot \text{Excesso}_{\text{exp}} - 0.80 \cdot \text{Excesso}_{\text{overlap}} - 0.60 \cdot \text{Excesso}_{\text{pares}}\)
+2. **Torneio de Pacotes (`_package_score`) e Refinamento 1-opt (`_refine_package_1opt`)**: Gera um pool de candidatos, monta até $800$ pacotes concorrentes (no perfil `maximo`) e aplica busca local 1-opt sobre o pacote vencedor avaliando a função de utilidade global (que distingue não-redundância de pares/ternos e cobertura real do universo de pares, registrada no relatório em `cobertura_pares_universo` e `cobertura_nao_redundante_pares`):
+   \(\text{Score}_{\text{pacote}} = \bar{S} + 0.12 \cdot S_{\max} + 1.40 \cdot \text{NãoRed}_{\text{pares}} + 0.90 \cdot \text{NãoRed}_{\text{trincas}} + 1.20 \cdot \text{Cob}_{\text{univ}} - 0.15 \cdot \sigma_{\text{exp}} - 1.20 \cdot \text{Exc}_{\text{exp}} - 1.50 \cdot \text{Exc}_{\text{overlap}} - 0.90 \cdot \text{Exc}_{\text{pares}}\)
 3. **Comparação contra Monte Carlo**: Gera até $5.000$ pacotes puramente aleatórios sob as mesmas restrições e informa o percentil exato e o $p$-valor empírico do pacote campeão.
 
 ### 7.6 Matrizes de Fechamento Combinatório (`matrices.py`)
@@ -328,7 +328,7 @@ Quando o apostador seleciona $n > k_{\text{bet}}$ dezenas base:
   * $16$ dezenas $\to 3$ jogos.
   * $17$ dezenas $\to 8$ jogos.
   * $18$ dezenas $\to 24$ jogos (Matriz $18\text{-}15\text{-}14\text{-}15$: garante matematicamente pelo menos $14$ acertos se as $15$ dezenas sorteadas estiverem entre as $18$ escolhidas).
-* **Fechamento Dinâmico Universal (`_gerar_fechamento_dinamico`)**: Se $\binom{n}{k_{\text{bet}}} \le 5.000$, gera o desdobramento completo exato; caso contrário, aplica uma redução por **Janela Deslizante Circular** com passo $\lfloor i \cdot k_{\text{bet}} / 2 \rfloor \bmod n$.
+* **Fechamento Dinâmico Universal (`_gerar_fechamento_dinamico`)**: Se $\binom{n}{k_{\text{bet}}} \le 5.000$, gera o desdobramento completo exato; caso contrário, executa uma construção gulosa determinística (*greedy set cover*) maximizando pares inéditos entre as dezenas selecionadas e equilibrando a exposição individual até atingir o limite de cartões.
 
 ---
 
@@ -347,7 +347,7 @@ A função `validar_jogo` parte de um score inicial de $100$ pontos e executa um
 3. **Entropia de Shannon dos Gaps (`_analise_entropia`)**:
    \(H(\text{gaps}) = -\sum_{g} p(g) \log_2 p(g)\)
    Penaliza padrões regulares com baixa entropia ($-25$ pts e risco de divisão `ALTO`, com limiar inferior ajustado por `ajustar_threshold_inferior_por_densidade`) e concede bônus ($+5$ pts) para alta entropia.
-4. **Heurísticas de Popularidade Humana (`_analise_popularidade` e `_analise_numeros_sortudos`)**: Detecta excesso de datas ($\le 31$), presença da combinação famosa da série *Lost* ($\{4, 8, 15, 16, 23, 42\}$; em jogos densos $d \ge 0.50$, alerta apenas quando todos estão presentes), excesso de sequências consecutivas e concentração de números sortudos culturais.
+4. **Heurísticas de Popularidade Humana (`_analise_popularidade` e `_analise_numeros_sortudos`)**: Detecta excesso de datas ($\le 31$), presença da combinação cultural *Lost* ($\{4, 8, 15, 16, 23, 42\}$), excesso de sequências consecutivas e números culturalmente "sortudos", rotulando explicitamente esses alertas como heurísticas comportamentais/culturais em `metricas["popularidade_heuristica"]` para diferenciá-los da popularidade medida empiricamente nos rateios (`popularidade_medida_*`).
 5. **Distribuição Espacial pelo Coeficiente de Gini (`_calcular_coeficiente_gini`)**:
    \(G = \frac{2 \sum_{i=1}^{k} i \cdot y_{(i)}}{k \sum_{i=1}^{k} y_{(i)}} - \frac{k + 1}{k}, \quad y_i = \frac{x_i - 1}{N - 1}\)
    Premia $G < 0.15$ ($+5$ pts) e penaliza alta concentração espacial $G > 0.50$ ($-10$ pts).

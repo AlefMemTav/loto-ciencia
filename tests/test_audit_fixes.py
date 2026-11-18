@@ -271,3 +271,80 @@ def test_usar_coocorrencia_desligado_por_padrao():
         sig = inspect.signature(fn).parameters
         if "usar_coocorrencia" in sig:
             assert sig["usar_coocorrencia"].default is False
+
+
+@pytest.mark.parametrize("cfg", [MEGASENA, QUINA, LOTOFACIL, LOTOMANIA])
+def test_score_calibration_sem_colapso_em_jogos_densos(cfg):
+    from app.core.statistics.score_calibration import score_structural_batch
+
+    rng = np.random.default_rng(2026)
+    amostra = np.array(
+        [
+            sorted(rng.choice(cfg.n_numbers, size=cfg.bet_size, replace=False) + 1)
+            for _ in range(250)
+        ]
+    )
+    scores = score_structural_batch(amostra, cfg, n_samples=2000)
+    pa = np.arange(1, cfg.bet_size + 1).reshape(1, -1)
+    pa_score = float(score_structural_batch(pa, cfg, n_samples=2000)[0])
+
+    assert 50.0 <= float(scores.mean()) <= 70.0
+    assert pa_score < 20.0
+
+
+def test_fechamento_dinamico_guloso_sem_ciclo_curto():
+    from app.core.matrices import _gerar_fechamento_dinamico
+
+    # 15 dezenas em k=6 -> C(15,6)=5005 > 5000 (antes colapsava para apenas 5 jogos)
+    jogos = _gerar_fechamento_dinamico(list(range(1, 16)), 6, 5000)
+    assert len(jogos) == 50
+    assert len({tuple(j) for j in jogos}) == 50
+    pares = {
+        tuple(p)
+        for j in jogos
+        for p in itertools.combinations(j, 2)
+    }
+    assert len(pares) == math.comb(15, 2)
+
+
+def test_ticket_features_batch_equivale_ao_escalar():
+    from app.core.ticket_features import (
+        extract_ticket_features,
+        extract_ticket_features_batch,
+    )
+
+    rng = np.random.default_rng(314)
+    for cfg in (MEGASENA, LOTOFACIL, LOTOMANIA):
+        lote = np.array(
+            [
+                sorted(rng.choice(cfg.n_numbers, size=cfg.bet_size, replace=False) + 1)
+                for _ in range(30)
+            ]
+        )
+        batch = extract_ticket_features_batch(lote, cfg)
+        for i in range(len(lote)):
+            esc = extract_ticket_features(lote[i].tolist(), cfg)
+            assert batch["soma"][i] == esc.soma
+            assert batch["pares"][i] == esc.pares
+            assert batch["span"][i] == esc.span
+            assert batch["max_sequencia"][i] == esc.max_sequencia
+            assert batch["max_final_repetido"][i] == esc.max_final_repetido
+            assert batch["entropia_gaps"][i] == pytest.approx(esc.entropia_gaps, abs=1e-12)
+            assert batch["compressibilidade_simples"][i] == pytest.approx(
+                esc.compressibilidade_simples, abs=1e-4
+            )
+
+
+def test_validador_separa_popularidade_heuristica_e_real_game_cobertura():
+    rep = validar_jogo([4, 8, 15, 16, 23, 42], MEGASENA)
+    assert "popularidade_heuristica" in rep["metricas"]
+    assert rep["metricas"]["popularidade_heuristica"]["fonte"] == "heuristica_comportamental"
+    assert "popularidade_medida_percentil" not in rep["metricas"]
+
+    ctx = LotteryService().get_context(MEGASENA.slug)
+    pacote = generate_real_game_package(ctx, quantidade=4, perfil_esforco="rapido", seed=17)
+    diag = pacote["relatorio"]["diagnostico_portfolio"]
+    assert "cobertura_pares_universo" in diag
+    assert "cobertura_nao_redundante_pares" in diag
+    assert 0.0 < diag["cobertura_pares_universo"] <= 1.0
+

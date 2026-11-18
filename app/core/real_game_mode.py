@@ -239,15 +239,12 @@ def _package_index_matrix(
     return packages
 
 
-def _coverage_ratio(
+def _unique_group_count(
     games: np.ndarray, group_size: int, n_numbers: int | None = None
-) -> float:
+) -> int:
     arr = np.asarray(games, dtype=int)
     if arr.ndim != 2 or len(arr) == 0:
-        return 0.0
-    total_possible = len(arr) * comb(arr.shape[1], group_size)
-    if total_possible <= 0:
-        return 0.0
+        return 0
 
     if group_size in (2, 3):
         n_max = int(n_numbers) if n_numbers is not None else int(arr.max())
@@ -259,25 +256,47 @@ def _coverage_ratio(
                 if group_size == 2:
                     P = B.T @ B
                     np.fill_diagonal(P, 0)
-                    unique = int(np.count_nonzero(P)) // 2
-                    return unique / total_possible
-                else:
-                    col_counts = B.sum(axis=0)
-                    unique = 0
-                    for a in np.flatnonzero(col_counts[: max(0, n_max - 2)] > 0):
-                        Ra = B[B[:, a] == 1, a + 1 :]
-                        if Ra.shape[1] < 2:
-                            continue
-                        Pa = Ra.T @ Ra
-                        np.fill_diagonal(Pa, 0)
-                        unique += int(np.count_nonzero(Pa)) // 2
-                    return unique / total_possible
+                    return int(np.count_nonzero(P)) // 2
+                col_counts = B.sum(axis=0)
+                unique = 0
+                for a in np.flatnonzero(col_counts[: max(0, n_max - 2)] > 0):
+                    Ra = B[B[:, a] == 1, a + 1 :]
+                    if Ra.shape[1] < 2:
+                        continue
+                    Pa = Ra.T @ Ra
+                    np.fill_diagonal(Pa, 0)
+                    unique += int(np.count_nonzero(Pa)) // 2
+                return unique
 
     seen = set()
     for row in arr:
         for group in combinations(row.tolist(), group_size):
             seen.add(tuple(sorted(int(n) for n in group)))
-    return len(seen) / total_possible
+    return len(seen)
+
+
+def _coverage_ratio(
+    games: np.ndarray, group_size: int, n_numbers: int | None = None
+) -> float:
+    arr = np.asarray(games, dtype=int)
+    if arr.ndim != 2 or len(arr) == 0:
+        return 0.0
+    total_possible = len(arr) * comb(arr.shape[1], group_size)
+    if total_possible <= 0:
+        return 0.0
+    return _unique_group_count(arr, group_size, n_numbers=n_numbers) / total_possible
+
+
+def _universe_coverage_ratio(
+    games: np.ndarray, group_size: int, n_numbers: int
+) -> float:
+    arr = np.asarray(games, dtype=int)
+    if arr.ndim != 2 or len(arr) == 0:
+        return 0.0
+    total_universe = comb(max(1, int(n_numbers)), group_size)
+    if total_universe <= 0:
+        return 0.0
+    return min(1.0, _unique_group_count(arr, group_size, n_numbers=n_numbers) / total_universe)
 
 
 def _package_score(
@@ -299,12 +318,13 @@ def _package_score(
 
     score_mean = float(np.mean(individual_scores))
     score_best = float(np.max(individual_scores))
-    pair_coverage = _coverage_ratio(games, 2, n_numbers=config.n_numbers)
-    triple_coverage = (
+    pair_non_redundancy = _coverage_ratio(games, 2, n_numbers=config.n_numbers)
+    triple_non_redundancy = (
         _coverage_ratio(games, 3, n_numbers=config.n_numbers)
         if config.bet_size >= 3
         else 0.0
     )
+    universe_pair_cov = _universe_coverage_ratio(games, 2, config.n_numbers)
 
     if config.slug == "mega_sena_sorteio" and n_games >= 20:
         exposure_limit = 5
@@ -312,6 +332,7 @@ def _package_score(
         expected_exposure = n_games * config.bet_size / max(1, config.n_numbers)
         exposure_limit = max(2, int(np.ceil(expected_exposure * 2.5)))
     over_exposure = max(0, int(diag.get("max_exposicao", 0)) - exposure_limit)
+    exposure_std = float(diag.get("desvio_exposicao_usadas", 0.0))
     overlap_over = max(
         0.0,
         float(diag.get("overlap_max", 0)) - config.get_overlap_limit(),
@@ -328,11 +349,13 @@ def _package_score(
     score = (
         score_mean
         + (score_best * 0.12)
-        + (pair_coverage * 0.80)
-        + (triple_coverage * 0.55)
-        - (over_exposure * 0.80)
-        - (overlap_over * 0.80)
-        - (pair_over * 0.60)
+        + (pair_non_redundancy * 1.40)
+        + (triple_non_redundancy * 0.90)
+        + (universe_pair_cov * 1.20)
+        - (exposure_std * 0.15)
+        - (over_exposure * 1.20)
+        - (overlap_over * 1.50)
+        - (pair_over * 0.90)
     )
     return float(score), diag
 
@@ -356,6 +379,62 @@ def _score_packages(
         scores[i] = score
         diagnostics.append(diag)
     return scores, diagnostics
+
+
+def _refine_package_1opt(
+    selected_idxs: np.ndarray,
+    best_score: float,
+    games_pool: np.ndarray,
+    game_scores: np.ndarray,
+    config,
+    rng: np.random.Generator,
+    matriz_coocorrencia=None,
+    max_evals: int = 80,
+) -> tuple[np.ndarray, float]:
+    """Refinamento local 1-opt sobre o melhor pacote do torneio."""
+    current = selected_idxs.copy()
+    n_selected = len(current)
+    n_pool = len(games_pool)
+    if n_selected == 0 or n_pool <= n_selected:
+        return current, best_score
+
+    used = set(int(i) for i in current.tolist())
+    top_order = np.argsort(game_scores)[::-1]
+    replacements = [int(i) for i in top_order if int(i) not in used][: max(16, n_selected * 4)]
+    if not replacements:
+        return current, best_score
+
+    evals = 0
+    for pos in range(n_selected):
+        if evals >= max_evals:
+            break
+        n_try = min(len(replacements), max(4, max_evals // max(1, n_selected)))
+        sample_cands = rng.choice(replacements, size=n_try, replace=False)
+        for cand_idx in sample_cands:
+            cand_i = int(cand_idx)
+            if cand_i in used:
+                continue
+            trial = current.copy()
+            old_i = int(trial[pos])
+            trial[pos] = cand_i
+            trial_score, _ = _package_score(
+                games_pool[trial],
+                game_scores[trial],
+                config,
+                matriz_coocorrencia,
+            )
+            evals += 1
+            if trial_score > best_score + 1e-9:
+                used.discard(old_i)
+                used.add(cand_i)
+                current = trial
+                best_score = trial_score
+                replacements = [r for r in replacements if r != cand_i]
+                replacements.append(old_i)
+            if evals >= max_evals:
+                break
+
+    return current, best_score
 
 
 def generate_real_game_package(
@@ -448,13 +527,31 @@ def generate_real_game_package(
         getattr(ctx, "matriz_coocorrencia", None),
     )
     best_idx = int(np.argmax(package_scores))
-    selected_idxs = package_idxs[best_idx]
+    selected_idxs, selected_score = _refine_package_1opt(
+        package_idxs[best_idx],
+        float(package_scores[best_idx]),
+        candidate_pool,
+        candidate_scores,
+        ctx.config,
+        rng,
+        getattr(ctx, "matriz_coocorrencia", None),
+    )
     selected_games = candidate_pool[selected_idxs]
     selected_diag = portfolio_diagnostics(
         selected_games,
         ctx.config,
         getattr(ctx, "matriz_coocorrencia", None),
     )
+    selected_diag["cobertura_pares_universo"] = round(
+        _universe_coverage_ratio(selected_games, 2, ctx.config.n_numbers), 6
+    )
+    selected_diag["cobertura_nao_redundante_pares"] = round(
+        _coverage_ratio(selected_games, 2, n_numbers=ctx.config.n_numbers), 6
+    )
+    if ctx.config.bet_size >= 3:
+        selected_diag["cobertura_nao_redundante_ternos"] = round(
+            _coverage_ratio(selected_games, 3, n_numbers=ctx.config.n_numbers), 6
+        )
 
     mc_games = _random_games_array(
         rng,
@@ -496,7 +593,6 @@ def generate_real_game_package(
             getattr(ctx, "matriz_coocorrencia", None),
         )
 
-    selected_score = float(package_scores[best_idx])
     percentile_mc = float(
         np.searchsorted(np.sort(mc_package_scores), selected_score, side="right")
         / max(1, monte_carlo_packages)

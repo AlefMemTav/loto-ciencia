@@ -8,7 +8,7 @@ from app.core.generator_objective import score_plausibility_batch
 from app.core.statistics.popularidade_medida import LIMIAR_RAZAO_GANHADORES
 from app.services.lottery_service import LotteryService
 
-SLUGS_COM_CORTE = ["mega_sena_sorteio", "quina_sorteio"]
+SLUGS_COM_CORTE = ["mega_sena_sorteio", "quina_sorteio", "loto_facil_sorteio"]
 
 
 @pytest.fixture(scope="module")
@@ -64,8 +64,8 @@ def test_corte_pode_ser_desligado(contextos):
     assert (com[acima] < sem[acima] - 50).all()
 
 
-def test_sem_corte_na_lotofacil(service):
-    assert "loto_facil_sorteio" not in LIMIAR_RAZAO_GANHADORES
+def test_sem_corte_na_lotomania(service):
+    assert "loto_facil_sorteio" in LIMIAR_RAZAO_GANHADORES
     assert "loto_mania_sorteio" not in LIMIAR_RAZAO_GANHADORES
 
 
