@@ -976,8 +976,8 @@ def render_como_funciona():
     margin-bottom: 30px;
     line-height: 1.7;
 ">
-    Cada estratégia tem uma <strong>filosofia estatística diferente</strong>. 
-    Escolha baseado no seu perfil de jogo:
+    Cada estratégia otimiza a construção da carteira conforme a <strong>densidade combinatória da modalidade</strong>,
+    mantendo calibração estrutural por <strong>Cotas de Hamilton</strong> e bloqueio anti-divisão:
 </p>
         """,
         unsafe_allow_html=True,
@@ -995,22 +995,22 @@ def render_como_funciona():
     border: 2px solid #fbbf24;
     min-height: 340px;
 ">
-    <div style="text-align: center; font-size: 2.5rem; margin-bottom: 15px;">🟡</div>
+    <div style="text-align: center; font-size: 2.5rem; margin-bottom: 15px;">🛡️</div>
     <h4 style="color: #92400e; margin-top: 0; text-align: center; font-size: 1.2rem;">
-        Conservadora
+        Cauda Controlada
     </h4>
     <div style="color: #78350f; font-size: 0.98rem; line-height: 1.8;">
         <p style="margin-bottom: 12px;">
-            <strong>Filosofia:</strong> "O que está quente continua quente"
+            <strong>Filosofia:</strong> Máxima cobertura de carteira + proteção anti-divisão rigorosa
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Pesos:</strong> 70% frequência recente, 30% números atrasados
+            <strong>Mecanismo:</strong> Limite rígido de pares repetidos, Cotas de Hamilton e zero vazamento de jogos populares
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Para quem:</strong> Prefere apostar em números que saíram recentemente
+            <strong>Padrão automático em:</strong> Jogos esparsos (Mega-Sena e Quina)
         </p>
         <p style="margin-bottom: 0;">
-            <strong>Risco:</strong> Baixo (segue tendências)
+            <strong>Vantagem:</strong> Maximiza a área coberta pelos bilhetes e a retenção esperada do prêmio
         </p>
     </div>
 </div>
@@ -1035,16 +1035,13 @@ def render_como_funciona():
     </h4>
     <div style="color: #1e3a8a; font-size: 0.98rem; line-height: 1.8;">
         <p style="margin-bottom: 12px;">
-            <strong>Filosofia:</strong> Mix inteligente (equilíbrio)
+            <strong>Filosofia:</strong> Fidelidade estrutural histórica + diversidade de arquétipos
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Pesos:</strong> 40% frequência, 60% números atrasados
+            <strong>Mecanismo:</strong> Cotas de Hamilton nos 5 buckets de calibração (D_JS &lt; 0,07) e entropia no Espaço-Z (9 features)
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Para quem:</strong> Quer equilíbrio entre quentes e frios
-        </p>
-        <p style="margin-bottom: 12px;">
-            <strong>Risco:</strong> Médio (versatilidade)
+            <strong>Padrão automático em:</strong> Jogos densos (Lotofácil e Lotomania)
         </p>
         <p style="
             text-align: center;
@@ -1053,7 +1050,7 @@ def render_como_funciona():
             font-weight: 700;
             color: #3b82f6;
         ">
-            ✨ Mais recomendada
+            ✨ Equilíbrio estrutural calibrado
         </p>
     </div>
 </div>
@@ -1065,28 +1062,28 @@ def render_como_funciona():
         st.markdown(
             """
 <div style="
-    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
     padding: 28px;
     border-radius: 12px;
-    border: 2px solid #ef4444;
+    border: 2px solid #22c55e;
     min-height: 340px;
 ">
-    <div style="text-align: center; font-size: 2.5rem; margin-bottom: 15px;">🔴</div>
-    <h4 style="color: #991b1b; margin-top: 0; text-align: center; font-size: 1.2rem;">
-        Agressiva
+    <div style="text-align: center; font-size: 2.5rem; margin-bottom: 15px;">🧪</div>
+    <h4 style="color: #166534; margin-top: 0; text-align: center; font-size: 1.2rem;">
+        Pura (Controle)
     </h4>
-    <div style="color: #7f1d1d; font-size: 0.98rem; line-height: 1.8;">
+    <div style="color: #15803d; font-size: 0.98rem; line-height: 1.8;">
         <p style="margin-bottom: 12px;">
-            <strong>Filosofia:</strong> Regressão à média (aposta em atrasados)
+            <strong>Filosofia:</strong> Geometria combinatória pura sob o Modelo Nulo (22 features)
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Pesos:</strong> 20% frequência, 80% números atrasados
+            <strong>Mecanismo:</strong> Desliga sinais temporais opcionais e foca 100% em plausibilidade combinatória e anti-popularidade
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Para quem:</strong> Acredita que números atrasados "precisam sair"
+            <strong>Para quem:</strong> Quer referência estrita contra a hipótese nula H0 sem vieses temporais
         </p>
         <p style="margin-bottom: 0;">
-            <strong>Risco:</strong> Alto (requer correlação >0.3 validada)
+            <strong>Vantagem:</strong> Controle científico auditável e proteção contra divisão
         </p>
     </div>
 </div>
@@ -1095,9 +1092,7 @@ def render_como_funciona():
         )
 
     st.info(
-        "💡 **Dica:** Se a análise de regressão à média mostrar **correlação >0.3**, "
-        "a estratégia Agressiva é cientificamente justificada. Caso contrário, "
-        "preferimos Balanceada ou Conservadora."
+        "💡 **Dica:** No **Modo Jogo Real**, o sistema seleciona automaticamente **Cauda Controlada** para Mega-Sena e Quina (foco em cobertura e retenção de prêmio) e **Balanceada** para Lotofácil e Lotomania (foco em calibração estrutural e diversidade de arquétipos)."
     )
 
     st.markdown("<br><br>", unsafe_allow_html=True)

@@ -34,13 +34,10 @@ procedimentos de backtest.
 
 ## Funcionalidades
 
-- **Dashboard de tendências:** frequências, atrasos, distribuições, testes de uniformidade
-  e intervalos de confiança.
-- **Validador de apostas:** score de 0 a 100, paridade, soma, distribuição espacial,
-  similaridade histórica, geometria e padrões populares.
-- **Gerador inteligente:** estatísticas históricas, aleatoriedade criptográfica,
-  filtros de qualidade e geração em lote.
-- **Fechamentos combinatórios:** cobertura de grupos de 7 a 12 números e estimativa de custo.
+- **Dashboard de tendências:** frequências, atrasos, distribuições geométricas discretas exatas (KS discreto + $\chi^2$ agrupado), testes de uniformidade e intervalos de confiança via Bootstrap vetorizado.
+- **Validador de apostas (15 sinais):** score de 0 a 100, percentis exatos no Modelo Nulo Combinatório (22 features), tipicidade em Espaço-Z padronizado (K-Means 9 dimensões), lookup histórico matricial $O(1)$, geometria do volante e modelo econométrico de popularidade medida (Regressão Ridge nos rateios da Caixa).
+- **Gerador inteligente e Modo Jogo Real:** torneio fechado de carteiras com calibração estrutural por Cotas de Hamilton ($D_{\text{JS}} \le 0{,}11$), diversidade de arquétipos, busca local 1-opt, bloqueio rigoroso anti-divisão de prêmio e diagnósticos pós-seleção neutros.
+- **Fechamentos combinatórios:** cobertura otimizada de grupos e estimativa de custo.
 - **Auditoria de bolões:** validação em lote, duplicidades, cobertura e relatório de custos.
 - **Dados atualizados:** resultados e detalhes de premiação obtidos dos dados oficiais da
   Caixa Econômica Federal.
@@ -52,16 +49,14 @@ procedimentos de backtest.
 | Mega-Sena | 1–60 | 6 números | 10% |
 | Lotofácil | 1–25 | 15 números | 60% |
 | Quina | 1–80 | 5 números | 6,25% |
-| Lotomania | 1–100 | 50 números | 50% |
+| Lotomania | 1–100 | 50 números (sorteio de 20) | 50% |
 
 > **Densidade** é a proporção entre números escolhidos e números disponíveis. Os
-> thresholds de análise são ajustados para cada modalidade.
+> thresholds de análise e a calibração histórica (incluindo escala de sorteio $k=20$ na Lotomania) são ajustados automaticamente para cada modalidade.
 
 ## Como o score funciona
 
-O score combina critérios técnicos e sinais de popularidade. Entre eles estão soma,
-paridade, quadrantes, linhas e colunas, terminações, entropia dos intervalos, distância
-de Hamming, geometria do volante, coocorrência, simetria e progressões.
+O sistema separa estritamente a **função objetivo do gerador** (contínua, calibrada sob o Modelo Nulo Combinatório de 22 features e o modelo econométrico de popularidade medida) do **validador independente** (auditor de 13 etapas e 15 sinais com correção de Bonferroni). Entre os critérios estão soma (IC Histórico + IC Bootstrap), paridade, quadrantes, linhas, colunas, moldura, cruz, diagonais, simetria de reflexão, terminações, entropia e regularidade dos intervalos, distância de Hamming, tipicidade de cluster no Espaço-Z e risco empírico de divisão de prêmio.
 
 | Score | Classificação | Interpretação |
 | ---: | --- | --- |
@@ -71,8 +66,7 @@ de Hamming, geometria do volante, coocorrência, simetria e progressões.
 | 40–54 | Razoável | Concentração ou padrão popular moderado |
 | 0–39 | Fraco | Muitos padrões concentrados ou populares |
 
-O score mede o equilíbrio estrutural e o risco de divisão da combinação; ele **não prevê o resultado** nem
-altera a chance de acerto.
+O score mede o equilíbrio estrutural e o risco de divisão da combinação; na geração de carteiras, as **Cotas de Hamilton** distribuem os jogos entre as faixas na mesma proporção observada nos sorteios reais.
 
 ## Instalação
 
