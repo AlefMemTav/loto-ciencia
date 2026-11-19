@@ -75,6 +75,22 @@ def variancia_media_acertos_exata(
     return max(0.0, fator * ss_exp)
 
 
+def _prob_premio_bilhete_exata(
+    n_universo: int, k_sorteio: int, k_aposta: int, faixas_validas: set[int]
+) -> float:
+    """Probabilidade hipergeométrica exata de um bilhete aleatório acertar qualquer faixa paga."""
+    total = math.comb(n_universo, k_sorteio)
+    if total <= 0:
+        return 0.0
+    p = 0.0
+    rem_pool = n_universo - k_aposta
+    for h in faixas_validas:
+        rem_draw = k_sorteio - h
+        if 0 <= h <= min(k_sorteio, k_aposta) and 0 <= rem_draw <= rem_pool:
+            p += (math.comb(k_aposta, h) * math.comb(rem_pool, rem_draw)) / total
+    return float(min(1.0, max(0.0, p)))
+
+
 def avaliar_controle_pareado_condicional(
     jogos: list[list[int]],
     sorteio: set[int],
@@ -83,25 +99,34 @@ def avaliar_controle_pareado_condicional(
     n_simulacoes: int = 100,
 ) -> dict:
     """
-    Controle aleatório pareado Rao-Blackwellizado: avalia K pacotes aleatórios independentes
-    de mesmo tamanho (M, k_aposta) sobre o EXATO mesmo sorteio D_t.
-    Reduz em ~55% o tamanho amostral necessário para auditar o ganho de cobertura P(>= 1 prêmio).
+    Controle aleatório pareado Rao-Blackwellizado:
+    - Por simetria do universo, o limite exato K -> inf da probabilidade de um pacote
+      aleatório de M jogos independentes premiar no sorteio D_t tem forma fechada:
+      p_exato = 1 - (1 - p_1)^M, eliminando 100% da variância do braço de controle
+      (redução de 50% na variância do estimador pareado frente a um controle único K = 1).
+    - Também registra a estimativa empírica pareada de K pacotes aleatórios sobre o
+      exato sorteio D_t para auditoria cruzada.
     """
     m = len(jogos)
     n_univ = UNIVERSO[jogo]
-    k_sorteio = len(sorteio)
+    sorteio_norm = {100 if (jogo == "loto_mania" and int(n) == 0) else int(n) for n in sorteio}
+    k_sorteio = len(sorteio_norm)
     k_aposta = len(jogos[0]) if m > 0 else 0
     faixas_validas = set(FAIXAS[jogo].keys())
 
     if m == 0 or k_aposta == 0 or n_simulacoes <= 0:
         return {}
 
+    p_1 = _prob_premio_bilhete_exata(n_univ, k_sorteio, k_aposta, faixas_validas)
+    p_premio_exato = 1.0 - (1.0 - p_1) ** m
+    media_premiados_exata = m * p_1
+
     seed_bytes = sha256(f"controle_pareado_v1|{jogo}|{concurso}".encode("utf-8")).digest()[:8]
     rng = np.random.default_rng(int.from_bytes(seed_bytes, "big"))
 
     # Vetor indicador do sorteio D_t (n_univ,)
     d_vec = np.zeros(n_univ, dtype=np.int16)
-    for num in sorteio:
+    for num in sorteio_norm:
         if 1 <= int(num) <= n_univ:
             d_vec[int(num) - 1] = 1
 
@@ -116,7 +141,7 @@ def avaliar_controle_pareado_condicional(
     p_premio_ctrl = float(np.mean(pacotes_premiados))
     media_premiados_ctrl = float(np.mean(premiados_mask.sum(axis=1)))
 
-    acertos_sist = [contar_acertos(j, sorteio) for j in jogos]
+    acertos_sist = [contar_acertos(j, sorteio_norm) for j in jogos]
     premiou_sist = 1.0 if any(a in faixas_validas for a in acertos_sist) else 0.0
     media_sist = sum(acertos_sist) / float(m)
     esperado = acertos_esperados(n_univ, k_sorteio, k_aposta)
@@ -126,8 +151,10 @@ def avaliar_controle_pareado_condicional(
 
     return {
         "n_simulacoes": int(n_simulacoes),
+        "p_premio_aleatorio_exato": round(p_premio_exato, 4),
+        "media_bilhetes_premiados_exata": round(media_premiados_exata, 4),
         "p_premio_controle_condicional": round(p_premio_ctrl, 4),
-        "delta_premio_pareado": round(premiou_sist - p_premio_ctrl, 4),
+        "delta_premio_pareado": round(premiou_sist - p_premio_exato, 4),
         "media_bilhetes_premiados_controle": round(media_premiados_ctrl, 4),
         "dp_media_acertos_teorico": round(dp_exato, 4),
         "z_exposicao_hipergeometrica": round(z_exp, 4),
@@ -147,23 +174,30 @@ def achar_sorteio(slug: str, dia: date, pasta_dados: Path) -> tuple[int, set[int
         return None
     linha = achados.iloc[0]
     cols = [c for c in df.columns if c.lower().startswith("bola")]
-    return int(linha["Concurso"]), {int(linha[c]) for c in cols}
+    bolas = {
+        100 if (slug == "loto_mania_sorteio" and int(linha[c]) == 0) else int(linha[c])
+        for c in cols
+    }
+    return int(linha["Concurso"]), bolas
 
 
 def conferir_pacote(jogo: str, pacote: dict, concurso: int, sorteio: set[int]) -> dict:
     ultimo = (pacote.get("meta") or {}).get("ultimo_concurso")
     if ultimo is not None and ultimo >= concurso:
         return {"status": "invalido", "motivo": "pacote gerado depois do sorteio", "concurso": concurso}
-    jogos = pacote["jogos"]
-    acertos = [contar_acertos(j, sorteio) for j in jogos]
+    jogos = pacote.get("jogos") or []
+    if not jogos:
+        return {"status": "invalido", "motivo": "pacote sem jogos", "concurso": concurso}
+    sorteio_norm = {100 if (jogo == "loto_mania" and int(n) == 0) else int(n) for n in sorteio}
+    acertos = [contar_acertos(j, sorteio_norm) for j in jogos]
     faixas = FAIXAS[jogo]
     premios = [faixas[a] for a in acertos if a in faixas]
-    esperado = acertos_esperados(UNIVERSO[jogo], len(sorteio), len(jogos[0]))
-    controle = avaliar_controle_pareado_condicional(jogos, sorteio, jogo, concurso)
+    esperado = acertos_esperados(UNIVERSO[jogo], len(sorteio_norm), len(jogos[0]))
+    controle = avaliar_controle_pareado_condicional(jogos, sorteio_norm, jogo, concurso)
     return {
         "status": "conferido",
         "concurso": concurso,
-        "sorteio": sorted(sorteio),
+        "sorteio": sorted(sorteio_norm),
         "acertos": acertos,
         "melhor": max(acertos),
         "media_acertos": round(sum(acertos) / len(acertos), 4),

@@ -51,7 +51,10 @@ def test_lottery_service_validate_lotomania_e_check_historical_matches(service):
     assert rep["perfil_cluster"]["disponivel"] is True
     assert rep["bootstrap"]["disponivel"] is True
     assert "popularidade_medida_percentil" in rep["metricas"]
-    assert rep["metricas"].get("popularidade_medida_razao") is None
+    # Com reescalonamento hipergeométrico k/m = 20/50 + proteção-espelho J^c,
+    # a razão de ganhadores é calibrada também para apostas de 50 dezenas (50 ímpares = padrão extremo)
+    assert rep["metricas"].get("popularidade_medida_razao") is not None
+    assert rep["metricas"]["popularidade_medida_razao"] > 1.0
     assert rep["metricas"]["hamming_historico_min"] == "N/A"
     assert "repetidas_ultimo_sorteio" not in rep["metricas"]
 

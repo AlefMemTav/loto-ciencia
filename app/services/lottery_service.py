@@ -112,13 +112,14 @@ def _calcular_novos_sinais(df, config):
     except Exception as e:
         logger.warning(f"⚠️ Popularidade medida indisponível: {e}")
     try:
-        from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
+        from app.core.statistics.prize_model import (
+            estimar_ev_concurso_ex_ante,
+            filtrar_detalhes_causais,
+        )
 
-        det_corte = det
-        if det is not None and df is not None and not df.empty:
-            idx_comum = det.index.intersection(df.index)
-            if len(idx_comum) > 0:
-                det_corte = det.loc[idx_comum]
+        det_corte = (
+            filtrar_detalhes_causais(det, df) if det is not None else pd.DataFrame()
+        )
         ev_info = estimar_ev_concurso_ex_ante(config, detalhes_df=det_corte)
         if ev_info and ev_info.get("disponivel"):
             elast = float(ev_info.get("elasticidade_antipopular", 0.5))

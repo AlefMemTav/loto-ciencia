@@ -927,13 +927,13 @@ def render_como_funciona():
     </p>
     <ul style="color: #1e3a8a; font-size: 1.05rem; line-height: 2; padding-left: 25px;">
         <li style="margin-bottom: 10px;">
-            ✅ <strong>Popularidade Medida Econométrica (Ridge + WLS + Geometria 2D):</strong> explica até <strong>66% da variância</strong> de ganhadores fora da amostra (Quina R² = 0,64, Lotomania R² = 0,66, Lotofácil R² = 0,36, Mega-Sena R² = 0,29)
+            ✅ <strong>Popularidade Medida Econométrica (Ridge + WLS + Geometria 2D):</strong> explica até <strong>78% da variância</strong> de ganhadores fora da amostra (Quina R² = 0,78, Lotofácil R² = 0,55, Lotomania R² = 0,38, Mega-Sena R² = 0,38)
         </li>
         <li style="margin-bottom: 10px;">
             ✅ <strong>Gatekeeper de Valor Esperado Ex-Ante:</strong> estima o retorno esperado líquido por R$ 1,00 apostado sob diluição de Poisson antes do sorteio
         </li>
         <li style="margin-bottom: 10px;">
-            ✅ <strong>Auditoria Pareada de Rao-Blackwell:</strong> confronta cada pacote registrado contra 100 pacotes aleatórios no mesmo sorteio realizado, reduzindo a variância amostral
+            ✅ <strong>Auditoria Pareada de Rao-Blackwell:</strong> confronta cada pacote registrado contra o baseline analítico exato (K → ∞, eliminando a variância do controle) + auditoria empírica condicional com 100 pacotes aleatórios no mesmo sorteio
         </li>
     </ul>
     <div style="
@@ -949,7 +949,7 @@ def render_como_funciona():
             <li><strong>Validação Cruzada Temporal</strong> em 6 blocos expansivos com normalização causal por mediana móvel</li>
             <li><strong>Modelo Nulo Combinatório</strong> com 50.000 amostras exatas em 22 features estruturais</li>
             <li><strong>Proteção-Espelho Dual na Lotomania:</strong> protege simultaneamente as faixas de 15..20 acertos e a faixa de 0 acerto (bilhete complementar)</li>
-            <li><strong>Cotas de Hamilton + Busca Local 2-opt</strong> preservando divergência D_JS &lt; 0,07</li>
+            <li><strong>Cotas de Hamilton + Busca Local 1-opt</strong> preservando divergência D_JS &lt; 0,07</li>
             <li><strong>Correção de Bonferroni</strong> aplicada no validador independente (α = 0.0033)</li>
         </ul>
     </div>
@@ -975,7 +975,7 @@ def render_como_funciona():
     line-height: 1.7;
 ">
     Cada estratégia otimiza a construção da carteira conforme a <strong>densidade combinatória da modalidade</strong>,
-    mantendo calibração estrutural por <strong>Cotas de Hamilton</strong>, refinamento 2-opt de cobertura e bloqueio anti-divisão:
+    mantendo calibração estrutural por <strong>Cotas de Hamilton</strong>, refinamento 1-opt de cobertura e bloqueio anti-divisão:
 </p>
         """,
         unsafe_allow_html=True,
@@ -1002,7 +1002,7 @@ def render_como_funciona():
             <strong>Filosofia:</strong> Máxima cobertura de carteira + proteção anti-divisão rigorosa
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Mecanismo:</strong> Limite rígido de pares repetidos, Cotas de Hamilton, busca local 2-opt e zero vazamento de jogos populares
+            <strong>Mecanismo:</strong> Limite rígido de pares repetidos, Cotas de Hamilton, busca local 1-opt e zero vazamento de jogos populares
         </p>
         <p style="margin-bottom: 12px;">
             <strong>Padrão automático em:</strong> Jogos esparsos (Mega-Sena e Quina)
@@ -1036,7 +1036,7 @@ def render_como_funciona():
             <strong>Filosofia:</strong> Fidelidade estrutural histórica + baixa variância em faixas fixas
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Mecanismo:</strong> Cotas de Hamilton nos 5 buckets (D_JS &lt; 0,07), entropia no Espaço-Z e refinamento 2-opt de exposição uniforme
+            <strong>Mecanismo:</strong> Cotas de Hamilton nos 5 buckets (D_JS &lt; 0,07), entropia no Espaço-Z e refinamento 1-opt de exposição uniforme
         </p>
         <p style="margin-bottom: 12px;">
             <strong>Padrão automático em:</strong> Jogos densos (Lotofácil e Lotomania)

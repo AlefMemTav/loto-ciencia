@@ -96,3 +96,85 @@ def test_gerar_pula_quando_pacote_ja_existe(tmp_path):
     destino.mkdir(parents=True)
     (destino / "package.json").write_text("{}")
     assert gd.gerar("quina", date(2026, 11, 10), 3, "rapido", tmp_path, force=False) is True
+
+
+def test_gerar_nao_quebra_com_game_context_frozen(tmp_path, monkeypatch):
+    """Regressão: GameContext é @dataclass(frozen=True); gerar() deve usar dataclasses.replace."""
+    import json
+
+    from app.core import real_game_mode as rgm
+    from app.core.lottery.catalog import QUINA
+    from app.core.statistics import prize_model as pm_mod
+    from app.services.lottery_service import GameContext, LotteryService
+
+    df = pd.DataFrame(
+        {"bola 1": [1], "bola 2": [2], "bola 3": [3], "bola 4": [4], "bola 5": [5]},
+        index=pd.Index([7000], name="Concurso"),
+    )
+    ctx_frozen = GameContext(
+        config=QUINA,
+        df=df,
+        freq=pd.Series(dtype=float),
+        poisson_finais={},
+        tabela=pd.DataFrame(),
+        historico_set=set(),
+        ic_info={},
+        atrasos={},
+        chi2=None,
+        coef_variacao=None,
+        reis_sequencia=[],
+        distribuicoes_geometricas={},
+        stats_quadrantes={},
+        elasticidade_antipopular=None,
+    )
+
+    ev_fake = {
+        "disponivel": True,
+        "concurso_referencia": 7000,
+        "ev_por_real_aleatorio": 0.25,
+        "ev_por_real_ajustado": 0.35,
+        "ganho_relativo_antipopular": 0.40,
+        "elasticidade_antipopular": 0.88,
+        "percentil_historico_ev": 65.0,
+        "recomendacao_aposta": "PULAR_CONCURSO",
+    }
+    captured = {}
+
+    def fake_generate(ctx_arg, quantidade, perfil_esforco, seed):
+        captured["ctx"] = ctx_arg
+        jogos = [[1, 12, 23, 45, 78], [4, 19, 31, 56, 72]]
+        return {
+            "jogos": jogos[:quantidade],
+            "seed": seed,
+            "relatorio": {
+                "estrategia_base": "cauda_controlada",
+                "perfil_esforco": perfil_esforco,
+                "percentil_vs_monte_carlo": 95.0,
+                "p_valor_empirico": 0.05,
+                "diagnostico_portfolio": {"trincas_repetidas": 0, "max_repeticao_par": 1, "overlap_max": 1},
+                "diagnostico_ev_ex_ante": ev_fake,
+            },
+        }
+
+    monkeypatch.setattr(LotteryService, "get_context", lambda self, slug: ctx_frozen)
+    monkeypatch.setattr(pm_mod, "estimar_ev_concurso_ex_ante", lambda *a, **k: ev_fake)
+    monkeypatch.setattr(rgm, "generate_real_game_package", fake_generate)
+    monkeypatch.setattr(
+        gd,
+        "_validar_pacote",
+        lambda slug, jogos: [
+            {"jogo": j, "score": 85.0, "classificacao": "Excelente", "ja_saiu": False, "risco_divisao": "Baixo"}
+            for j in jogos
+        ],
+    )
+    monkeypatch.setattr(gd, "_ultimo_concurso", lambda ctx, slug: (7000, "09/11/2026"))
+
+    ok = gd.gerar("quina", date(2026, 11, 10), 2, "rapido", tmp_path, force=True)
+    assert ok is True
+    assert captured["ctx"] is not ctx_frozen
+    assert captured["ctx"].elasticidade_antipopular == 0.88
+    assert ctx_frozen.elasticidade_antipopular is None  # instância cacheada original intacta
+    pkg = json.loads((tmp_path / "2026-11-10" / "quina" / "package.json").read_text())
+    assert pkg["status"] == "aprovado"
+    assert pkg["meta"]["recomendacao_aposta"] == "PULAR_CONCURSO"
+    assert pkg["meta"]["ev_por_real_ajustado"] == 0.35

@@ -211,16 +211,28 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
         print(f"[{jogo}] já existe {arquivo}; nada a fazer (use --force para refazer).")
         return True
 
+    from dataclasses import is_dataclass, replace as dataclass_replace
+
     from app.core.real_game_mode import generate_real_game_package
+    from app.core.statistics.popularidade_medida import LIMIAR_RAZAO_GANHADORES
     from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
     from app.services.lottery_service import LotteryService
 
     slug = JOGOS[jogo]
     ctx = LotteryService().get_context(slug)
     config = ctx.config
-    ev_preliminar = estimar_ev_concurso_ex_ante(config, razao_popularidade=0.70)
+    r_pre = float(LIMIAR_RAZAO_GANHADORES.get(config.slug, 0.90))
+    ev_preliminar = estimar_ev_concurso_ex_ante(config, razao_popularidade=r_pre)
     if ev_preliminar.get("disponivel"):
-        ctx.elasticidade_antipopular = ev_preliminar.get("elasticidade_antipopular")
+        elast_pre = ev_preliminar.get("elasticidade_antipopular")
+        if is_dataclass(ctx):
+            ctx = dataclass_replace(
+                ctx,
+                elasticidade_antipopular=elast_pre,
+                ev_ex_ante=ev_preliminar,
+            )
+        else:
+            ctx.elasticidade_antipopular = elast_pre
     ultimo, data_ultimo = _ultimo_concurso(ctx, slug)
     seed_base = int(hoje.strftime("%Y%m%d")) * 10 + list(JOGOS).index(jogo)
 

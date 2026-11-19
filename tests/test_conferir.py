@@ -97,6 +97,48 @@ def test_variancia_media_acertos_exata_e_controle_pareado():
     ctrl = r["controle_pareado"]
     assert ctrl["n_simulacoes"] == 100
     assert 0.0 <= ctrl["p_premio_controle_condicional"] <= 1.0
+    assert 0.0 < ctrl["p_premio_aleatorio_exato"] < 1.0
+    assert ctrl["media_bilhetes_premiados_exata"] > 0.0
+    assert ctrl["delta_premio_pareado"] == pytest.approx(
+        round(1.0 - ctrl["p_premio_aleatorio_exato"], 4), abs=1e-4
+    )
     assert ctrl["dp_media_acertos_teorico"] == 0.0
     assert ctrl["z_exposicao_hipergeometrica"] == 0.0
 
+
+def test_lotomania_normaliza_bola_zero_para_100_em_achar_sorteio_e_conferir(tmp_path):
+    """Regressão: planilhas da Caixa gravam a bola 00 como 0, mas os jogos usam 1..100."""
+    bolas_raw = [0] + list(range(1, 20))  # 20 bolas incluindo 00 -> 100
+    linha = {"Concurso": 3001, "Data": "10/11/2026"}
+    for i, b in enumerate(bolas_raw, start=1):
+        linha[f"bola {i}"] = b
+    _planilha(tmp_path, "loto_mania_sorteio", [linha])
+
+    achado = cf.achar_sorteio("loto_mania_sorteio", date(2026, 11, 10), tmp_path)
+    assert achado is not None
+    concurso, sorteio = achado
+    assert concurso == 3001
+    assert 0 not in sorteio and 100 in sorteio and len(sorteio) == 20
+
+    # Bilhete contendo 1..19 + 100 + 50..79 deve acertar todas as 20 bolas (inclusive 100)
+    jogo_20 = list(range(1, 20)) + [100] + list(range(50, 80))
+    assert len(jogo_20) == 50
+    pacote = {"jogos": [jogo_20], "meta": {"ultimo_concurso": 3000}}
+
+    # Deve funcionar tanto com o conjunto já normalizado quanto se o chamador passar 0 cru
+    r_norm = cf.conferir_pacote("loto_mania", pacote, 3001, sorteio)
+    r_raw = cf.conferir_pacote("loto_mania", pacote, 3001, set(bolas_raw))
+    assert r_norm["acertos"] == [20]
+    assert r_raw["acertos"] == [20]
+    assert r_raw["sorteio"] == sorted(sorteio)
+    assert r_raw["premios"] == ["20"]
+    p1 = cf._prob_premio_bilhete_exata(100, 20, 50, set(cf.FAIXAS["loto_mania"].keys()))
+    assert r_raw["controle_pareado"]["p_premio_aleatorio_exato"] == pytest.approx(p1, abs=1e-4)
+
+
+def test_conferir_pacote_vazio_nao_quebra():
+    pacote = {"jogos": [], "meta": {"ultimo_concurso": 10}}
+    r = cf.conferir_pacote("quina", pacote, 11, {1, 2, 3, 4, 5})
+    assert r["status"] == "invalido"
+    assert r["motivo"] == "pacote sem jogos"
+    assert r["concurso"] == 11

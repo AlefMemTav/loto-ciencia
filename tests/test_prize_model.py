@@ -6,6 +6,7 @@ from app.core.lottery.catalog import LOTOFACIL, LOTOMANIA, MEGASENA
 from app.core.statistics.prize_model import (
     diagnostics_to_dict,
     estimar_ev_concurso_ex_ante,
+    filtrar_detalhes_causais,
     financial_diagnostics,
     hypergeometric_hit_probability,
     parse_prize_table,
@@ -111,3 +112,53 @@ def test_estimar_ev_concurso_ex_ante_detecta_acumulado_e_antipopularidade():
         ev_anti["ev_por_real_ajustado"] / 1.35, rel=1e-3
     )
 
+
+def test_prize_model_usa_coluna_acumulou_guarda_est_zero_e_fresh_f1():
+    """Regressão: schema real da Caixa ('acumulou' bool/str, est_prox==0 histórico, fresh_f1 Lotofácil)."""
+    rng = np.random.default_rng(123)
+    n = 80
+    arr = rng.uniform(2.5e7, 3.5e7, size=n)
+    est = np.where(np.arange(n) < 25, 0.0, arr * 0.078)
+    # Metade dos concursos têm ganhadores na faixa 1; quando acumula em t-1,
+    # o pagamento total em t inclui o carryover acumulado + 0,078 da arrecadação nova.
+    acum_col = ["False" if i % 2 == 0 else "True" for i in range(n - 1)] + ["False"]
+    acum_prox = np.where(np.array(acum_col) == "True", arr * 0.078, 0.0)
+    acum_prev = np.concatenate([[0.0], acum_prox[:-1]])
+    f1_w = np.array([2 if a == "False" else 0 for a in acum_col])
+    f1_p = np.where(f1_w > 0, (acum_prev + arr * 0.078) / np.maximum(f1_w, 1), 0.0)
+    df_det = pd.DataFrame(
+        {
+            "Concurso": np.arange(1, n + 1),
+            "valorArrecadado": arr,
+            "valorEstimadoProximoConcurso": est,
+            "valorAcumuladoProximoConcurso": acum_prox,
+            "valorAcumuladoConcursoEspecial": np.zeros(n),
+            "acumulou": acum_col,
+            "faixa1_ganhadores": f1_w,
+            "faixa1_premio": f1_p,
+            "faixa2_ganhadores": np.full(n, 300),
+            "faixa2_premio": arr * 0.03 / 300.0,
+        }
+    )
+    res = estimar_ev_concurso_ex_ante(LOTOFACIL, df_det, razao_popularidade=0.75)
+    assert res["disponivel"] is True
+    assert res["acumulado_anterior"] is False
+    # Deve estimar fresh_f1 próximo ao real (~0.078), não o antigo hardcoded 0.16
+    assert 0.065 <= res["fresh_f1_ratio_estimado"] <= 0.095
+    assert np.isfinite(res["arrecadacao_estimada"]) and res["arrecadacao_estimada"] > 1e7
+    assert 0.0 < res["ev_por_real_aleatorio"] < 1.0
+    assert 0.0 <= res["percentil_historico_ev"] <= 100.0
+
+
+def test_filtrar_detalhes_causais_estritamente_causal():
+    det = pd.DataFrame({"valorArrecadado": [10.0, 20.0, 30.0, 40.0]}, index=pd.Index([10, 11, 12, 13], name="Concurso"))
+    df_hist_parcial = pd.DataFrame({"bola 1": [1, 2]}, index=pd.Index([10, 11], name="Concurso"))
+    df_hist_sem_overlap = pd.DataFrame({"bola 1": [1, 2]}, index=pd.Index([1, 2], name="Concurso"))
+
+    recorte = filtrar_detalhes_causais(det, df_hist_parcial)
+    assert list(recorte.index) == [10, 11]
+
+    # Sem interseção: deve devolver DataFrame vazio, NUNCA vazar o futuro inteiro
+    vazio = filtrar_detalhes_causais(det, df_hist_sem_overlap)
+    assert vazio.empty
+    assert filtrar_detalhes_causais(None, df_hist_parcial).empty

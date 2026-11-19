@@ -40,8 +40,8 @@ MIN_CONCURSOS = 300
 MEDIANA_MIN_GANHADORES = 300  # para o ruído de contagem (Poisson) ficar pequeno
 R2_MINIMO = 0.02
 # Corte de popularidade: nos jogos em que o modelo explica bem os ganhadores
-# (R2 de CV com normalização causal + WLS + estrutura 2D: Quina ~0,64, Mega ~0,29,
-# Lotofácil ~0,36, Lotomania ~0,66).
+# (R2 de CV temporal estrita com normalização causal + WLS + estrutura 2D:
+# Quina ~0,78, Lotofácil ~0,55, Lotomania ~0,38, Mega-Sena ~0,38).
 # Valor = razão de ganhadores prevista (1,0 = jogo médio) que deixa de fora
 # os ~85-90% de jogos mais populares dentro da faixa estrutural 5-95.
 # Na Lotomania (aposta de 50 números para 20 sorteados), a proteção anti-divisão
@@ -206,12 +206,12 @@ def _prever(x: np.ndarray, beta: np.ndarray) -> np.ndarray:
 
 
 def _causal_rolling_median(y_raw: np.ndarray, window: int = 50) -> np.ndarray:
-    """Mediana móvel estritamente causal (usa apenas [t-window, t-1]) para remover saltos de preço."""
-    s = pd.Series(y_raw)
-    med = s.rolling(window=window, min_periods=10).median().shift(1)
-    if med.isna().any():
-        fallback = float(np.median(y_raw[: min(len(y_raw), max(10, window))]))
-        med = med.bfill().fillna(fallback)
+    """Mediana móvel estritamente causal (usa apenas [max(0, t-window), t-1]) para remover saltos de preço."""
+    if len(y_raw) == 0:
+        return np.array([], dtype=float)
+    s = pd.Series(y_raw, dtype=float)
+    med = s.rolling(window=window, min_periods=1).median().shift(1)
+    med.iloc[0] = float(y_raw[0])
     return med.to_numpy(dtype=float)
 
 
@@ -326,7 +326,8 @@ class ModeloPopularidade:
         arr = np.array([sorted(numeros)], dtype=int)
         percentil = float(self.percentil_batch(arr)[0])
         razao = None
-        if len(numeros) == self.k:
+        bet_size_cfg = getattr(self.config, "bet_size", self.k) if self.config is not None else self.k
+        if len(numeros) in {self.k, bet_size_cfg}:
             razao = float(self.razao_ganhadores_batch(arr)[0])
         return {"percentil": percentil, "razao_ganhadores": razao}
 

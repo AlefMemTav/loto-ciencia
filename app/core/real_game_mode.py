@@ -647,22 +647,38 @@ def generate_real_game_package(
     )
     rng = np.random.default_rng(seed)
 
-    if getattr(ctx, "elasticidade_antipopular", None) is None:
-        from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
+    from dataclasses import is_dataclass, replace as dataclass_replace
+    from types import SimpleNamespace
+    from app.core.statistics.popularidade_medida import carregar_detalhes
+    from app.core.statistics.prize_model import (
+        estimar_ev_concurso_ex_ante,
+        filtrar_detalhes_causais,
+    )
 
-        ev_pre = getattr(ctx, "ev_ex_ante", None) or estimar_ev_concurso_ex_ante(ctx.config)
+    df_ctx = getattr(ctx, "df", None)
+    det_causais = filtrar_detalhes_causais(carregar_detalhes(ctx.config), df_ctx)
+
+    ctx_work = ctx
+    if getattr(ctx_work, "elasticidade_antipopular", None) is None:
+        ev_pre = getattr(ctx_work, "ev_ex_ante", None)
+        if ev_pre is None:
+            ev_pre = estimar_ev_concurso_ex_ante(ctx_work.config, detalhes_df=det_causais)
         if ev_pre and ev_pre.get("disponivel"):
-            try:
-                object.__setattr__(
-                    ctx,
-                    "elasticidade_antipopular",
-                    float(ev_pre.get("elasticidade_antipopular", 0.5)),
+            elast_val = float(ev_pre.get("elasticidade_antipopular", 0.5))
+            if is_dataclass(ctx_work):
+                ctx_work = dataclass_replace(
+                    ctx_work,
+                    elasticidade_antipopular=elast_val,
+                    ev_ex_ante=ev_pre,
                 )
-            except Exception:
-                pass
+            elif hasattr(ctx_work, "__dict__"):
+                attrs = dict(vars(ctx_work))
+                attrs["elasticidade_antipopular"] = elast_val
+                attrs.setdefault("ev_ex_ante", ev_pre)
+                ctx_work = SimpleNamespace(**attrs)
 
     candidate_pool = _generate_candidate_pool(
-        ctx=ctx,
+        ctx=ctx_work,
         target_size=target_pool,
         seed=seed,
         estrategia_base=estrategia_base,
@@ -671,7 +687,7 @@ def generate_real_game_package(
     )
     candidate_scores = score_plausibility_batch(
         candidate_pool,
-        ctx,
+        ctx_work,
         estrategia=estrategia_base,
         percentil_min=payload_options.get("percentil_min", 5.0),
         percentil_max=payload_options.get("percentil_max", 95.0),
@@ -776,7 +792,7 @@ def generate_real_game_package(
     )
     mc_scores_games = score_plausibility_batch(
         mc_games,
-        ctx,
+        ctx_work,
         estrategia=estrategia_base,
         percentil_min=payload_options.get("percentil_min", 5.0),
         percentil_max=payload_options.get("percentil_max", 95.0),
@@ -842,17 +858,17 @@ def generate_real_game_package(
     )
     cobertura_historica_diag = _compute_post_selection_historical_coverage(
         selected_games,
-        ctx,
+        ctx_work,
     )
     antidivisao_diag = _compute_post_selection_antidivision(
         selected_games,
-        ctx,
+        ctx_work,
     )
-    from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
 
     r_media = float(antidivisao_diag.get("razao_ganhadores_media", 1.0) or 1.0)
     ev_ex_ante_diag = estimar_ev_concurso_ex_ante(
         ctx.config,
+        detalhes_df=det_causais,
         razao_popularidade=r_media,
     )
 

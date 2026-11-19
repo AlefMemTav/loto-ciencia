@@ -243,3 +243,22 @@ def test_popularidade_normaliza_salto_de_preco_e_lotomania_50_dezenas():
     # Escala k/m = 20/50 impede explosão exponencial de somar 50 pesos brutos
     assert 0.1 < razoes[0] < 1.0 and 1.0 < razoes[1] < 10.0
 
+    # avaliar() também deve retornar razao_ganhadores para apostas de 50 dezenas (bet_size)
+    av_baixa = mod_lm.avaliar(aposta_baixa[0].tolist())
+    assert av_baixa["razao_ganhadores"] is not None
+    assert av_baixa["razao_ganhadores"] == pytest.approx(float(razoes[0]), rel=1e-6)
+
+
+def test_causal_rolling_median_nao_vaza_futuro_no_warmup():
+    """Regressão: alterar y[5] não pode mudar a mediana causal nos índices 0..5."""
+    y_base = np.linspace(1.0, 20.0, 30)
+    y_pert = y_base.copy()
+    y_pert[5] = 9999.0
+
+    med_base = pm._causal_rolling_median(y_base, window=50)
+    med_pert = pm._causal_rolling_median(y_pert, window=50)
+
+    # Nenhum índice <= 5 pode ser afetado pela perturbação em t=5
+    assert np.allclose(med_base[:6], med_pert[:6])
+    # A partir de t=6 a perturbação em t=5 já está estritamente no passado
+    assert med_pert[6] >= med_base[6]

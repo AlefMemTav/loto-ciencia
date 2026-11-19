@@ -279,7 +279,7 @@ def _refine_coverage_preserving_buckets(
     max_pair_cap: int | None = None,
 ) -> list[np.ndarray]:
     """
-    Busca local 1-opt/2-opt que preserva exatamente as cotas de calibração de score
+    Busca local 1-opt que preserva exatamente as cotas de calibração de score
     e o corte de popularidade, reduzindo a variância de exposição e sobreposição máxima
     (especialmente relevante em jogos densos com faixas fixas como Lotofácil).
     """
@@ -607,6 +607,7 @@ def select_diverse_portfolio(
             seen.add(t)
 
     if len(selected) == quantidade and len(selected_pool_idxs) == quantidade:
+        curr_max_exp = max(exposure.values(), default=exposure_limit)
         selected = _refine_coverage_preserving_buckets(
             selected[:quantidade],
             selected_pool_idxs[:quantidade],
@@ -615,6 +616,7 @@ def select_diverse_portfolio(
             config,
             calibration_bucket_idx,
             overlap_limit,
+            max_exposure_cap=max(exposure_limit, curr_max_exp),
         )
 
     return [row.tolist() for row in selected[:quantidade]]

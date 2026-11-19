@@ -31,6 +31,47 @@ TIER_HITS_BY_SLUG: dict[str, dict[int, int]] = {
     "loto_mania_sorteio": {1: 20, 2: 19, 3: 18, 4: 17, 5: 16, 6: 15, 7: 0},
 }
 
+# Fração líquida média da arrecadação destinada à faixa 1 em concursos regulares (fallback estatutário)
+DEFAULT_FRESH_F1_RATIO_BY_SLUG: dict[str, float] = {
+    "mega_sena_sorteio": 0.1226,
+    "quina_sorteio": 0.1073,
+    "loto_facil_sorteio": 0.0783,
+    "loto_mania_sorteio": 0.1379,
+}
+
+
+def _parse_bool_series(series: pd.Series) -> np.ndarray:
+    """Converte série booleana/numérica/string ('True'/'False'/'1'/'0') com segurança."""
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(False).to_numpy(dtype=bool)
+    if pd.api.types.is_numeric_dtype(series):
+        return (pd.to_numeric(series, errors="coerce").fillna(0.0) != 0.0).to_numpy(dtype=bool)
+    s = series.fillna("").astype(str).str.strip().str.lower()
+    return s.isin({"true", "1", "1.0", "sim", "s", "t", "yes"}).to_numpy(dtype=bool)
+
+
+def filtrar_detalhes_causais(
+    detalhes_df: pd.DataFrame | None,
+    df_historico: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """
+    Restringe `detalhes_df` estritamente aos concursos presentes em `df_historico`
+    para impedir vazamento temporal em backtests walk-forward.
+    """
+    if detalhes_df is None:
+        return pd.DataFrame()
+    if df_historico is None:
+        return detalhes_df
+    if getattr(detalhes_df, "empty", True):
+        return detalhes_df
+    if getattr(df_historico, "empty", True):
+        return detalhes_df.iloc[0:0]
+    if "Concurso" in detalhes_df.columns:
+        concursos = set(df_historico.index.tolist())
+        return detalhes_df[detalhes_df["Concurso"].isin(concursos)]
+    idx_comum = detalhes_df.index.intersection(df_historico.index)
+    return detalhes_df.loc[idx_comum]
+
 
 @dataclass(frozen=True)
 class FinancialDiagnostics:
@@ -138,7 +179,7 @@ def estimar_ev_concurso_ex_ante(
     Causal ex-ante expected value gatekeeper with Poisson crowd dilution.
 
     Uses only information available at contest t-1 (`valorEstimadoProximoConcurso`,
-    `valorAcumuladoProximoConcurso`, `valorAcumuladoConcursoEspecial`, `acumulado`,
+    `valorAcumuladoProximoConcurso`, `valorAcumuladoConcursoEspecial`, `acumulou`,
     and `valorArrecadado`) to predict the expected net return per unit stake at contest t.
     """
     price = float(config.game_price)
@@ -204,26 +245,50 @@ def estimar_ev_concurso_ex_ante(
         sub.get("valorAcumuladoConcursoEspecial", pd.Series(0.0, index=sub.index)),
         errors="coerce",
     ).fillna(0.0).to_numpy(dtype=float)
-    is_acum = (
-        sub.get("acumulado", pd.Series(False, index=sub.index))
-        .fillna(False)
-        .astype(bool)
-        .astype(float)
-        .to_numpy()
-    )
+    f1_w = pd.to_numeric(
+        sub.get("faixa1_ganhadores", pd.Series(0.0, index=sub.index)), errors="coerce"
+    ).fillna(0.0).to_numpy(dtype=float)
+    f1_p = pd.to_numeric(
+        sub.get("faixa1_premio", pd.Series(0.0, index=sub.index)), errors="coerce"
+    ).fillna(0.0).to_numpy(dtype=float)
+
+    if "acumulou" in sub.columns:
+        is_acum = _parse_bool_series(sub["acumulou"]).astype(float)
+    elif "acumulado" in sub.columns:
+        is_acum = _parse_bool_series(sub["acumulado"]).astype(float)
+    else:
+        is_acum = ((acum_prox > 0.0) | (f1_w == 0.0)).astype(float)
+
+    # Estimativa causal da fração líquida fresca da faixa 1 sobre a arrecadação
+    pool_f1_real = np.where(f1_w > 0, f1_w * f1_p, np.maximum(est_prox, acum_prox))
+    default_fresh = DEFAULT_FRESH_F1_RATIO_BY_SLUG.get(config.slug, 0.11)
+    valid_fresh = (f1_w[1:] > 0) & (pool_f1_real[1:] > acum_prox[:-1]) & (arr[1:] > 0)
+    if int(np.sum(valid_fresh)) >= 3:
+        fresh_f1_ratio = float(
+            np.clip(
+                np.median(
+                    (pool_f1_real[1:][valid_fresh] - acum_prox[:-1][valid_fresh])
+                    / arr[1:][valid_fresh]
+                ),
+                0.04,
+                0.22,
+            )
+        )
+    else:
+        fresh_f1_ratio = default_fresh
+
+    # Protege log_est_ratio quando valorEstimadoProximoConcurso == 0 em históricos antigos
+    est_safe = np.where(est_prox > 0.0, est_prox, np.maximum(acum_prox, fresh_f1_ratio * arr))
 
     # Causal training on transitions (s-1) -> s within the trailing window
     log_arr_prev = np.log(np.maximum(arr[:-1], 1.0))
-    log_est_ratio = np.log(np.maximum(est_prox[:-1], 1.0) / np.maximum(arr[:-1], 1.0))
+    log_est_ratio = np.log(np.maximum(est_safe[:-1], 1.0) / np.maximum(arr[:-1], 1.0))
     x_tr = np.column_stack([np.ones(len(log_arr_prev)), log_arr_prev, log_est_ratio, is_acum[:-1]])
     y_tr = np.log(np.maximum(arr[1:], 1.0))
     pen = np.diag([0.0, 1e-2, 1e-2, 1e-2])
     beta_arr = np.linalg.solve(x_tr.T @ x_tr + pen, x_tr.T @ y_tr)
 
     # Calibration ratio between realized Faixa 1 pool at s and est_prox at s-1
-    f1_w = pd.to_numeric(sub.get("faixa1_ganhadores"), errors="coerce").fillna(0.0).to_numpy(dtype=float)
-    f1_p = pd.to_numeric(sub.get("faixa1_premio"), errors="coerce").fillna(0.0).to_numpy(dtype=float)
-    pool_f1_real = np.where(f1_w > 0, f1_w * f1_p, np.maximum(est_prox, acum_prox))
     valid_cal = (f1_w[1:] > 0) & (est_prox[:-1] > 0)
     if int(np.sum(valid_cal)) >= 5:
         cal_f1 = float(np.clip(np.median(pool_f1_real[1:][valid_cal] / est_prox[:-1][valid_cal]), 0.65, 1.15))
@@ -247,15 +312,19 @@ def estimar_ev_concurso_ex_ante(
         arr_prev_v: float,
         est_prev_v: float,
         acum_prev_v: float,
-        esp_prev_v: float,
         is_acum_v: float,
         r_val: float,
     ) -> tuple[float, float, float, float]:
+        est_prev_safe = (
+            est_prev_v
+            if est_prev_v > 0.0
+            else max(acum_prev_v, fresh_f1_ratio * arr_prev_v)
+        )
         x_now = np.array(
             [
                 1.0,
                 np.log(max(arr_prev_v, 1.0)),
-                np.log(max(est_prev_v, 1.0) / max(arr_prev_v, 1.0)),
+                np.log(max(est_prev_safe, 1.0) / max(arr_prev_v, 1.0)),
                 float(is_acum_v),
             ]
         )
@@ -264,7 +333,7 @@ def estimar_ev_concurso_ex_ante(
 
         p1 = hypergeometric_hit_probability(config.n_numbers, config.k, config.bet_size, tier_map[1])
         lam1 = n_bets_hat * p1
-        pool1_hat = max(est_prev_v * cal_f1, acum_prev_v + 0.16 * arr_hat)
+        pool1_hat = max(est_prev_v * cal_f1, acum_prev_v + fresh_f1_ratio * arr_hat)
         ev_var = p1 * pool1_hat * float(poisson_retention_factor(lam1, r_val))
         weighted_elast = ev_var * float(poisson_ev_elasticity(lam1, r_val))
 
@@ -287,7 +356,7 @@ def estimar_ev_concurso_ex_ante(
     hist_evs = []
     for i in range(len(arr) - 1):
         ev_i, _, _, _ = _eval_from_prev_signals(
-            arr[i], est_prox[i], acum_prox[i], acum_esp[i], is_acum[i], r_eff
+            arr[i], est_prox[i], acum_prox[i], is_acum[i], r_eff
         )
         hist_evs.append(ev_i)
     hist_arr = np.asarray(hist_evs, dtype=float)
@@ -296,10 +365,10 @@ def estimar_ev_concurso_ex_ante(
 
     # Evaluate next contest t from the last recorded contest t-1
     ev_adj, ev_var_adj, elast_now, arr_hat_now = _eval_from_prev_signals(
-        arr[-1], est_prox[-1], acum_prox[-1], acum_esp[-1], is_acum[-1], r_eff
+        arr[-1], est_prox[-1], acum_prox[-1], is_acum[-1], r_eff
     )
     ev_rand, _, _, _ = _eval_from_prev_signals(
-        arr[-1], est_prox[-1], acum_prox[-1], acum_esp[-1], is_acum[-1], 1.0
+        arr[-1], est_prox[-1], acum_prox[-1], is_acum[-1], 1.0
     )
     pct_hist = (
         float(100.0 * np.mean(hist_arr <= ev_adj)) if len(hist_arr) > 0 else 50.0
@@ -326,7 +395,9 @@ def estimar_ev_concurso_ex_ante(
         "concurso_referencia": ultimo_conc,
         "acumulado_anterior": bool(is_acum[-1] > 0.5),
         "premio_estimado_proximo": round(float(est_prox[-1]), 2),
+        "acumulado_concurso_especial": round(float(acum_esp[-1]), 2),
         "arrecadacao_estimada": round(float(arr_hat_now), 2),
+        "fresh_f1_ratio_estimado": round(float(fresh_f1_ratio), 4),
         "razao_popularidade_usada": round(float(r_eff), 4),
         "agio_bolao": round(float(agio_bolao), 4),
         "ev_por_real_aleatorio": round(float(ev_rand), 4),
