@@ -1,0 +1,37 @@
+{
+  "status": "conferido",
+  "concurso": 7171,
+  "sorteio": [
+    13,
+    16,
+    25,
+    28,
+    57
+  ],
+  "acertos": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "melhor": 0,
+  "media_acertos": 0.0,
+  "esperado_aleatorio": 0.3125,
+  "premios": [],
+  "controle_pareado": {
+    "n_simulacoes": 100,
+    "p_premio_aleatorio_exato": 0.0116,
+    "media_bilhetes_premiados_exata": 0.0117,
+    "p_premio_controle_condicional": 0.0,
+    "delta_premio_pareado": -0.0116,
+    "media_bilhetes_premiados_controle": 0.0,
+    "dp_media_acertos_teorico": 0.1666,
+    "z_exposicao_hipergeometrica": -1.8763
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "status": "conferido",
+  "concurso": 3001,
+  "sorteio": [
+    4,
+    6,
+    12,
+    14,
+    25,
+    44,
+    45,
+    49,
+    51,
+    54,
+    56,
+    66,
+    69,
+    72,
+    73,
+    79,
+    89,
+    94,
+    97,
+    98
+  ],
+  "acertos": [
+    10,
+    13,
+    10,
+    12,
+    12,
+    10,
+    7,
+    10,
+    6,
+    12
+  ],
+  "melhor": 13,
+  "media_acertos": 10.2,
+  "esperado_aleatorio": 10.0,
+  "premios": [],
+  "controle_pareado": {
+    "n_simulacoes": 100,
+    "p_premio_aleatorio_exato": 0.1085,
+    "media_bilhetes_premiados_exata": 0.1142,
+    "p_premio_controle_condicional": 0.11,
+    "delta_premio_pareado": -0.1085,
+    "media_bilhetes_premiados_controle": 0.11,
+    "dp_media_acertos_teorico": 0.6356,
+    "z_exposicao_hipergeometrica": 0.3146
+  }
+}
