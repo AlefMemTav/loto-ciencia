@@ -5,6 +5,7 @@ import json
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from app.cli import conferir as cf
 
@@ -66,3 +67,36 @@ def test_main_confere_grava_historico_e_e_idempotente(tmp_path):
 
     cf.main(["--registro", str(reg), "--dados", str(dados)])  # 2ª rodada não duplica
     assert len(list(csv.DictReader((reg / "historico.csv").open()))) == 1
+
+    # Com --incluir-reprovados, pacotes reprovados também podem ser auditados sem censura
+    _planilha(dados, "mega_sena_sorteio", [
+        {"Concurso": 11, "Data": "10/11/2026", "bola 1": 1, "bola 2": 2, "bola 3": 3, "bola 4": 4, "bola 5": 5, "bola 6": 6},
+    ])
+    assert cf.main(["--registro", str(reg), "--dados", str(dados), "--incluir-reprovados"]) == 0
+    assert (reprovado / "resultado.json").exists()
+
+
+def test_variancia_media_acertos_exata_e_controle_pareado():
+    # Lotofácil M=5 cíclico com exposição perfeitamente uniforme (cada dezena 1..25 aparece 3 vezes)
+    jogos_uniformes = [
+        list(range(1, 16)),
+        list(range(6, 21)),
+        list(range(11, 26)),
+        list(range(1, 6)) + list(range(16, 26)),
+        list(range(1, 11)) + list(range(21, 26)),
+    ]
+    assert cf.variancia_media_acertos_exata(jogos_uniformes, 25, 15) == pytest.approx(0.0, abs=1e-12)
+
+    # Pacote concentrado tem variância positiva e controle pareado determinístico
+    jogos_concentrados = [list(range(1, 16)) for _ in range(5)]
+    var_conc = cf.variancia_media_acertos_exata(jogos_concentrados, 25, 15)
+    assert var_conc > 1.0
+
+    pacote = {"jogos": jogos_uniformes, "meta": {"ultimo_concurso": 10}}
+    r = cf.conferir_pacote("loto_facil", pacote, 11, set(range(1, 16)))
+    ctrl = r["controle_pareado"]
+    assert ctrl["n_simulacoes"] == 100
+    assert 0.0 <= ctrl["p_premio_controle_condicional"] <= 1.0
+    assert ctrl["dp_media_acertos_teorico"] == 0.0
+    assert ctrl["z_exposicao_hipergeometrica"] == 0.0
+

@@ -385,6 +385,8 @@ def _package_score(
         js_div = _fast_js_divergence(counts, target_bucket_probs)
         js_penalty = js_div * 2.50
 
+    is_dense = bool(getattr(config, "is_dense", False))
+    exp_std_weight = 0.40 if is_dense else 0.15
     score = (
         score_mean
         + (score_best * 0.12)
@@ -392,7 +394,7 @@ def _package_score(
         + (triple_non_redundancy * 0.90)
         + (universe_pair_cov * 1.20)
         + (arch_entropy * 0.25)
-        - (exposure_std * 0.15)
+        - (exposure_std * exp_std_weight)
         - (over_exposure * 1.20)
         - (overlap_over * 1.50)
         - (pair_over * 0.90)
@@ -832,6 +834,13 @@ def generate_real_game_package(
         selected_games,
         ctx,
     )
+    from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
+
+    r_media = float(antidivisao_diag.get("razao_ganhadores_media", 1.0) or 1.0)
+    ev_ex_ante_diag = estimar_ev_concurso_ex_ante(
+        ctx.config,
+        razao_popularidade=r_media,
+    )
 
     return {
         "jogos": selected_games.tolist(),
@@ -859,5 +868,6 @@ def generate_real_game_package(
             "diagnostico_calibracao_score": calibration_diag,
             "diagnostico_cobertura_historica": cobertura_historica_diag,
             "diagnostico_antidivisao": antidivisao_diag,
+            "diagnostico_ev_ex_ante": ev_ex_ante_diag,
         },
     }

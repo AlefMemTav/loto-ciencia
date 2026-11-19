@@ -162,6 +162,14 @@ def _render_relatorio(pacote: dict) -> str:
         f"- Histórico até o concurso **{m['ultimo_concurso']}** ({m['data_ultimo_concurso']})",
         f"- Estratégia: `{rel['estrategia_base']}` · esforço: `{rel['perfil_esforco']}` · seed: `{m['seed']}` · tentativas: {m['tentativas']}",
         f"- Status: **{pacote['status'].upper()}**",
+    ]
+    if m.get("ev_por_real_ajustado") is not None:
+        linhas.append(
+            f"- Gatekeeper EV Ex-Ante: **{m['ev_por_real_ajustado']:.4f}** por R$ 1 "
+            f"(aleatório: {m.get('ev_por_real_aleatorio', 0.0):.4f}) · "
+            f"recomendação: `{m.get('recomendacao_aposta', 'INDISPONIVEL')}`"
+        )
+    linhas += [
         "",
         "## Jogos",
         "",
@@ -176,8 +184,7 @@ def _render_relatorio(pacote: dict) -> str:
         )
     linhas += [
         "",
-        "\\* Previsão do modelo de popularidade (1,00 = jogo médio; menor = tende a dividir o prêmio com menos gente). "
-        "Disponível para Mega-Sena, Quina e Lotofácil.",
+        "\\* Previsão do modelo de popularidade (1,00 = jogo médio; menor = tende a dividir o prêmio com menos gente).",
         "",
     ]
     if pacote["erros"]:
@@ -205,12 +212,15 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
         return True
 
     from app.core.real_game_mode import generate_real_game_package
-    from app.core.statistics.popularidade_medida import LIMIAR_RAZAO_GANHADORES
+    from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
     from app.services.lottery_service import LotteryService
 
     slug = JOGOS[jogo]
     ctx = LotteryService().get_context(slug)
     config = ctx.config
+    ev_preliminar = estimar_ev_concurso_ex_ante(config, razao_popularidade=0.70)
+    if ev_preliminar.get("disponivel"):
+        ctx.elasticidade_antipopular = ev_preliminar.get("elasticidade_antipopular")
     ultimo, data_ultimo = _ultimo_concurso(ctx, slug)
     seed_base = int(hoje.strftime("%Y%m%d")) * 10 + list(JOGOS).index(jogo)
 
@@ -236,7 +246,7 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
         print(f"[{jogo}] tentativa {tentativa}/{MAX_TENTATIVAS} reprovada: {'; '.join(erros)}")
 
     modelo = getattr(ctx, "modelo_popularidade", None)
-    if modelo is not None and slug in LIMIAR_RAZAO_GANHADORES:
+    if modelo is not None:
         import numpy as np
 
         razoes = modelo.razao_ganhadores_batch(np.array(pacote_gerado["jogos"]))
@@ -250,6 +260,7 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
             "Confira o workflow de atualização."
         )
 
+    ev_diag = (pacote_gerado.get("relatorio") or {}).get("diagnostico_ev_ex_ante") or ev_preliminar
     pacote = {
         "status": "reprovado" if erros else "aprovado",
         "meta": {
@@ -260,6 +271,9 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
             "seed": seed_base + tentativa - 1,
             "tentativas": tentativa,
             "commit": _git_sha(),
+            "ev_por_real_aleatorio": ev_diag.get("ev_por_real_aleatorio"),
+            "ev_por_real_ajustado": ev_diag.get("ev_por_real_ajustado"),
+            "recomendacao_aposta": ev_diag.get("recomendacao_aposta"),
         },
         "jogos": pacote_gerado["jogos"],
         "validacao": validacoes,

@@ -198,3 +198,48 @@ def test_gerador_pontua_jogo_popular_abaixo_do_raro(sinais):
     assert com[1] == pytest.approx(sem[1], abs=0.5)  # jogo raro quase não muda
     desligado = score_plausibility_batch(cands, ctx_com, usar_popularidade_medida=False, **base)
     assert desligado[0] == pytest.approx(sem[0])
+
+
+def test_popularidade_normaliza_salto_de_preco_e_lotomania_50_dezenas():
+    from app.core.lottery.catalog import LOTOMANIA
+
+    # 1. Simula salto brusco de preço (3x) no meio da série histórica
+    df = _sorteios(MEGASENA, 1200, seed=44)
+    pesos = _pesos_populares()
+    det = _detalhes(MEGASENA, df, pesos, seed=44)
+    # Nos últimos 600 concursos, o preço da aposta triplica -> arrecadado por ganhador triplica
+    det.iloc[600:, det.columns.get_loc("valorArrecadado")] *= 3.0
+    modelo = pm.treinar_modelo_popularidade(df, det, MEGASENA)
+    assert modelo is not None
+    assert modelo.normalizacao_regime == "mediana_movel_causal"
+    assert modelo.r2_cv > 0.25
+
+    # 2. Lotomania (k=20 sorteados, bet_size=50 apostados): escala k/m e espelho J^c
+    pesos_lm = np.linspace(-0.2, 0.2, 100)
+    pesos_lm -= pesos_lm.mean()
+    n_raw_lm = pm._extract_struct_raw(np.arange(1, 21).reshape(1, -1), LOTOMANIA).shape[1]
+    mod_lm = pm.ModeloPopularidade(
+        faixa=5,
+        n_concursos=1000,
+        r2_cv=0.35,
+        lam=10.0,
+        pesos=pesos_lm,
+        k=20,
+        n_numeros=100,
+        config=LOTOMANIA,
+        struct_coefs=np.zeros(2 * n_raw_lm),
+        struct_params=(
+            np.zeros(n_raw_lm),
+            np.ones(n_raw_lm),
+            np.ones(n_raw_lm),
+            np.ones(n_raw_lm),
+        ),
+    )
+    aposta_baixa = np.arange(1, 51).reshape(1, -1)
+    aposta_alta = np.arange(51, 101).reshape(1, -1)
+    razoes = mod_lm.razao_ganhadores_batch(np.vstack([aposta_baixa, aposta_alta]))
+    assert razoes.shape == (2,)
+    assert razoes[0] < 1.0 < razoes[1]
+    # Escala k/m = 20/50 impede explosão exponencial de somar 50 pesos brutos
+    assert 0.1 < razoes[0] < 1.0 and 1.0 < razoes[1] < 10.0
+

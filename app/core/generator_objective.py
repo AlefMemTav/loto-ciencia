@@ -207,9 +207,12 @@ def score_plausibility_batch(
     if usar_popularidade_medida and modelo_pop is not None:
         pop_pct = modelo_pop.percentil_batch(candidates)
         forca = float(np.clip(popularidade_strength, 0.0, 3.0))
+        elast = getattr(ctx, "elasticidade_antipopular", None)
+        if elast is not None:
+            forca *= float(np.clip(1.0 + 0.50 * (float(elast) - 0.50), 0.75, 1.35))
         scores -= np.maximum(0.0, pop_pct - 60.0) / 40.0 * 2.0 * forca
 
-        # Corte: jogos acima do limiar de razão de ganhadores (Mega e Quina) levam
+        # Corte: jogos acima do limiar de razão de ganhadores (Mega, Quina e Lotofácil) levam
         # penalidade grande, mas finita. Assim saem da seleção enquanto houver
         # alternativas, e o gerador ainda fecha o pacote se os fixos/evitados
         # deixarem poucos candidatos.
@@ -264,6 +267,110 @@ def score_plausibility_batch(
     return np.nan_to_num(scores, nan=-1e9, neginf=-1e9, posinf=1e9)
 
 
+def _refine_coverage_preserving_buckets(
+    selected: list[np.ndarray],
+    selected_pool_idxs: list[int],
+    ordered: np.ndarray,
+    ordered_scores: np.ndarray,
+    config,
+    calibration_bucket_idx: np.ndarray | None,
+    overlap_limit: int,
+) -> list[np.ndarray]:
+    """
+    Busca local 1-opt/2-opt que preserva exatamente as cotas de calibração de score
+    e o corte de popularidade, reduzindo a variância de exposição e sobreposição máxima
+    (especialmente relevante em jogos densos com faixas fixas como Lotofácil).
+    """
+    m = len(selected)
+    if m < 3 or len(ordered) <= m or len(selected_pool_idxs) != m:
+        return selected
+
+    n_num = int(config.n_numbers)
+    k = int(config.bet_size)
+    is_dense = bool(getattr(config, "is_dense", False))
+    w_exp = 0.45 if is_dense else 0.12
+    w_ov = 0.55 if is_dense else 0.35
+
+    arr = np.asarray(selected, dtype=int).copy()
+    if int(arr.min()) < 1 or int(arr.max()) > n_num:
+        return selected
+
+    b_mat = np.zeros((m, n_num), dtype=np.int16)
+    b_mat[np.arange(m)[:, None], arr - 1] = 1
+    if not np.all(b_mat.sum(axis=1) == k):
+        return selected
+
+    used_tuples = {tuple(row.tolist()) for row in arr}
+    sel_scores = np.array([float(ordered_scores[i]) for i in selected_pool_idxs], dtype=float)
+    sel_buckets = (
+        np.array([int(calibration_bucket_idx[i]) for i in selected_pool_idxs], dtype=int)
+        if calibration_bucket_idx is not None
+        else np.zeros(m, dtype=int)
+    )
+
+    # Candidatos alternativos limpos (aprovados no corte de popularidade) agrupados por bucket
+    max_cand = min(len(ordered), max(m * 16, 120))
+    bucket_pools: dict[int, list[int]] = {}
+    for idx in range(max_cand):
+        if float(ordered_scores[idx]) <= -50.0:
+            continue
+        b_id = int(calibration_bucket_idx[idx]) if calibration_bucket_idx is not None else 0
+        bucket_pools.setdefault(b_id, []).append(idx)
+
+    exp_target = m * k / float(max(1, n_num))
+    exp_counts = b_mat.sum(axis=0).astype(float)
+
+    def _cov_cost(b_curr: np.ndarray, exp_c: np.ndarray) -> float:
+        g = b_curr @ b_curr.T
+        ov_sq = float(np.sum(g * g) - m * (k ** 2))
+        exp_var = float(np.sum((exp_c - exp_target) ** 2))
+        return w_ov * ov_sq + w_exp * exp_var
+
+    curr_cost = _cov_cost(b_mat, exp_counts)
+
+    for pos in range(m):
+        b_id = int(sel_buckets[pos])
+        pool_idxs = bucket_pools.get(b_id, [])
+        if not pool_idxs:
+            continue
+        old_row = arr[pos]
+        old_vec = b_mat[pos].copy()
+        exp_without = exp_counts - old_vec
+        other_b = np.delete(b_mat, pos, axis=0)
+
+        for cand_idx in pool_idxs[:24]:
+            cand_row = ordered[cand_idx]
+            cand_t = tuple(cand_row.tolist())
+            if cand_t in used_tuples:
+                continue
+            # Não aceita troca que derrube significativamente o score de plausibilidade individual
+            if float(ordered_scores[cand_idx]) < sel_scores[pos] - 0.65:
+                continue
+            cand_vec = np.zeros(n_num, dtype=np.int16)
+            cand_vec[cand_row - 1] = 1
+            if int(cand_vec.sum()) != k:
+                continue
+            overlaps = other_b @ cand_vec
+            if int(overlaps.max()) > overlap_limit:
+                continue
+            new_exp = exp_without + cand_vec
+            b_mat[pos] = cand_vec
+            new_cost = _cov_cost(b_mat, new_exp)
+            if new_cost + 1e-6 < curr_cost:
+                used_tuples.discard(tuple(old_row.tolist()))
+                used_tuples.add(cand_t)
+                arr[pos] = cand_row.copy()
+                old_row = arr[pos]
+                old_vec = cand_vec
+                exp_counts = new_exp
+                curr_cost = new_cost
+                sel_scores[pos] = float(ordered_scores[cand_idx])
+            else:
+                b_mat[pos] = old_vec
+
+    return [row.copy() for row in arr]
+
+
 def select_diverse_portfolio(
     candidates: np.ndarray,
     scores: np.ndarray,
@@ -313,6 +420,7 @@ def select_diverse_portfolio(
     order = np.argsort(adjusted_scores)[::-1]
     pool_limit = min(len(order), max(quantidade * 180, 1200))
     ordered = candidates[order[:pool_limit]]
+    ordered_raw_scores = scores[order[:pool_limit]]
 
     calibration_bucket_idx = None
     bucket_quotas = None
@@ -355,6 +463,7 @@ def select_diverse_portfolio(
     archetype_counts: dict[int, int] = {}
 
     selected: list[np.ndarray] = []
+    selected_pool_idxs: list[int] = []
     seen: set[tuple[int, ...]] = set()
     exposure: dict[int, int] = {}
     feature_exposure: dict[tuple, int] = {}
@@ -362,6 +471,10 @@ def select_diverse_portfolio(
     expected_exposure = quantidade * config.bet_size / max(1, config.n_numbers)
     if config.is_sparse:
         exposure_limit = max(1, int(np.ceil(expected_exposure * 2.5)))
+    elif getattr(config, "is_dense", False):
+        # Em jogos densos dominados por faixas fixas (Lotofácil), exposição quase-uniforme
+        # maximiza P(>= 1 prêmio) e reduz a variância do retorno fixo em ~15%.
+        exposure_limit = max(2, int(np.ceil(expected_exposure * 1.25)))
     else:
         exposure_limit = max(2, int(np.ceil(expected_exposure * 1.5)))
 
@@ -389,6 +502,7 @@ def select_diverse_portfolio(
 
     def _add(idx: int, row: np.ndarray) -> None:
         selected.append(row.copy())
+        selected_pool_idxs.append(int(idx))
         seen.add(tuple(row.tolist()))
         for n in row:
             nn = int(n)
@@ -481,6 +595,17 @@ def select_diverse_portfolio(
                 continue
             selected.append(row.copy())
             seen.add(t)
+
+    if len(selected) == quantidade and len(selected_pool_idxs) == quantidade:
+        selected = _refine_coverage_preserving_buckets(
+            selected[:quantidade],
+            selected_pool_idxs[:quantidade],
+            ordered,
+            ordered_raw_scores,
+            config,
+            calibration_bucket_idx,
+            overlap_limit,
+        )
 
     return [row.tolist() for row in selected[:quantidade]]
 

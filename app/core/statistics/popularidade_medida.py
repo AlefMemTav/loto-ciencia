@@ -83,8 +83,38 @@ def _extract_struct_raw(jogos: np.ndarray, config: Any) -> np.ndarray:
     arr = np.sort(np.asarray(jogos, dtype=int), axis=1)
     feats = extract_ticket_features_batch(arr, config)
     cols = [feats[key].astype(float) for key in STRUCT_FEATURE_KEYS]
-    if getattr(config, "n_numbers", 0) > 31:
+    n_num = int(getattr(config, "n_numbers", 0))
+    if n_num > 31:
         cols.append((arr <= 31).sum(axis=1).astype(float))
+
+    # Sub-faixas de calendário (meses 1..12 vs dias 13..31)
+    cols.append((arr <= 12).sum(axis=1).astype(float))
+    cols.append(((arr >= 13) & (arr <= 31)).sum(axis=1).astype(float))
+
+    # Diferenças 1D e progressões aritméticas consecutivas
+    k_curr = arr.shape[1]
+    if k_curr >= 2:
+        diffs = np.diff(arr, axis=1)
+        cols.append((diffs == 1).sum(axis=1).astype(float))
+        cols.append((diffs == 2).sum(axis=1).astype(float))
+        if k_curr >= 3:
+            cols.append((diffs[:, :-1] == diffs[:, 1:]).sum(axis=1).astype(float))
+        else:
+            cols.append(np.zeros(len(arr), dtype=float))
+
+        # Geometria 2D de adjacência física no volante
+        layout = getattr(config, "layout", None)
+        n_cols = int(getattr(layout, "cols", 0) or 10)
+        rows = (arr - 1) // n_cols
+        cols_2d = (arr - 1) % n_cols
+        i_idx, j_idx = np.triu_indices(k_curr, k=1)
+        dr = np.abs(rows[:, i_idx] - rows[:, j_idx])
+        dc = np.abs(cols_2d[:, i_idx] - cols_2d[:, j_idx])
+        cols.append(((dr + dc) == 1).sum(axis=1).astype(float))  # adj_ortho
+        cols.append(((dr == 1) & (dc == 1)).sum(axis=1).astype(float))  # adj_diag
+        cols.append((dr == 0).sum(axis=1).astype(float))  # same_row_pairs
+        cols.append((dc == 0).sum(axis=1).astype(float))  # same_col_pairs
+
     return np.column_stack(cols)
 
 
@@ -152,19 +182,44 @@ def _ridge(
     lam: float,
     n_penalizados: int,
     penalties: np.ndarray | None = None,
+    weights: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Ridge com intercepto livre; penaliza as primeiras `n_penalizados` colunas."""
+    """Ridge (OLS ou WLS com decaimento exponencial) com intercepto livre."""
     xi = np.column_stack([np.ones(len(x)), x])
     pen = np.zeros(xi.shape[1])
     if penalties is not None:
         pen[1 : 1 + len(penalties)] = penalties
     else:
         pen[1 : 1 + n_penalizados] = lam
+    if weights is not None:
+        w = np.asarray(weights, dtype=float)
+        w = w / max(float(w.mean()), 1e-12)
+        xtw = xi.T * w
+        return np.linalg.solve(xtw @ xi + np.diag(pen), xtw @ y)
     return np.linalg.solve(xi.T @ xi + np.diag(pen), xi.T @ y)
 
 
 def _prever(x: np.ndarray, beta: np.ndarray) -> np.ndarray:
     return beta[0] + x @ beta[1:]
+
+
+def _causal_rolling_median(y_raw: np.ndarray, window: int = 50) -> np.ndarray:
+    """Mediana móvel estritamente causal (usa apenas [t-window, t-1]) para remover saltos de preço."""
+    s = pd.Series(y_raw)
+    med = s.rolling(window=window, min_periods=10).median().shift(1)
+    if med.isna().any():
+        fallback = float(np.median(y_raw[: min(len(y_raw), max(10, window))]))
+        med = med.bfill().fillna(fallback)
+    return med.to_numpy(dtype=float)
+
+
+def _complement_games_batch(candidatos: np.ndarray, n_numeros: int) -> np.ndarray:
+    """Devolve o bilhete espelho J^c = {1..N} \\ J para cada linha de `candidatos`."""
+    m_rows, k_bet = candidatos.shape
+    mask = np.ones((m_rows, n_numeros), dtype=bool)
+    mask[np.arange(m_rows)[:, None], candidatos - 1] = False
+    pool = np.broadcast_to(np.arange(1, n_numeros + 1), (m_rows, n_numeros))
+    return pool[mask].reshape(m_rows, n_numeros - k_bet)
 
 
 @dataclass
@@ -181,24 +236,61 @@ class ModeloPopularidade:
     struct_coefs: np.ndarray | None = None
     struct_params: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None
     media_log_estrutural: float = 0.0
+    meia_vida_wls: float | None = None
+    normalizacao_regime: str = "mediana_movel_causal"
     _nulos: dict = field(repr=False, default_factory=dict)
+    _struct_por_tamanho: dict = field(repr=False, default_factory=dict)
 
     def _has_struct(self, bet_size: int) -> bool:
         return (
-            bet_size == self.k
+            bet_size > 0
             and self.config is not None
             and self.struct_coefs is not None
             and self.struct_params is not None
         )
 
-    def _log_score_batch(self, candidatos: np.ndarray) -> np.ndarray:
-        score = self.pesos[candidatos - 1].sum(axis=1)
-        if self._has_struct(candidatos.shape[1]):
+    def _get_struct_calibration(
+        self, bet_size: int
+    ) -> tuple[tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], float, float]:
+        if bet_size == self.k:
+            return self.struct_params, self.media_log_estrutural, 1.0
+        if bet_size not in self._struct_por_tamanho:
+            rng_m = np.random.default_rng(2000 + bet_size)
+            pool = np.arange(1, self.n_numeros + 1)
+            keys = rng_m.random((N_AMOSTRAS_NULO // 2, self.n_numeros))
+            idx = np.argpartition(keys, bet_size - 1, axis=1)[:, :bet_size]
+            amostras_m = np.sort(pool[idx], axis=1)
+            raw_m = _extract_struct_raw(amostras_m, self.config)
+            prm_m = _fit_struct_params(raw_m)
+            xs_m = _apply_struct_params(raw_m, prm_m)
+            media_m = float((xs_m @ self.struct_coefs).mean())
+            scale_m = float(self.k) / float(max(1, bet_size))
+            self._struct_por_tamanho[bet_size] = (prm_m, media_m, scale_m)
+        return self._struct_por_tamanho[bet_size]
+
+    def _single_side_log_score(self, candidatos: np.ndarray) -> np.ndarray:
+        bet_size = int(candidatos.shape[1])
+        ball_scale = float(self.k) / float(max(1, bet_size))
+        score = self.pesos[candidatos - 1].sum(axis=1) * ball_scale
+        if self._has_struct(bet_size):
+            prm_m, media_m, scale_m = self._get_struct_calibration(bet_size)
             x_struct = _apply_struct_params(
                 _extract_struct_raw(candidatos, self.config),
-                self.struct_params,
+                prm_m,
             )
-            score = score + (x_struct @ self.struct_coefs) - self.media_log_estrutural
+            score = score + ((x_struct @ self.struct_coefs) - media_m) * scale_m
+        return score
+
+    def _log_score_batch(self, candidatos: np.ndarray) -> np.ndarray:
+        score = self._single_side_log_score(candidatos)
+        bet_size = int(candidatos.shape[1])
+        # Lotomania (50 de 100): protege simultaneamente as faixas principais (15..20 acertos,
+        # 97,5% do EV rateado) e a faixa de 0 acertos (2,5% do EV rateado, cujo rateio é
+        # dividido com quem jogou o bilhete-espelho J^c = {1..100} \ J).
+        if self.n_numeros == 100 and bet_size == 50:
+            espelho = _complement_games_batch(candidatos, self.n_numeros)
+            score_espelho = self._single_side_log_score(espelho)
+            score = 0.975 * score + 0.025 * score_espelho
         return score
 
     def _nulo(self, m: int) -> np.ndarray:
@@ -243,7 +335,8 @@ def treinar_modelo_popularidade(
     """
     Ajusta o modelo com os concursos presentes em `df` E em `detalhes`
     (só usa o que está no df, então não vaza o futuro em backtests).
-    Combina pesos por número com métricas estruturais e quadráticas do bilhete.
+    Combina pesos por número com métricas estruturais 1D/2D e quadráticas do bilhete,
+    normalização causal por mediana móvel contra saltos de preço e WLS exponencial.
     Devolve None se não houver dados suficientes ou se a validação cruzada
     temporal não mostrar ganho real sobre o modelo só com controles.
     """
@@ -275,9 +368,11 @@ def treinar_modelo_popularidade(
     t = len(ganhadores)
     n = config.n_numbers
 
-    y = np.log((ganhadores + 0.5) / arrecadado * 1e6)
+    y_raw = np.log((ganhadores + 0.5) / arrecadado * 1e6)
+    med_causal = _causal_rolling_median(y_raw, window=50)
+    y_norm = y_raw - med_causal
 
-    # controles (reduzem ruído; os números sorteados são independentes deles)
+    # Controles (reduzem ruído de regime; os números sorteados são independentes deles)
     log_arr = np.log(arrecadado)
     tempo = np.arange(t, dtype=float)
     controles = np.column_stack(
@@ -290,46 +385,63 @@ def treinar_modelo_popularidade(
     x_num[np.repeat(np.arange(t), config.k), (sorteios - 1).ravel()] = 1.0
     x_struct_raw = _extract_struct_raw(sorteios, config)
 
-    # Pré-calcula folds temporais sem vazamento (padronização estrutural só no treino)
+    # Pré-calcula folds temporais sem vazamento para ambos os alvos (bruto e normalizado por mediana móvel causal)
     limites = np.linspace(0, t, N_BLOCOS_CV + 1).astype(int)
-    fold_data = []
-    for f in range(1, N_BLOCOS_CV):
-        tr = slice(0, limites[f])
-        te = slice(limites[f], limites[f + 1])
-        prm = _fit_struct_params(x_struct_raw[tr])
-        xs_tr = _apply_struct_params(x_struct_raw[tr], prm)
-        xs_te = _apply_struct_params(x_struct_raw[te], prm)
-        x_tr = np.column_stack([x_num[tr], xs_tr, controles[tr]])
-        x_te = np.column_stack([x_num[te], xs_te, controles[te]])
-        beta_base = _ridge(controles[tr], y[tr], 0.0, 0)
-        e_base = float(((y[te] - _prever(controles[te], beta_base)) ** 2).sum())
-        fold_data.append((x_tr, y[tr], x_te, y[te], e_base, xs_tr.shape[1]))
-
-    grid_lambdas = [
-        (lam_num, lam_str)
-        for lam_num in LAMBDAS
-        for lam_str in STRUCT_LAMBDAS
-        if lam_str >= lam_num
+    targets_specs = [
+        ("mediana_movel_causal", y_norm),
+        ("log_arrecadado_linear", y_raw),
     ]
-    sse_base_total = sum(fd[4] for fd in fold_data)
+    half_lives: tuple[float | None, ...] = (None, 1000.0)
+
     melhor = None
-    for lam_num, lam_str in grid_lambdas:
-        sse_modelo = 0.0
-        folds_melhor = 0
-        folds = len(fold_data)
-        for x_tr, y_tr, x_te, y_te, e_base, n_str in fold_data:
-            pen = np.zeros(x_tr.shape[1])
-            pen[:n] = lam_num
-            pen[n : n + n_str] = lam_str
-            beta = _ridge(x_tr, y_tr, 0.0, 0, penalties=pen)
-            e_mod = float(((y_te - _prever(x_te, beta)) ** 2).sum())
-            sse_modelo += e_mod
-            folds_melhor += int(e_mod < e_base)
-        r2 = 1.0 - sse_modelo / sse_base_total if sse_base_total > 0 else 0.0
-        if melhor is None or r2 > melhor[0]:
-            melhor = (r2, lam_num, lam_str, folds_melhor, folds)
+    melhor_spec = ("mediana_movel_causal", y_norm, None)
+
+    for norm_name, y_target in targets_specs:
+        fold_data = []
+        for f in range(1, N_BLOCOS_CV):
+            tr = slice(0, limites[f])
+            te = slice(limites[f], limites[f + 1])
+            prm = _fit_struct_params(x_struct_raw[tr])
+            xs_tr = _apply_struct_params(x_struct_raw[tr], prm)
+            xs_te = _apply_struct_params(x_struct_raw[te], prm)
+            x_tr = np.column_stack([x_num[tr], xs_tr, controles[tr]])
+            x_te = np.column_stack([x_num[te], xs_te, controles[te]])
+            beta_base = _ridge(controles[tr], y_target[tr], 0.0, 0)
+            e_base = float(((y_target[te] - _prever(controles[te], beta_base)) ** 2).sum())
+            fold_data.append((x_tr, y_target[tr], x_te, y_target[te], e_base, xs_tr.shape[1]))
+
+        sse_base_total = sum(fd[4] for fd in fold_data)
+        grid_lambdas = [
+            (lam_num, lam_str, hl)
+            for lam_num in LAMBDAS
+            for lam_str in STRUCT_LAMBDAS
+            for hl in half_lives
+            if lam_str >= lam_num
+        ]
+        for lam_num, lam_str, hl in grid_lambdas:
+            sse_modelo = 0.0
+            folds_melhor = 0
+            folds = len(fold_data)
+            for x_tr, y_tr, x_te, y_te, e_base, n_str in fold_data:
+                pen = np.zeros(x_tr.shape[1])
+                pen[:n] = lam_num
+                pen[n : n + n_str] = lam_str
+                w_tr = (
+                    0.5 ** ((len(y_tr) - 1 - np.arange(len(y_tr), dtype=float)) / hl)
+                    if hl is not None
+                    else None
+                )
+                beta = _ridge(x_tr, y_tr, 0.0, 0, penalties=pen, weights=w_tr)
+                e_mod = float(((y_te - _prever(x_te, beta)) ** 2).sum())
+                sse_modelo += e_mod
+                folds_melhor += int(e_mod < e_base)
+            r2 = 1.0 - sse_modelo / sse_base_total if sse_base_total > 0 else 0.0
+            if melhor is None or r2 > melhor[0]:
+                melhor = (r2, lam_num, lam_str, folds_melhor, folds)
+                melhor_spec = (norm_name, y_target, hl)
 
     r2, lam_num, lam_str, folds_melhor, folds = melhor
+    norm_name, y_best, hl_best = melhor_spec
     if r2 < R2_MINIMO or folds_melhor <= folds // 2:
         return None
 
@@ -340,7 +452,12 @@ def treinar_modelo_popularidade(
     pen_full = np.zeros(x_full.shape[1])
     pen_full[:n] = lam_num
     pen_full[n : n + n_str] = lam_str
-    beta = _ridge(x_full, y, 0.0, 0, penalties=pen_full)
+    w_full = (
+        0.5 ** ((t - 1 - np.arange(t, dtype=float)) / hl_best)
+        if hl_best is not None
+        else None
+    )
+    beta = _ridge(x_full, y_best, 0.0, 0, penalties=pen_full, weights=w_full)
 
     pesos = beta[1 : 1 + n]
     pesos = pesos - pesos.mean()
@@ -369,4 +486,6 @@ def treinar_modelo_popularidade(
         struct_coefs=struct_coefs,
         struct_params=prm_full,
         media_log_estrutural=media_log_estrutural,
+        meia_vida_wls=hl_best,
+        normalizacao_regime=norm_name,
     )
