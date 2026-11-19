@@ -35,8 +35,9 @@ procedimentos de backtest.
 ## Funcionalidades
 
 - **Dashboard de tendências:** frequências, atrasos, distribuições geométricas discretas exatas (KS discreto + $\chi^2$ agrupado), testes de uniformidade e intervalos de confiança via Bootstrap vetorizado.
-- **Validador de apostas (15 sinais):** score de 0 a 100, percentis exatos no Modelo Nulo Combinatório (22 features), tipicidade em Espaço-Z padronizado (K-Means 9 dimensões), lookup histórico matricial $O(1)$, geometria do volante e modelo econométrico de popularidade medida (Regressão Ridge nos rateios da Caixa).
-- **Gerador inteligente e Modo Jogo Real:** torneio fechado de carteiras com calibração estrutural por Cotas de Hamilton ($D_{\text{JS}} \le 0{,}11$), diversidade de arquétipos, busca local 1-opt, bloqueio rigoroso anti-divisão de prêmio e diagnósticos pós-seleção neutros.
+- **Validador de apostas (15 sinais):** score de 0 a 100, percentis exatos no Modelo Nulo Combinatório (22 features), tipicidade em Espaço-Z padronizado (K-Means 9 dimensões), lookup histórico matricial $O(1)$, geometria 2D do volante e modelo econométrico de popularidade medida (Regressão Ridge + WLS exponencial + normalização causal por mediana móvel contra saltos de preço nos rateios da Caixa, com $R^2_{\text{CV}}$ de $0{,}29$ a $0{,}66$).
+- **Gerador inteligente, Gatekeeper de EV Ex-Ante e Modo Jogo Real:** torneio fechado de carteiras com calibração estrutural por Cotas de Hamilton ($D_{\text{JS}} \le 0{,}07$), refinamento local 1-opt/2-opt preservador de buckets, bloqueio rigoroso anti-divisão de prêmio (incluindo proteção-espelho de 0 acerto na Lotomania), diagnóstico causal de Valor Esperado Ex-Ante sob diluição de Poisson e relatórios pós-seleção neutros.
+- **Auditoria diária prospectiva (`game_day.py` e `conferir.py`):** geração pré-sorteio determinística e conferência automatizada com variância hipergeométrica exata de exposição e controle aleatório pareado condicional ao sorteio realizado (redução de variância de Rao-Blackwell).
 - **Fechamentos combinatórios:** cobertura otimizada de grupos e estimativa de custo.
 - **Auditoria de bolões:** validação em lote, duplicidades, cobertura e relatório de custos.
 - **Dados atualizados:** resultados e detalhes de premiação obtidos dos dados oficiais da
@@ -52,11 +53,11 @@ procedimentos de backtest.
 | Lotomania | 1–100 | 50 números (sorteio de 20) | 50% |
 
 > **Densidade** é a proporção entre números escolhidos e números disponíveis. Os
-> thresholds de análise e a calibração histórica (incluindo escala de sorteio $k=20$ na Lotomania) são ajustados automaticamente para cada modalidade.
+> thresholds de análise, a calibração histórica e a proteção anti-divisão (incluindo o reescalonamento hipergeométrico $k/m = 20/50$ e o bilhete-espelho $J^c$ para a faixa de 0 acerto na Lotomania) são ajustados automaticamente para cada modalidade.
 
 ## Como o score funciona
 
-O sistema separa estritamente a **função objetivo do gerador** (contínua, calibrada sob o Modelo Nulo Combinatório de 22 features e o modelo econométrico de popularidade medida) do **validador independente** (auditor de 13 etapas e 15 sinais com correção de Bonferroni). Entre os critérios estão soma (IC Histórico + IC Bootstrap), paridade, quadrantes, linhas, colunas, moldura, cruz, diagonais, simetria de reflexão, terminações, entropia e regularidade dos intervalos, distância de Hamming, tipicidade de cluster no Espaço-Z e risco empírico de divisão de prêmio.
+O sistema separa estritamente a **função objetivo do gerador** (contínua, calibrada sob o Modelo Nulo Combinatório de 22 features e o modelo econométrico de popularidade medida com modulação pela elasticidade de Poisson do EV ex-ante) do **validador independente** (auditor de 13 etapas e 15 sinais com correção de Bonferroni). Entre os critérios estão soma (IC Histórico + IC Bootstrap), paridade, quadrantes, linhas, colunas, moldura, cruz, diagonais, simetria de reflexão, terminações, entropia e regularidade dos intervalos, distância de Hamming, tipicidade de cluster no Espaço-Z e risco empírico de divisão de prêmio.
 
 | Score | Classificação | Interpretação |
 | ---: | --- | --- |

@@ -84,14 +84,17 @@ class GameContext:
     bootstrap_ic: Optional[dict] = None
     pares_repelentes: Optional[list[dict]] = None
     pares_populares: Optional[list[dict]] = None
+    ev_ex_ante: Optional[dict] = None
+    elasticidade_antipopular: Optional[float] = None
 
 
 def _calcular_novos_sinais(df, config):
     """
-    Ordem de saída e popularidade medida (ganhadores reais).
+    Ordem de saída, popularidade medida (ganhadores reais) e EV ex-ante causal.
     Nunca derruba o contexto: se faltar dado ou der erro, devolve None no sinal.
     """
-    perfil = modelo = None
+    perfil = modelo = ev_info = elast = None
+    det = None
     try:
         from app.core.statistics.ordem_saida import calcular_perfil_posicional
 
@@ -104,10 +107,24 @@ def _calcular_novos_sinais(df, config):
             treinar_modelo_popularidade,
         )
 
-        modelo = treinar_modelo_popularidade(df, carregar_detalhes(config), config)
+        det = carregar_detalhes(config)
+        modelo = treinar_modelo_popularidade(df, det, config)
     except Exception as e:
         logger.warning(f"⚠️ Popularidade medida indisponível: {e}")
-    return perfil, modelo
+    try:
+        from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
+
+        det_corte = det
+        if det is not None and df is not None and not df.empty:
+            idx_comum = det.index.intersection(df.index)
+            if len(idx_comum) > 0:
+                det_corte = det.loc[idx_comum]
+        ev_info = estimar_ev_concurso_ex_ante(config, detalhes_df=det_corte)
+        if ev_info and ev_info.get("disponivel"):
+            elast = float(ev_info.get("elasticidade_antipopular", 0.5))
+    except Exception as e:
+        logger.warning(f"⚠️ EV ex-ante indisponível: {e}")
+    return perfil, modelo, ev_info, elast
 
 
 class LotteryService:
@@ -165,7 +182,7 @@ class LotteryService:
         matriz_cooc = matriz_coocorrencia_numeros(df, config)
         matriz_transicao = calcular_matriz_transicao(df, config)
         draws_bin, draws_index = build_draws_binary_matrix(df, config)
-        perfil_pos, modelo_pop = _calcular_novos_sinais(df, config)
+        perfil_pos, modelo_pop, ev_info, elast = _calcular_novos_sinais(df, config)
         return GameContext(
             config=config,
             df=df,
@@ -193,6 +210,8 @@ class LotteryService:
             modelo_popularidade=modelo_pop,
             draws_bin=draws_bin,
             draws_index=draws_index,
+            ev_ex_ante=ev_info,
+            elasticidade_antipopular=elast,
         )
 
     """
@@ -279,7 +298,7 @@ class LotteryService:
         bootstrap_ic = calcular_bootstrap_ic_com_cache(df, config, n_iteracoes=5000)
         pares_repelentes = get_pares_que_se_repelem(df, config, top_n=100)
         pares_populares = get_pares_mais_frequentes(df, config, top_n=50)
-        perfil_pos, modelo_pop = _calcular_novos_sinais(df, config)
+        perfil_pos, modelo_pop, ev_info, elast = _calcular_novos_sinais(df, config)
 
         todos_jogos = [sorted(row.tolist()) for row in df[config.draw_cols].values]
 
@@ -339,6 +358,8 @@ class LotteryService:
             bootstrap_ic=bootstrap_ic,
             pares_repelentes=pares_repelentes,
             pares_populares=pares_populares,
+            ev_ex_ante=ev_info,
+            elasticidade_antipopular=elast,
         )
 
     def get_context(self, slug: str) -> GameContext:

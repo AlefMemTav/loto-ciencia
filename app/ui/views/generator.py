@@ -54,8 +54,8 @@ def render_generator(ctx, svc):
             <h2 style="color: #1e293b; margin:0;">⛏️ Mineração de Jogos: <span style="color: {main_color};">{config.name}</span></h2>
             <p style="color: #475569; font-size: 1rem; margin-top: 5px;">
                 Esta engine evita jogos raros e jogos populares: mantém combinações plausíveis e
-                diversas e, na Mega-Sena, Quina e Lotofácil, afasta as que mais costumam ser divididas
-                com outros apostadores. Não aumenta a chance de acertar.
+                diversas e, na Mega-Sena, Quina, Lotofácil e Lotomania (incluindo proteção-espelho de 0 acertos),
+                afasta as que mais costumam ser divididas com outros apostadores. Não aumenta a chance de acertar.
             </p>
         </div>
         """,
@@ -533,6 +533,27 @@ def _render_generated_games(
             )
             r3.metric("Seed", relatorio_jogo_real.get("seed", "-"))
             r4.metric("Perfil", str(relatorio_jogo_real.get("perfil_esforco", "-")))
+
+            ev_diag = relatorio_jogo_real.get("diagnostico_ev_ex_ante") or {}
+            anti_diag = relatorio_jogo_real.get("diagnostico_antidivisao") or {}
+            if ev_diag.get("disponivel"):
+                e1, e2, e3, e4 = st.columns(4)
+                e1.metric(
+                    "EV Ex-Ante / R$ 1",
+                    f"R$ {ev_diag.get('ev_por_real_ajustado', 0.0):.2f}",
+                )
+                e2.metric(
+                    "EV Aleatório / R$ 1",
+                    f"R$ {ev_diag.get('ev_por_real_aleatorio', 0.0):.2f}",
+                )
+                e3.metric(
+                    "Razão Ganhadores",
+                    f"{anti_diag.get('razao_ganhadores_media', 1.0):.2f}x",
+                )
+                e4.metric(
+                    "Decisão Ex-Ante",
+                    str(ev_diag.get("recomendacao_aposta", "-")),
+                )
 
             r5, r6, r7, r8 = st.columns(4)
             r5.caption(

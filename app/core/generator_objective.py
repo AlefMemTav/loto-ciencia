@@ -275,6 +275,8 @@ def _refine_coverage_preserving_buckets(
     config,
     calibration_bucket_idx: np.ndarray | None,
     overlap_limit: int,
+    max_exposure_cap: int | None = None,
+    max_pair_cap: int | None = None,
 ) -> list[np.ndarray]:
     """
     Busca local 1-opt/2-opt que preserva exatamente as cotas de calibração de score
@@ -354,6 +356,14 @@ def _refine_coverage_preserving_buckets(
             if int(overlaps.max()) > overlap_limit:
                 continue
             new_exp = exp_without + cand_vec
+            if max_exposure_cap is not None and int(new_exp.max()) > max_exposure_cap:
+                continue
+            if max_pair_cap is not None and k >= 2:
+                sub_b = other_b[:, cand_row - 1]
+                pair_mat = sub_b.T @ sub_b
+                np.fill_diagonal(pair_mat, 0)
+                if int(pair_mat.max()) + 1 > max_pair_cap:
+                    continue
             b_mat[pos] = cand_vec
             new_cost = _cov_cost(b_mat, new_exp)
             if new_cost + 1e-6 < curr_cost:
@@ -728,6 +738,7 @@ def _select_tail_controlled_portfolio(
     archetype_counts: dict[int, int] = {}
 
     selected: list[np.ndarray] = []
+    selected_pool_idxs: list[int] = []
     seen: set[tuple[int, ...]] = set()
     exposure: dict[int, int] = {}
     pair_exposure: dict[tuple[int, int], int] = {}
@@ -816,6 +827,7 @@ def _select_tail_controlled_portfolio(
 
     def _register(idx: int, row: np.ndarray) -> None:
         selected.append(row)
+        selected_pool_idxs.append(idx)
         seen.add(tuple(row.tolist()))
         for n in row:
             nn = int(n)
@@ -895,6 +907,19 @@ def _select_tail_controlled_portfolio(
             if t in seen:
                 continue
             _register(idx, row.copy())
+
+    if len(selected) == quantidade and len(selected_pool_idxs) == quantidade:
+        selected = _refine_coverage_preserving_buckets(
+            selected[:quantidade],
+            selected_pool_idxs[:quantidade],
+            ordered,
+            scores[order],
+            config,
+            calibration_bucket_idx,
+            overlap_limit,
+            max_exposure_cap=hard_cap,
+            max_pair_cap=pair_hard_cap,
+        )
 
     return [row.tolist() for row in selected[:quantidade]]
 

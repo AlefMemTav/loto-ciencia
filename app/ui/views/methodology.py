@@ -908,7 +908,7 @@ def render_como_funciona():
     # ========================================
     # SEÇÃO 5: VALIDAÇÃO CIENTÍFICA
     # ========================================
-    st.markdown("## Validação Científica: Backtest")
+    st.markdown("## Validação Científica: Backtest e Auditoria")
 
     st.markdown(
         """
@@ -923,19 +923,17 @@ def render_como_funciona():
         Como Sabemos Que o Sistema Funciona?
     </h4>
     <p style="font-size: 1.05rem; color: #1e3a8a; line-height: 1.8; margin-bottom: 20px;">
-        Testamos nosso sistema de scoring em <strong>milhares de sorteios históricos reais</strong> mensalmente. 
-        O resultado validou nossa metodologia:
+        Testamos nosso sistema em <strong>milhares de sorteios históricos reais</strong> e em auditoria diária prospectiva sem vazamento temporal:
     </p>
     <ul style="color: #1e3a8a; font-size: 1.05rem; line-height: 2; padding-left: 25px;">
         <li style="margin-bottom: 10px;">
-            ✅ Scores altos (80+) correlacionam com <strong>maior unicidade</strong> 
-            (distância de Hamming)
+            ✅ <strong>Popularidade Medida Econométrica (Ridge + WLS + Geometria 2D):</strong> explica até <strong>66% da variância</strong> de ganhadores fora da amostra (Quina R² = 0,64, Lotomania R² = 0,66, Lotofácil R² = 0,36, Mega-Sena R² = 0,29)
         </li>
         <li style="margin-bottom: 10px;">
-            ✅ Scores altos correlacionam com <strong>menos alertas de risco</strong>
+            ✅ <strong>Gatekeeper de Valor Esperado Ex-Ante:</strong> estima o retorno esperado líquido por R$ 1,00 apostado sob diluição de Poisson antes do sorteio
         </li>
         <li style="margin-bottom: 10px;">
-            ✅ Jogos com score alto têm <strong>menor similaridade</strong> com padrões populares
+            ✅ <strong>Auditoria Pareada de Rao-Blackwell:</strong> confronta cada pacote registrado contra 100 pacotes aleatórios no mesmo sorteio realizado, reduzindo a variância amostral
         </li>
     </ul>
     <div style="
@@ -945,14 +943,14 @@ def render_como_funciona():
         border-radius: 10px;
     ">
         <p style="font-size: 1rem; color: #1e40af; margin-bottom: 8px; font-weight: 600;">
-            📊 Metodologia do Backtest:
+            📊 Rigor Estatístico e Econométrico:
         </p>
         <ul style="font-size: 0.95rem; color: #1e3a8a; line-height: 1.8; margin-bottom: 0;">
-            <li><strong>1.000 jogos aleatórios</strong> gerados</li>
-            <li>Validação contra <strong>histórico completo</strong> (2.900+ sorteios)</li>
-            <li>Cálculo de <strong>correlação de Spearman</strong></li>
-            <li>Análise de <strong>distribuições por bucket</strong> de score</li>
-            <li><strong>Correção de Bonferroni</strong> aplicada (α = 0.0033)</li>
+            <li><strong>Validação Cruzada Temporal</strong> em 6 blocos expansivos com normalização causal por mediana móvel</li>
+            <li><strong>Modelo Nulo Combinatório</strong> com 50.000 amostras exatas em 22 features estruturais</li>
+            <li><strong>Proteção-Espelho Dual na Lotomania:</strong> protege simultaneamente as faixas de 15..20 acertos e a faixa de 0 acerto (bilhete complementar)</li>
+            <li><strong>Cotas de Hamilton + Busca Local 2-opt</strong> preservando divergência D_JS &lt; 0,07</li>
+            <li><strong>Correção de Bonferroni</strong> aplicada no validador independente (α = 0.0033)</li>
         </ul>
     </div>
 </div>
@@ -977,7 +975,7 @@ def render_como_funciona():
     line-height: 1.7;
 ">
     Cada estratégia otimiza a construção da carteira conforme a <strong>densidade combinatória da modalidade</strong>,
-    mantendo calibração estrutural por <strong>Cotas de Hamilton</strong> e bloqueio anti-divisão:
+    mantendo calibração estrutural por <strong>Cotas de Hamilton</strong>, refinamento 2-opt de cobertura e bloqueio anti-divisão:
 </p>
         """,
         unsafe_allow_html=True,
@@ -1004,13 +1002,13 @@ def render_como_funciona():
             <strong>Filosofia:</strong> Máxima cobertura de carteira + proteção anti-divisão rigorosa
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Mecanismo:</strong> Limite rígido de pares repetidos, Cotas de Hamilton e zero vazamento de jogos populares
+            <strong>Mecanismo:</strong> Limite rígido de pares repetidos, Cotas de Hamilton, busca local 2-opt e zero vazamento de jogos populares
         </p>
         <p style="margin-bottom: 12px;">
             <strong>Padrão automático em:</strong> Jogos esparsos (Mega-Sena e Quina)
         </p>
         <p style="margin-bottom: 0;">
-            <strong>Vantagem:</strong> Maximiza a área coberta pelos bilhetes e a retenção esperada do prêmio
+            <strong>Vantagem:</strong> Maximiza a área coberta pelos bilhetes e a retenção esperada do prêmio rateado
         </p>
     </div>
 </div>
@@ -1035,10 +1033,10 @@ def render_como_funciona():
     </h4>
     <div style="color: #1e3a8a; font-size: 0.98rem; line-height: 1.8;">
         <p style="margin-bottom: 12px;">
-            <strong>Filosofia:</strong> Fidelidade estrutural histórica + diversidade de arquétipos
+            <strong>Filosofia:</strong> Fidelidade estrutural histórica + baixa variância em faixas fixas
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Mecanismo:</strong> Cotas de Hamilton nos 5 buckets de calibração (D_JS &lt; 0,07) e entropia no Espaço-Z (9 features)
+            <strong>Mecanismo:</strong> Cotas de Hamilton nos 5 buckets (D_JS &lt; 0,07), entropia no Espaço-Z e refinamento 2-opt de exposição uniforme
         </p>
         <p style="margin-bottom: 12px;">
             <strong>Padrão automático em:</strong> Jogos densos (Lotofácil e Lotomania)
@@ -1092,7 +1090,7 @@ def render_como_funciona():
         )
 
     st.info(
-        "💡 **Dica:** No **Modo Jogo Real**, o sistema seleciona automaticamente **Cauda Controlada** para Mega-Sena e Quina (foco em cobertura e retenção de prêmio) e **Balanceada** para Lotofácil e Lotomania (foco em calibração estrutural e diversidade de arquétipos)."
+        "💡 **Dica:** No **Modo Jogo Real**, o sistema seleciona automaticamente **Cauda Controlada** para Mega-Sena e Quina (foco em cobertura e retenção de prêmio rateado) e **Balanceada** para Lotofácil e Lotomania (foco em calibração estrutural, proteção-espelho de 0 acerto na Lotomania e baixa variância de exposição nas faixas fixas da Lotofácil), além de exibir o **Diagnóstico de EV Ex-Ante** por R$ 1,00 apostado."
     )
 
     st.markdown("<br><br>", unsafe_allow_html=True)

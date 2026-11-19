@@ -647,6 +647,20 @@ def generate_real_game_package(
     )
     rng = np.random.default_rng(seed)
 
+    if getattr(ctx, "elasticidade_antipopular", None) is None:
+        from app.core.statistics.prize_model import estimar_ev_concurso_ex_ante
+
+        ev_pre = getattr(ctx, "ev_ex_ante", None) or estimar_ev_concurso_ex_ante(ctx.config)
+        if ev_pre and ev_pre.get("disponivel"):
+            try:
+                object.__setattr__(
+                    ctx,
+                    "elasticidade_antipopular",
+                    float(ev_pre.get("elasticidade_antipopular", 0.5)),
+                )
+            except Exception:
+                pass
+
     candidate_pool = _generate_candidate_pool(
         ctx=ctx,
         target_size=target_pool,
