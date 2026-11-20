@@ -1,0 +1,516 @@
+{
+  "status": "aprovado",
+  "meta": {
+    "jogo": "quina",
+    "data": "2026-11-20",
+    "ultimo_concurso": 7172,
+    "data_ultimo_concurso": "19/11/2026",
+    "seed": 202611201,
+    "tentativas": 1,
+    "commit": "7fb8c3a",
+    "ev_por_real_aleatorio": 0.9083,
+    "ev_por_real_ajustado": 0.9779,
+    "recomendacao_aposta": "APOSTAR_ACUMULADO_TOP10"
+  },
+  "jogos": [
+    [
+      16,
+      21,
+      26,
+      59,
+      71
+    ],
+    [
+      15,
+      29,
+      40,
+      51,
+      68
+    ],
+    [
+      18,
+      28,
+      31,
+      69,
+      79
+    ],
+    [
+      1,
+      41,
+      49,
+      52,
+      60
+    ],
+    [
+      15,
+      32,
+      38,
+      61,
+      67
+    ],
+    [
+      17,
+      26,
+      46,
+      61,
+      70
+    ],
+    [
+      21,
+      29,
+      37,
+      50,
+      76
+    ],
+    [
+      20,
+      43,
+      68,
+      73,
+      78
+    ],
+    [
+      17,
+      20,
+      49,
+      60,
+      71
+    ],
+    [
+      23,
+      40,
+      57,
+      62,
+      73
+    ]
+  ],
+  "validacao": [
+    {
+      "jogo": [
+        16,
+        21,
+        26,
+        59,
+        71
+      ],
+      "score": 97,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7893
+    },
+    {
+      "jogo": [
+        15,
+        29,
+        40,
+        51,
+        68
+      ],
+      "score": 85,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7761
+    },
+    {
+      "jogo": [
+        18,
+        28,
+        31,
+        69,
+        79
+      ],
+      "score": 100,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7655
+    },
+    {
+      "jogo": [
+        1,
+        41,
+        49,
+        52,
+        60
+      ],
+      "score": 85,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.6773
+    },
+    {
+      "jogo": [
+        15,
+        32,
+        38,
+        61,
+        67
+      ],
+      "score": 100,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7693
+    },
+    {
+      "jogo": [
+        17,
+        26,
+        46,
+        61,
+        70
+      ],
+      "score": 87,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7402
+    },
+    {
+      "jogo": [
+        21,
+        29,
+        37,
+        50,
+        76
+      ],
+      "score": 100,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7529
+    },
+    {
+      "jogo": [
+        20,
+        43,
+        68,
+        73,
+        78
+      ],
+      "score": 65,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7255
+    },
+    {
+      "jogo": [
+        17,
+        20,
+        49,
+        60,
+        71
+      ],
+      "score": 100,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7956
+    },
+    {
+      "jogo": [
+        23,
+        40,
+        57,
+        62,
+        73
+      ],
+      "score": 87,
+      "risco_divisao": "Baixo",
+      "ja_saiu": false,
+      "razao_ganhadores": 0.7827
+    }
+  ],
+  "erros": [],
+  "avisos": [],
+  "relatorio": {
+    "modo": "jogo_real",
+    "perfil_esforco": "forte",
+    "estrategia_base": "cauda_controlada",
+    "seed": 202611201,
+    "quantidade": 10,
+    "candidate_pool_size": 90,
+    "tournament_packages": 180,
+    "monte_carlo_packages": 1000,
+    "null_model_samples": 30000,
+    "score_pacote": 8.607084,
+    "percentil_vs_monte_carlo": 100.0,
+    "p_empirico_mc_supera_ou_iguala": 0.000999,
+    "score_mc_media": -200088.638717,
+    "score_mc_p95": -67.010344,
+    "ranking_torneio": 143,
+    "restricoes": {
+      "numeros_fixos": [],
+      "numeros_evitados": []
+    },
+    "diagnostico_portfolio": {
+      "exposicao_dezenas": {
+        "1": 1,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        "6": 0,
+        "7": 0,
+        "8": 0,
+        "9": 0,
+        "10": 0,
+        "11": 0,
+        "12": 0,
+        "13": 0,
+        "14": 0,
+        "15": 2,
+        "16": 1,
+        "17": 2,
+        "18": 1,
+        "19": 0,
+        "20": 2,
+        "21": 2,
+        "22": 0,
+        "23": 1,
+        "24": 0,
+        "25": 0,
+        "26": 2,
+        "27": 0,
+        "28": 1,
+        "29": 2,
+        "30": 0,
+        "31": 1,
+        "32": 1,
+        "33": 0,
+        "34": 0,
+        "35": 0,
+        "36": 0,
+        "37": 1,
+        "38": 1,
+        "39": 0,
+        "40": 2,
+        "41": 1,
+        "42": 0,
+        "43": 1,
+        "44": 0,
+        "45": 0,
+        "46": 1,
+        "47": 0,
+        "48": 0,
+        "49": 2,
+        "50": 1,
+        "51": 1,
+        "52": 1,
+        "53": 0,
+        "54": 0,
+        "55": 0,
+        "56": 0,
+        "57": 1,
+        "58": 0,
+        "59": 1,
+        "60": 2,
+        "61": 2,
+        "62": 1,
+        "63": 0,
+        "64": 0,
+        "65": 0,
+        "66": 0,
+        "67": 1,
+        "68": 2,
+        "69": 1,
+        "70": 1,
+        "71": 2,
+        "72": 0,
+        "73": 2,
+        "74": 0,
+        "75": 0,
+        "76": 1,
+        "77": 0,
+        "78": 1,
+        "79": 1,
+        "80": 0
+      },
+      "top_dezenas": [
+        {
+          "dezena": 15,
+          "vezes": 2
+        },
+        {
+          "dezena": 17,
+          "vezes": 2
+        },
+        {
+          "dezena": 20,
+          "vezes": 2
+        },
+        {
+          "dezena": 21,
+          "vezes": 2
+        },
+        {
+          "dezena": 26,
+          "vezes": 2
+        },
+        {
+          "dezena": 29,
+          "vezes": 2
+        },
+        {
+          "dezena": 40,
+          "vezes": 2
+        },
+        {
+          "dezena": 49,
+          "vezes": 2
+        },
+        {
+          "dezena": 60,
+          "vezes": 2
+        },
+        {
+          "dezena": 61,
+          "vezes": 2
+        }
+      ],
+      "max_exposicao": 2,
+      "media_exposicao_usadas": 1.3514,
+      "desvio_exposicao_usadas": 0.4774,
+      "overlap_medio": 0.2889,
+      "overlap_max": 2,
+      "pares_repetidos": 1,
+      "pares_repetidos_acima_2": 0,
+      "max_repeticao_par": 2,
+      "trincas_repetidas": 0,
+      "max_repeticao_trinca": 1,
+      "quadras_repetidas": 0,
+      "max_repeticao_quadra": 1,
+      "coocorrencia_media": 10.2616,
+      "arquetipos_unicos": 3,
+      "entropia_arquetipos": 0.8173,
+      "distribuicao_arquetipos": {
+        "0": 1,
+        "1": 6,
+        "2": 3
+      },
+      "dispersao_features": {
+        "soma": {
+          "media": 222.4,
+          "desvio": 25.3976,
+          "min": 193.0,
+          "max": 282.0
+        },
+        "span": {
+          "media": 55.0,
+          "desvio": 3.2249,
+          "min": 50.0,
+          "max": 61.0
+        },
+        "pares": {
+          "media": 2.2,
+          "desvio": 0.4,
+          "min": 2.0,
+          "max": 3.0
+        },
+        "gap_medio": {
+          "media": 13.75,
+          "desvio": 0.8062,
+          "min": 12.5,
+          "max": 15.25
+        }
+      },
+      "cobertura_pares_universo": 0.031329,
+      "cobertura_nao_redundante_pares": 0.99,
+      "cobertura_nao_redundante_ternos": 1.0
+    },
+    "diagnostico_calibracao_score": {
+      "score_medio": 65.746562,
+      "score_min": 50.961018,
+      "score_max": 79.911724,
+      "distribuicao_gerada": {
+        "0-39": 0.0,
+        "40-54": 10.0,
+        "55-69": 80.0,
+        "70-84": 10.0,
+        "85-100": 0.0
+      },
+      "distribuicao_historica": {
+        "0-39": 4.364303,
+        "40-54": 38.468918,
+        "55-69": 51.463807,
+        "70-84": 5.702833,
+        "85-100": 0.000139
+      },
+      "distribuicao_modelo_nulo": {
+        "0-39": 4.570026,
+        "40-54": 38.473303,
+        "55-69": 51.99328,
+        "70-84": 4.963358,
+        "85-100": 3.3e-05
+      },
+      "distribuicao_alvo": {
+        "0-39": 4.42602,
+        "40-54": 38.470233,
+        "55-69": 51.622649,
+        "70-84": 5.48099,
+        "85-100": 0.000107
+      },
+      "js_vs_alvo": 0.113573,
+      "js_vs_historico": 0.113008,
+      "js_vs_nulo": 0.115068,
+      "chi_square_vs_alvo": 0.448209,
+      "modelo_version": "score-cal-v3",
+      "n_historico": 7172,
+      "modo_historico": "exato",
+      "n_amostras_modelo_nulo": 30000,
+      "target": "historico_nulo"
+    },
+    "diagnostico_cobertura_historica": {
+      "disponivel": true,
+      "concursos_avaliados": 7172,
+      "media_melhor_acerto_por_concurso": 1.2386,
+      "max_acerto_historico_pacote": 4,
+      "faixas": {
+        "3_acertos": {
+          "bilhetes_observados": 91,
+          "bilhetes_esperados_h0": 82.79,
+          "concursos_atingidos": 91,
+          "concursos_esperados_h0": 82.36
+        },
+        "4_acertos": {
+          "bilhetes_observados": 2,
+          "bilhetes_esperados_h0": 1.12,
+          "concursos_atingidos": 2,
+          "concursos_esperados_h0": 1.12
+        },
+        "5_acertos": {
+          "bilhetes_observados": 0,
+          "bilhetes_esperados_h0": 0.0,
+          "concursos_atingidos": 0,
+          "concursos_esperados_h0": 0.0
+        }
+      }
+    },
+    "diagnostico_antidivisao": {
+      "disponivel": true,
+      "limiar_corte_popularidade": 0.8,
+      "jogos_acima_limiar_corte": 0,
+      "razao_ganhadores_media": 0.7574,
+      "razao_ganhadores_min": 0.6773,
+      "razao_ganhadores_max": 0.7956,
+      "percentil_popularidade_medio": 7.35,
+      "multiplicador_retencao_premio_medio": 1.1095
+    },
+    "diagnostico_ev_ex_ante": {
+      "disponivel": true,
+      "concurso_referencia": 7172,
+      "acumulado_anterior": true,
+      "premio_estimado_proximo": 50000000.0,
+      "acumulado_concurso_especial": 62193912.34,
+      "arrecadacao_estimada": 21121166.89,
+      "fresh_f1_ratio_estimado": 0.1073,
+      "razao_popularidade_usada": 0.7574,
+      "agio_bolao": 0.0,
+      "ev_por_real_aleatorio": 0.9083,
+      "ev_por_real_ajustado": 0.9779,
+      "ev_fixo_por_real": 0.0,
+      "ev_rateado_por_real": 0.9779,
+      "ganho_relativo_antipopular": 0.0766,
+      "elasticidade_antipopular": 0.2678,
+      "percentil_historico_ev": 99.33,
+      "limiar_top20": 0.403,
+      "limiar_top10": 0.5606,
+      "recomendacao_aposta": "APOSTAR_ACUMULADO_TOP10"
+    }
+  }
+}
