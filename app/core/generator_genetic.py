@@ -173,8 +173,8 @@ class GeneticMiner:
         jogos_unicos_livres: List[np.ndarray] = []
         hashes_vistos = set()
 
-        fator_overlap = self.config.get_overlap_limit() / self.config.bet_size
-        limite_comum = int(k_livre * fator_overlap)
+        overlap_total = int(self.config.get_overlap_limit())
+        limite_comum = max(0, overlap_total - n_fixos)
 
         for jogo_arr, sc in zip(populacao_ordenada, scores_ordenados):
             if float(sc) <= -1e8:
@@ -192,7 +192,7 @@ class GeneticMiner:
             if len(jogos_unicos_livres) >= qtd_final:
                 break
 
-        # Fallback
+        # Fallback (respeitando histórico e corte antipopular via _fitness > -1e8)
         tentativas = 0
         max_tentativas = 500
 
@@ -229,12 +229,26 @@ class GeneticMiner:
             t_rand = tuple(novo_random.tolist())
 
             if t_rand not in hashes_vistos:
-                if self._passa_overlap(
+                sc_rand = float(
+                    self._fitness(np.array([novo_random], dtype=int), fixos=fixos)[0]
+                )
+                if sc_rand > -1e8 and self._passa_overlap(
                     novo_random, jogos_unicos_livres, limite_comum=limite_comum
                 ):
                     hashes_vistos.add(t_rand)
                     jogos_unicos_livres.append(novo_random)
 
+        if len(jogos_unicos_livres) < qtd_final:
+            # Preferir primeiro candidatos válidos (score > -1e8) da população ordenada
+            for jogo_arr, sc in zip(populacao_ordenada, scores_ordenados):
+                if float(sc) <= -1e8:
+                    continue
+                t = tuple(jogo_arr.tolist())
+                if t not in hashes_vistos:
+                    hashes_vistos.add(t)
+                    jogos_unicos_livres.append(jogo_arr.copy())
+                if len(jogos_unicos_livres) >= qtd_final:
+                    break
         if len(jogos_unicos_livres) < qtd_final:
             for jogo_arr in populacao_ordenada:
                 t = tuple(jogo_arr.tolist())

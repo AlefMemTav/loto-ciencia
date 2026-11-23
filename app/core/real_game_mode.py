@@ -866,10 +866,17 @@ def generate_real_game_package(
     )
 
     r_media = float(antidivisao_diag.get("razao_ganhadores_media", 1.0) or 1.0)
+    modelo_pop_work = getattr(ctx_work, "modelo_popularidade", None)
+    q90_pop_work = (
+        float(getattr(modelo_pop_work, "conformal_q90_log", 0.0) or 0.0)
+        if modelo_pop_work is not None
+        else 0.0
+    )
     ev_ex_ante_diag = estimar_ev_concurso_ex_ante(
         ctx.config,
         detalhes_df=det_causais,
         razao_popularidade=r_media,
+        conformal_q90_log_pop=q90_pop_work,
     )
 
     return {

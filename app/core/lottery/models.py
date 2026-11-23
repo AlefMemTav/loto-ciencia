@@ -113,9 +113,10 @@ class BoardLayout:
 
     @property
     def aneis(self) -> Dict[str, List[int]]:
-        """Anéis concêntricos baseados na Distância Manhattan ao centro."""
-        centro_r, centro_c = self.rows / 2, self.cols / 2
-        max_dist = self.rows / 2 + self.cols / 2
+        """Anéis concêntricos baseados na Distância Manhattan ao centro real da grade zero-based."""
+        centro_r = (self.rows - 1) / 2.0
+        centro_c = (self.cols - 1) / 2.0
+        max_dist = max(1e-9, centro_r + centro_c)
         grupos = {"Externo": [], "Médio": [], "Interno": []}
 
         for n in self.numbers:

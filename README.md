@@ -34,14 +34,13 @@ procedimentos de backtest.
 
 ## Funcionalidades
 
-- **Dashboard de tendências:** frequências, atrasos, distribuições geométricas discretas exatas (KS discreto + $\chi^2$ agrupado), testes de uniformidade e intervalos de confiança via Bootstrap vetorizado.
-- **Validador de apostas (15 sinais):** score de 0 a 100, percentis exatos no Modelo Nulo Combinatório (22 features), tipicidade em Espaço-Z padronizado (K-Means 9 dimensões), lookup histórico matricial $O(1)$, geometria 2D do volante e modelo econométrico de popularidade medida (Regressão Ridge + WLS exponencial + normalização causal por mediana móvel contra saltos de preço nos rateios da Caixa, com $R^2_{\text{CV}}$ de $0{,}38$ a $0{,}78$).
-- **Gerador inteligente, Gatekeeper de EV Ex-Ante e Modo Jogo Real:** torneio fechado de carteiras com calibração estrutural por Cotas de Hamilton ($D_{\text{JS}} \le 0{,}07$), refinamento local 1-opt preservador de buckets, bloqueio rigoroso anti-divisão de prêmio (incluindo proteção-espelho de 0 acerto na Lotomania), diagnóstico causal de Valor Esperado Ex-Ante sob diluição de Poisson e relatórios pós-seleção neutros.
-- **Auditoria diária prospectiva (`game_day.py` e `conferir.py`):** geração pré-sorteio determinística e conferência automatizada com variância hipergeométrica exata de exposição e controle aleatório pareado de Rao-Blackwell (baseline analítico exato $K \to \infty$ + auditoria empírica condicional ao sorteio).
-- **Fechamentos combinatórios:** cobertura otimizada de grupos e estimativa de custo.
-- **Auditoria de bolões:** validação em lote, duplicidades, cobertura e relatório de custos.
-- **Dados atualizados:** resultados e detalhes de premiação obtidos dos dados oficiais da
-  Caixa Econômica Federal.
+- **Dashboard de tendências:** frequências, atrasos (descritivos, sem falácia do apostador), distribuições geométricas discretas exatas (KS discreto + $\chi^2$ agrupado), testes de uniformidade com correção de população finita e intervalos de predição/confiança via Bootstrap vetorizado.
+- **Validador de apostas (15 sinais):** score de 0 a 100, percentis exatos no Modelo Nulo Combinatório (28 métricas vetorizadas), tipicidade em Espaço-Z sem colinearidade (7 dimensões independentes + distância de Mahalanobis descritiva), lookup histórico matricial $O(1)$, geometria 2D calibrada por cauda hipergeométrica exata e modelo econométrico de popularidade medida (Huber-IRLS Ridge + kernel de interações de pares + WLS exponencial + filtro causal de anomalias de arrecadação + quantil conformal 90% + monitor de drift, com $R^2_{\text{CV}}$ de **$0{,}389$ na Lotomania**, **$0{,}601$ na Lotofácil**, **$0{,}719$ na Mega-Sena** e **$0{,}789$ na Quina**).
+- **Gerador inteligente, Gatekeeper de EV Ex-Ante e Modo Jogo Real:** torneio fechado de carteiras com calibração estrutural por Cotas de Hamilton ($D_{\text{JS}} \le 0{,}07$), refinamento local 1-opt preservador de buckets, bloqueio anti-divisão de prêmio (incluindo proteção-espelho de 0 acerto na Lotomania), diagnóstico causal de EV Ex-Ante com regime de concursos especiais, limites conformais 90%, Kelly fracionado e comparativo cruzado entre modalidades (`--comparar-modalidades`).
+- **Auditoria diária prospectiva e sequencial (`game_day.py`, `conferir.py`, `auditoria_registro.py`):** geração pré-sorteio determinística, conferência automatizada com variância hipergeométrica exata, controle pareado de Rao-Blackwell, rastreamento de rateio realizado contra `data/detalhes/*.csv` e auditoria sequencial *anytime-valid* via e-values/martingale de Ville + calculadora de poder amostral (`python -m app.cli.conferir --auditar`).
+- **Fechamentos combinatórios verificados (`matrices.py`):** desenhos de cobertura $C(v,k,t)$ / $L(v,k,t,m)$ exaustivamente verificados para Mega-Sena, Quina e Lotofácil, com seleção de base anti-popular e transparência para Lotomania.
+- **Auditoria de bolões (`bolao.py`):** validação em lote, normalização `00 → 100` na Lotomania, duplicidades, cobertura, métricas de portfólio, razão média de rateio e simulador interativo de ágio de 0% a 35% sobre o EV.
+- **Dados atualizados:** resultados e detalhes de premiação obtidos dos dados oficiais da Caixa Econômica Federal.
 
 ## Jogos suportados
 
@@ -57,7 +56,7 @@ procedimentos de backtest.
 
 ## Como o score funciona
 
-O sistema separa estritamente a **função objetivo do gerador** (contínua, calibrada sob o Modelo Nulo Combinatório de 22 features e o modelo econométrico de popularidade medida com modulação pela elasticidade de Poisson do EV ex-ante) do **validador independente** (auditor de 13 etapas e 15 sinais com correção de Bonferroni). Entre os critérios estão soma (IC Histórico + IC Bootstrap), paridade, quadrantes, linhas, colunas, moldura, cruz, diagonais, simetria de reflexão, terminações, entropia e regularidade dos intervalos, distância de Hamming, tipicidade de cluster no Espaço-Z e risco empírico de divisão de prêmio.
+O sistema separa estritamente a **função objetivo do gerador** (contínua, calibrada sob o Modelo Nulo Combinatório e o modelo econométrico de popularidade medida com modulação pela elasticidade de Poisson do EV ex-ante) do **validador independente** (auditor de 13 etapas e 15 sinais com correção de Bonferroni). Entre os critérios estão soma (IC Histórico + faixa de predição 95% para bilhete único), paridade, quadrantes, linhas, colunas, moldura, cruz, diagonais, simetria de reflexão, terminações, entropia relativa e regularidade dos intervalos, distância de Hamming, tipicidade de cluster + distância de Mahalanobis e risco empírico de divisão de prêmio com intervalo conformal 90%.
 
 | Score | Classificação | Interpretação |
 | ---: | --- | --- |
@@ -107,7 +106,14 @@ Para atualizar os resultados e os detalhes de premiação:
 python atualizar_loterias.py
 ```
 
-O mesmo processo é executado automaticamente pelo GitHub Actions. Os resultados são
+Para comparar o EV ex-ante (com IC conformal 90% e Kelly fracionado) entre todas as modalidades ou auditar o histórico do `registro`:
+
+```bash
+python -m app.cli.game_day --comparar-modalidades --agio 0.0 --banca 500
+python -m app.cli.conferir --registro registro --auditar
+```
+
+O processo diário é executado automaticamente pelo GitHub Actions. Os resultados são
 salvos em `data/*.xlsx` e os detalhes por faixa em `data/detalhes/*.csv`.
 
 ### Exemplo de validação

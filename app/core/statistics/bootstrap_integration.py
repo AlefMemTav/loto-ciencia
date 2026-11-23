@@ -127,13 +127,13 @@ def comparar_ic_bootstrap_vs_historico(
     if not ic_bootstrap or not ic_historico:
         return {"erro": "ICs incompletos"}
 
-    ic_boot_lower = ic_bootstrap["ic_lower"]
-    ic_boot_upper = ic_bootstrap["ic_upper"]
+    ic_boot_lower = ic_bootstrap.get("pred_lower", ic_bootstrap["ic_lower"])
+    ic_boot_upper = ic_bootstrap.get("pred_upper", ic_bootstrap["ic_upper"])
 
     ic_hist_80 = ic_historico["ic_80"]
     ic_hist_95 = ic_historico["ic_95"]
 
-    # Classifica soma em cada IC
+    # Classifica soma em cada intervalo de predição
     no_bootstrap = ic_boot_lower <= soma_jogo <= ic_boot_upper
     no_hist_80 = ic_hist_80[0] <= soma_jogo <= ic_hist_80[1]
     no_hist_95 = ic_hist_95[0] <= soma_jogo <= ic_hist_95[1]
@@ -141,10 +141,10 @@ def comparar_ic_bootstrap_vs_historico(
     # Análise de divergência
     divergencia = []
 
-    if no_bootstrap and not no_hist_80:
-        divergencia.append("Bootstrap aprova, mas IC80% histórico rejeita")
-    elif not no_bootstrap and no_hist_80:
-        divergencia.append("IC80% aprova, mas Bootstrap rejeita")
+    if no_bootstrap and not no_hist_95:
+        divergencia.append("Intervalo preditivo aprova, mas IC95% histórico rejeita")
+    elif not no_bootstrap and no_hist_95:
+        divergencia.append("IC95% histórico aprova, mas intervalo preditivo rejeita")
 
     # Amplitude dos intervalos (indicador de certeza)
     amplitude_boot = ic_boot_upper - ic_boot_lower
@@ -172,9 +172,9 @@ def _gerar_conclusao_ic(
     if no_boot and no_80:
         return "✅ Soma validada por ambos métodos (alta confiança)"
     elif no_boot and no_95:
-        return "✅ Soma aprovada por Bootstrap e IC95% (confiança moderada)"
+        return "✅ Soma aprovada pelo intervalo preditivo 95% e IC95%"
     elif not no_boot and not no_95:
-        return "⚠️ Soma fora de ambos ICs - jogo atípico"
+        return "⚠️ Soma fora dos intervalos preditivos 95% - jogo atípico"
     elif divergencias:
         return f"⚠️ Métodos divergem: {divergencias[0]}"
     else:
@@ -187,7 +187,8 @@ def avaliar_soma_com_ic_bootstrap(
     ic_historico: Optional[dict] = None,
 ) -> dict:
     """
-    Avalia a soma do jogo usando um IC Bootstrap pré-computado.
+    Avalia a soma de um bilhete individual usando o intervalo de predição 95%
+    (separando o IC da média histórica do intervalo preditivo de um único bilhete).
     """
     resultado = {
         "disponivel": False,
@@ -206,34 +207,42 @@ def avaliar_soma_com_ic_bootstrap(
     resultado["disponivel"] = True
     resultado["ic_bootstrap"] = ic_boot
 
-    no_ic_boot = ic_boot["ic_lower"] <= soma_jogo <= ic_boot["ic_upper"]
+    lower = float(ic_boot.get("pred_lower", ic_boot["ic_lower"]))
+    upper = float(ic_boot.get("pred_upper", ic_boot["ic_upper"]))
+    media_ref = float(
+        ic_boot.get("media_predicao")
+        or ic_boot.get("media_bilhete_teorica")
+        or ic_boot.get("media_bootstrap")
+        or 1.0
+    )
+
+    no_ic_boot = lower <= soma_jogo <= upper
 
     if no_ic_boot:
         resultado["mensagens"].append(
-            f"✅ Soma ({soma_jogo}) dentro do IC Bootstrap 95% "
-            f"[{ic_boot['ic_lower']:.0f}, {ic_boot['ic_upper']:.0f}]"
+            f"✅ Soma ({soma_jogo}) dentro do intervalo preditivo 95% "
+            f"[{lower:.0f}, {upper:.0f}]"
         )
         resultado["score_ajuste"] = 0
     else:
-        if soma_jogo < ic_boot["ic_lower"]:
-            distancia = ic_boot["ic_lower"] - soma_jogo
+        if soma_jogo < lower:
+            distancia = lower - soma_jogo
             direcao = "abaixo"
         else:
-            distancia = soma_jogo - ic_boot["ic_upper"]
+            distancia = soma_jogo - upper
             direcao = "acima"
 
-        media_boot = ic_boot.get("media_bootstrap") or 1.0
-        desvio_relativo = distancia / media_boot
+        desvio_relativo = distancia / max(abs(media_ref), 1.0)
 
         if desvio_relativo > 0.15:
             resultado["score_ajuste"] = -8
             resultado["mensagens"].append(
-                f"⚠️ Soma muito {direcao} do IC Bootstrap ({distancia:.0f} pontos de diferença)"
+                f"⚠️ Soma muito {direcao} do intervalo preditivo 95% ({distancia:.0f} pontos de diferença)"
             )
         else:
             resultado["score_ajuste"] = -3
             resultado["mensagens"].append(
-                f"ℹ️ Soma ligeiramente {direcao} do IC Bootstrap"
+                f"ℹ️ Soma ligeiramente {direcao} do intervalo preditivo 95%"
             )
 
     if ic_historico:

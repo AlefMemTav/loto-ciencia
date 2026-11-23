@@ -692,13 +692,19 @@ def calcular_indice_compressibilidade(report: dict, config: "GameConfig") -> dic
         flags.append("gaps_pouco_variados")
         penalidade_estrutural += 8
 
-    # Flag 3: Simetria por reflexão
+    # Flag 3: Simetria por reflexão (calibrado pelo esperado hipergeométrico do jogo)
     pares_simetricos = metricas.get("pares_simetricos", 0)
-    lim_sim = ajustar_threshold_por_densidade(2, densidade)
+    k_eff = max(2, int(getattr(config, "bet_size", config.k)))
+    n_tot = max(k_eff + 1, int(config.n_numbers))
+    n_pares_tot = n_tot // 2
+    p_par = (k_eff * (k_eff - 1)) / float(n_tot * (n_tot - 1))
+    esp_sim = n_pares_tot * p_par
+    std_sim = (max(0.25, esp_sim * (1.0 - p_par))) ** 0.5
+    lim_sim = max(2, int(round(esp_sim + 2.4 * std_sim)))
     if pares_simetricos >= lim_sim:
         flags.append("simetria_forte")
         penalidade_estrutural += 12
-    elif pares_simetricos >= 1 and lim_sim <= 2:
+    elif pares_simetricos >= 1 and lim_sim <= 2 and densidade < 0.25:
         flags.append("simetria_leve")
         penalidade_estrutural += 5
 
@@ -726,11 +732,26 @@ def calcular_indice_compressibilidade(report: dict, config: "GameConfig") -> dic
         flags.append("span_baixo")
         penalidade_estrutural += 6
 
-    # Flag 7: Concentração em linha/coluna
+    # Flag 7: Concentração em linha/coluna (calibrada ao layout real do jogo)
     max_linha = metricas.get("max_numa_linha", 0)
     max_coluna = metricas.get("max_numa_coluna", 0)
-    lim_grid_linha = ajustar_threshold_por_densidade(5, densidade)
-    lim_grid_coluna = ajustar_threshold_por_densidade(4, densidade)
+    layout = getattr(config, "layout", None)
+    n_cols = int(getattr(layout, "cols", 10) or 10)
+    n_rows = int(getattr(layout, "rows", 6) or 6)
+    esp_linha = k_eff * (n_cols / float(n_tot))
+    std_linha = (max(0.25, esp_linha * (1.0 - n_cols / float(n_tot)) * (n_tot - k_eff) / max(1, n_tot - 1))) ** 0.5
+    lim_grid_linha = max(4, int(round(esp_linha + 2.8 * std_linha)))
+    if k_eff <= 6:
+        lim_grid_linha = max(5, lim_grid_linha)
+    if n_cols <= 5 and densidade >= 0.5:
+        lim_grid_linha = n_cols + 1  # em 5x5 denso (Lotofácil), 5/5 numa linha tem p=5,6% (não é anômalo)
+
+    esp_col = k_eff * (n_rows / float(n_tot))
+    std_col = (max(0.25, esp_col * (1.0 - n_rows / float(n_tot)) * (n_tot - k_eff) / max(1, n_tot - 1))) ** 0.5
+    lim_grid_coluna = max(4, int(round(esp_col + 2.8 * std_col)))
+    if n_rows <= 5 and densidade >= 0.5:
+        lim_grid_coluna = n_rows + 1
+
     if max_linha >= lim_grid_linha or max_coluna >= lim_grid_coluna:
         flags.append("concentracao_grid")
         penalidade_estrutural += 10

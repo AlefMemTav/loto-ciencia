@@ -37,7 +37,7 @@ def _build_payload_overrides(args):
         "usar_atrasados": args.com_atrasados,
         "usar_markov": args.com_markov,
         "usar_ciclo": args.com_ciclo,
-        "usar_coocorrencia": not args.sem_coocorrencia,
+        "usar_coocorrencia": bool(getattr(args, "com_coocorrencia", False)) and not getattr(args, "sem_coocorrencia", False),
         "frequencia_recente": not args.sem_frequencia_recente,
         "usar_calibracao_score": not args.sem_calibracao_score,
         "calibration_strength": args.calibration_strength,
@@ -182,9 +182,14 @@ def main():
         help="Liga inclinação por ciclo no gerador vetorial (padrão: desligada)",
     )
     parser.add_argument(
+        "--com-coocorrencia",
+        action="store_true",
+        help="Liga inclinação por coocorrência no gerador (padrão: desligada)",
+    )
+    parser.add_argument(
         "--sem-coocorrencia",
         action="store_true",
-        help="Desliga inclinação por coocorrência",
+        help="Mantido por compatibilidade (coocorrência já é desligada por padrão)",
     )
     parser.add_argument(
         "--sem-frequencia-recente",

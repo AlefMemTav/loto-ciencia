@@ -1,8 +1,15 @@
 # app/ui/views/closures.py
-import streamlit as st
 import math
+
+import numpy as np
+import streamlit as st
+
 from app.core.logger import logger
-from app.core.matrices import get_matriz_fechamento
+from app.core.matrices import (
+    gerar_fechamento_detalhado,
+    opcoes_fechamento_para_jogo,
+    sugerir_base_antipopular,
+)
 
 
 def _brl(valor: float) -> str:
@@ -10,25 +17,46 @@ def _brl(valor: float) -> str:
     return "R$ " + f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _parse_base_numbers(texto: str, slug: str) -> list[int]:
+    """Lê dezenas separadas por espaço/vírgula/hífen/quebra, normalizando 00 -> 100 na Lotomania."""
+    raw_text = (
+        texto.replace(",", " ")
+        .replace("-", " ")
+        .replace(";", " ")
+        .replace("\n", " ")
+    )
+    nums: set[int] = set()
+    for token in raw_text.split():
+        tk = token.strip()
+        if not tk.isdigit():
+            continue
+        val = int(tk)
+        if slug == "loto_mania_sorteio" and val == 0:
+            val = 100
+        nums.add(val)
+    return sorted(nums)
+
+
 def render_closures(ctx, svc):
     config = ctx.config
     slug = config.slug
     constants = config.as_constants_dict()
     color = constants.get("heat_color", "#ef4444")
+    preco = float(config.game_price)
 
-    # --- Título com Apelo Científico ---
     st.markdown(
         f"""
         <div style="text-align: center; margin-bottom: 25px;">
             <h2 style="margin:0;">🧬 Matrizes de Fechamento <span style='color: {color};'>{config.name}</span></h2>
             <p style="color: #777; font-size: 1.1rem; margin-top: 5px;">
-                Economize dinheiro usando Matrizes de Fechamentos avançadas.
+                Covering Designs com garantia matemática verificada e base menos popular.
             </p>
         </div>
         <div style="background-color: #f0fdf4; padding: 15px; border-left: 5px solid #22c55e; border-radius: 5px; margin-bottom: 20px;">
-            <strong style="color: #15803d">O Segredo dos Bolões Profissionais:</strong> 
-            Não jogue dinheiro fora com combinações completas. Use <em>Covering Designs</em> 
-            (Matrizes Matemáticas) para cobrir mais números pagando até <strong>99% menos</strong>.
+            <strong style="color: #15803d">Nota Matemática Honesta:</strong>
+            Fechamentos não alteram a média de acertos por real apostado, mas reorganizam a
+            distribuição dos bilhetes para garantir um piso exato de acertos (<em>Covering Design</em>)
+            pagando uma fração do desdobramento completo.
         </div>
         """,
         unsafe_allow_html=True,
@@ -37,74 +65,136 @@ def render_closures(ctx, svc):
     qtd_aposta = config.bet_size
     min_base = qtd_aposta + 1
 
-    # --- Configuração Dinâmica por Jogo ---
+    # --- Configuração Dinâmica por Jogo (usando preço oficial atual de config.game_price) ---
     if slug == "loto_facil_sorteio":
         max_base = 23
-        preco = config.game_price
+        qtd_sugestao_default = 18
         exemplo_texto = (
-            "📊 **Exemplo de Potência (Lotofácil):**\n\n"
-            f"Jogar **18 dezenas** na lotérica custa **{_brl(math.comb(18, 15) * preco)}**.\n\n"
-            f"Com nossa Matriz 18-15-14-15 (24 jogos), você gasta **{_brl(24 * preco)}**. "
-            "Se os 15 números sorteados estiverem entre as 18 dezenas, o fechamento "
-            "garante pelo menos 14 pontos."
+            "📊 **Exemplo Real (Lotofácil):**\n\n"
+            f"Desdobrar **18 dezenas** completo custa **{_brl(math.comb(18, 15) * preco)}** (816 jogos).\n\n"
+            f"Com a matriz de Turán **18-15-14-15 (24 jogos)**, você gasta **{_brl(24 * preco)}** "
+            "(97,1% menos) com garantia verificada de >= 14 pontos se os 15 sorteados estiverem na base.\n\n"
+            f"Para **19 ou 20 dezenas**, o fechamento **13-se-15** gera 15 ou 45 jogos verificados."
         )
     elif slug == "mega_sena_sorteio":
         max_base = 15
+        qtd_sugestao_default = 10
         exemplo_texto = (
-            "📊 **Exemplo de Potência (Mega-Sena):**\n\n"
-            "Jogar **10 dezenas** na lotérica custa cerca de **R$ 1.050,00**.\n\n"
-            "Com nosso Fechamento Inteligente, você cerca esses 10 números com **~15 jogos** (R$ 75,00), "
-            "focando em garantir a Quadra ou Quina."
+            "📊 **Exemplo Real (Mega-Sena):**\n\n"
+            f"Desdobrar **10 dezenas** completo custa **{_brl(math.comb(10, 6) * preco)}** (210 jogos).\n\n"
+            f"• **Quina se 6:** 15 jogos ({_brl(15 * preco)} · -92,9%)\n"
+            f"• **Quadra se 4 (Covering Design):** 23 jogos ({_brl(23 * preco)} · -89,0%)\n"
+            f"• **Quadra se 6:** 3 jogos ({_brl(3 * preco)} · -98,6%)"
         )
     elif slug == "quina_sorteio":
         max_base = 15
+        qtd_sugestao_default = 10
         exemplo_texto = (
-            "📊 **Exemplo de Potência (Quina):**\n\n"
-            "Jogar **10 dezenas** na lotérica custa mais de **R$ 750,00**.\n\n"
-            "Com a Matriz de Redução, você cobre esses 10 números gastando menos de **R$ 60,00**."
+            "📊 **Exemplo Real (Quina):**\n\n"
+            f"Desdobrar **10 dezenas** completo custa **{_brl(math.comb(10, 5) * preco)}** (252 jogos).\n\n"
+            f"• **Quadra se 5:** 19 jogos ({_brl(19 * preco)} · -92,5%)\n"
+            f"• **Terno se 3 (Covering Design):** 19 jogos ({_brl(19 * preco)} · -92,5%)\n"
+            f"• **Terno se 5:** 2 jogos ({_brl(2 * preco)} · -99,2%)"
         )
     elif slug == "loto_mania_sorteio":
         max_base = 70
+        qtd_sugestao_default = 60
         exemplo_texto = (
-            "📊 **Estratégia de Cobertura (Lotomania):**\n\n"
-            "É impossível marcar 60 números em um único cartão.\n\n"
-            "Nossa ferramenta permite que você escolha **60 ou 70 números** e o sistema os distribui "
-            "automaticamente em cartões de 50, maximizando suas chances de acertar 19 ou 20 pontos."
+            "📊 **Cobertura Balanceada (Lotomania):**\n\n"
+            "Escolha **51 a 70 dezenas** (aceita `00` ou `100`) e o sistema distribui em cartões "
+            "de 50 maximizando pares inéditos e equilibrando a exposição entre todas as dezenas da base."
         )
     else:
-        # Fallback genérico
         max_base = qtd_aposta + 10
-        exemplo_texto = (
-            "Matrizes reduzem drasticamente o custo de apostas com muitos números."
-        )
+        qtd_sugestao_default = min(max_base, min_base + 3)
+        exemplo_texto = "Matrizes reduzem drasticamente o custo de apostas com muitos números."
 
-    # Placeholder dinâmico (exemplo visual correto)
-    exemplo_nums = [f"{n:02d}" for n in range(1, qtd_aposta + 5)]
-    # Se for muita coisa (Lotomania), corta o exemplo
+    # Estado da caixa de texto por jogo (para suportar botão de sugestão anti-popular)
+    input_key = f"closures_base_input_{slug}"
+    if input_key not in st.session_state:
+        st.session_state[input_key] = ""
+
+    exemplo_nums = [f"{n:02d}" for n in range(1, min(qtd_aposta + 5, config.n_numbers + 1))]
     if len(exemplo_nums) > 10:
-        placeholder_ex = (
-            " ".join(exemplo_nums[:5]) + " ... " + " ".join(exemplo_nums[-3:])
-        )
+        placeholder_ex = " ".join(exemplo_nums[:5]) + " ... " + " ".join(exemplo_nums[-3:])
     else:
         placeholder_ex = " ".join(exemplo_nums)
+
+    # --- Sugestão de base menos popular (anti-rateio) ---
+    col_sug_n, col_sug_btn = st.columns([1, 2])
+    with col_sug_n:
+        qtd_sug = st.number_input(
+            "Qtd. dezenas para sugestão anti-rateio",
+            min_value=min_base,
+            max_value=max_base,
+            value=min(max_base, max(min_base, qtd_sugestao_default)),
+            step=1,
+            key=f"closures_qtd_sug_{slug}",
+        )
+    with col_sug_btn:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        if st.button(
+            "🎯 Sugerir base menos popular (anti-rateio)",
+            key=f"btn_sug_base_{slug}",
+            width="stretch",
+        ):
+            sugestao = sugerir_base_antipopular(
+                config,
+                int(qtd_sug),
+                modelo_popularidade=getattr(ctx, "modelo_popularidade", None),
+            )
+            st.session_state[input_key] = " ".join(
+                "00" if (slug == "loto_mania_sorteio" and n == 100) else f"{n:02d}"
+                for n in sugestao
+            )
+            st.rerun()
 
     # --- Área de Input ---
     col_input, col_info = st.columns([2, 1])
 
     with col_input:
         st.info(
-            f"Escolha de **{min_base} a {max_base}** números. "
-            f"O sistema usará inteligência estatística para otimizar seus custos."
+            f"Escolha de **{min_base} a {max_base}** números."
+            + (" (Na Lotomania, `00` equivale a `100`.)" if slug == "loto_mania_sorteio" else "")
         )
         entrada_base = st.text_area(
-            label="Digite os números:",
+            label="Digite os números da base:",
             placeholder=f"Ex: {placeholder_ex} ...",
             height=120,
+            key=input_key,
             help="Separe por espaços, vírgulas ou quebra de linha.",
         )
 
     with col_info:
         st.info(exemplo_texto)
+
+    base_preview = _parse_base_numbers(entrada_base, slug)
+    n_preview = len(base_preview)
+
+    # Seletor dinâmico de modo/garantia com base na quantidade digitada
+    modo_selecionado = None
+    qtd_jogos_parcial = 20
+    if min_base <= n_preview <= max_base:
+        opcoes = opcoes_fechamento_para_jogo(config, n_preview)
+        labels = [op["label"] for op in opcoes]
+        escolha_label = st.selectbox(
+            "Tipo de Fechamento / Garantia:",
+            labels,
+            index=0,
+            key=f"closures_modo_{slug}_{n_preview}",
+        )
+        modo_selecionado = next(op for op in opcoes if op["label"] == escolha_label)
+        if modo_selecionado["id"] == "parcial":
+            qtd_jogos_parcial = int(
+                st.slider(
+                    "Quantidade de jogos na cobertura balanceada:",
+                    min_value=5,
+                    max_value=100,
+                    value=20,
+                    step=5,
+                    key=f"closures_qtd_parcial_{slug}",
+                )
+            )
 
     if st.button(
         "⚡ Gerar Matriz Econômica Agora",
@@ -112,14 +202,8 @@ def render_closures(ctx, svc):
         type="primary",
     ):
         try:
-            # Tratamento de input robusto
-            raw_text = (
-                entrada_base.replace(",", " ").replace("-", " ").replace("\n", " ")
-            )
-            numeros_str = raw_text.split()
-            base = sorted(list(set([int(n) for n in numeros_str if n.isdigit()])))
+            base = _parse_base_numbers(entrada_base, slug)
 
-            # Validações
             if len(base) < min_base:
                 st.error(
                     f"❌ Poucos números! Escolha pelo menos **{min_base}** para usar matrizes."
@@ -136,104 +220,110 @@ def render_closures(ctx, svc):
                 )
                 return
 
-            with st.spinner("📐 Aplicando Design Combinatório Otimizado..."):
-                # 1. Gera Matriz Otimizada (Passa o config para ser universal)
-                jogos = get_matriz_fechamento(base, config)
+            with st.spinner("📐 Construindo Covering Design verificado..."):
+                if modo_selecionado is None:
+                    opcoes = opcoes_fechamento_para_jogo(config, len(base))
+                    modo_selecionado = opcoes[0]
 
-                # 2. Cálculos Financeiros (O Pulo do Gato)
-                custo_otimizado = len(jogos) * config.game_price
-
-                # Custo "Na Raça" (Combinação Total C(n, bet_size))
+                is_completo = modo_selecionado["id"] == "completo"
+                is_parcial = modo_selecionado["id"] == "parcial"
+                res = gerar_fechamento_detalhado(
+                    base,
+                    config,
+                    garantia_t=modo_selecionado.get("t"),
+                    condicao_m=modo_selecionado.get("m"),
+                    completo=is_completo,
+                    max_jogos=qtd_jogos_parcial if is_parcial else None,
+                )
+                jogos = res["jogos"]
+                custo_otimizado = len(jogos) * preco
                 comb_total = math.comb(len(base), config.bet_size)
-                custo_bruto = comb_total * config.game_price
 
-                economia = custo_bruto - custo_otimizado
-
-                if custo_bruto > 0:
-                    pct_economia = (economia / custo_bruto) * 100
-                else:
-                    pct_economia = 0
-
-            # --- EXIBIÇÃO DOS RESULTADOS ---
             st.markdown("---")
-            st.subheader("💰 Relatório de Economia Inteligente")
+            st.subheader("💰 Relatório da Matriz")
 
-            label_custo_bruto = (
-                "Custo Teórico (Combinatória)"
-                if slug == "loto_mania_sorteio"
-                else "Custo na Lotérica (Bruto)"
-            )
+            if slug == "loto_mania_sorteio":
+                # Não exibe "economia" fictícia de quatrilhões sobre C(70,50)
+                exposicao = [sum(1 for j in jogos if n in j) for n in base]
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric("Jogos Gerados", f"{len(jogos)}")
+                with m2:
+                    st.metric("Custo Total do Pacote", _brl(custo_otimizado))
+                with m3:
+                    st.metric(
+                        "Exposição por Dezena",
+                        f"{min(exposicao)}–{max(exposicao)}x",
+                        delta=f"Média {np.mean(exposicao):.1f}x",
+                        delta_color="off",
+                    )
+            else:
+                custo_bruto = comb_total * preco
+                economia = max(0.0, custo_bruto - custo_otimizado)
+                pct_economia = (economia / custo_bruto) * 100 if custo_bruto > 0 else 0.0
 
-            m1, m2, m3 = st.columns(3)
+                m1, m2, m3 = st.columns(3)
+                with m1:
+                    st.metric(
+                        f"Desdobramento Completo ({comb_total:,} jogos)",
+                        _brl(custo_bruto),
+                    )
+                with m2:
+                    delta_text = f"-{pct_economia:.1f}% Off" if pct_economia > 0 else "Completo"
+                    st.metric(
+                        f"Matriz ({len(jogos)} jogos)",
+                        _brl(custo_otimizado),
+                        delta=delta_text,
+                        delta_color="normal" if pct_economia > 0 else "off",
+                    )
+                with m3:
+                    st.metric(
+                        "Economia Real",
+                        _brl(economia),
+                        delta="vs. completo" if economia > 0 else "0%",
+                        delta_color="normal" if economia > 0 else "off",
+                    )
 
-            with m1:
-                st.metric(label_custo_bruto, f"R$ {custo_bruto:,.2f}")
-
-            with m2:
-                # Lógica visual de desconto
-                if pct_economia > 0:
-                    delta_text = f"-{pct_economia:.1f}% Off"
-                    delta_color = "normal"  # Verde
-                else:
-                    delta_text = "Preço Padrão"
-                    delta_color = "off"  # Cinza
-
-                st.metric(
-                    "Custo LotoCiencia",
-                    f"R$ {custo_otimizado:,.2f}",
-                    delta=delta_text,
-                    delta_color=delta_color,
-                )
-
-            with m3:
-                st.metric(
-                    "Você Economizou", f"R$ {economia:,.2f}", delta="Dinheiro no Bolso"
-                )
-
-            # Mensagem explicativa se não houve economia (UX Importante)
-            if pct_economia == 0 and len(base) <= (config.bet_size + 2):
+            # Métrica de popularidade média do pacote (se modelo disponível)
+            modelo_pop = getattr(ctx, "modelo_popularidade", None)
+            if modelo_pop is not None and jogos:
+                razoes = modelo_pop.razao_ganhadores_batch(np.asarray(jogos, dtype=int))
                 st.caption(
-                    "ℹ️ **Nota:** Para poucos números extras (ex: jogar 7 na Mega), "
-                    "a quantidade de combinações é pequena. O sistema gera "
-                    "o fechamento completo para garantir 100% do prêmio máximo."
+                    f"📊 **Risco de divisão medido:** razão média de ganhadores do fechamento = "
+                    f"**{float(np.mean(razoes)):.2f}x** (1,00x = jogo aleatório médio; menor = divide menos o prêmio)."
                 )
 
-            # Garantia calculada a partir do que foi de fato gerado (sem promessa fixa)
-            n_base = len(base)
-            if len(jogos) == math.comb(n_base, config.bet_size):
-                garantia = (
-                    "total: todas as combinações da base. Se todos os números sorteados "
-                    "estiverem na base, o prêmio máximo está garantido"
-                )
-            elif config.slug == "loto_facil_sorteio" and 16 <= n_base <= 18:
-                garantia = (
-                    f"pelo menos 14 pontos se os 15 números sorteados estiverem "
-                    f"entre as {n_base} dezenas da base"
+            if res["garantia_verificada"]:
+                st.success(
+                    f"✅ **Matriz Aplicada:** {len(jogos)} jogo(s). **Garantia:** {res['descricao_garantia']}."
                 )
             else:
-                garantia = "nenhuma garantia matemática (cobertura parcial)"
+                st.info(
+                    f"ℹ️ **Cobertura Aplicada:** {len(jogos)} jogo(s). **Tipo:** {res['descricao_garantia']}."
+                )
 
-            st.success(
-                f"✅ **Matriz Aplicada:** {len(jogos)} jogos gerados. **Garantia:** {garantia}."
-            )
+            # Visualização leve em bloco único (evita milhares de st.text)
+            linhas_fmt = []
+            txt_lines = []
+            for i, jogo in enumerate(jogos, 1):
+                nums_fmt = " ".join(
+                    "00" if (slug == "loto_mania_sorteio" and n == 100) else f"{n:02d}"
+                    for n in jogo
+                )
+                linhas_fmt.append(f"Jogo {i:03d}: {nums_fmt}")
+                txt_lines.append(nums_fmt)
+            txt_out = "\n".join(txt_lines) + "\n"
 
-            # Visualização dos Jogos
-            with st.expander("📋 Visualizar/Copiar Jogos", expanded=True):
-                txt_out = ""
-                for i, jogo in enumerate(jogos, 1):
-                    nums_fmt = " ".join([f"{n:02d}" for n in jogo])
-                    st.text(f"Jogo {i:02d}: {nums_fmt}")
-                    txt_out += f"{nums_fmt}\n"
+            with st.expander(f"📋 Visualizar/Copiar Jogos ({len(jogos)})", expanded=len(jogos) <= 50):
+                st.code("\n".join(linhas_fmt), language="text")
 
-            # Download
             st.download_button(
                 "📥 Baixar Matriz (.txt)",
                 txt_out,
-                f"LotoScience_Matriz_{len(base)}dz_{len(jogos)}jogos.txt",
+                f"LotoCiencia_Matriz_{len(base)}dz_{len(jogos)}jogos.txt",
                 width="stretch",
             )
 
         except Exception as e:
             logger.error(f"Erro matrix: {e}")
             st.error("❌ Ocorreu um erro ao calcular a matriz. Verifique seus números.")
-            # ----

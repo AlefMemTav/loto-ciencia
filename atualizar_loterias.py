@@ -170,7 +170,10 @@ def salvar_detalhes(loteria, df_existente, novas_linhas):
         return 0
     os.makedirs(DETALHES_DIR, exist_ok=True)
     df_novas = pd.DataFrame(novas_linhas)
-    df = pd.concat([df_novas, df_existente], ignore_index=True)
+    if df_existente is None or df_existente.empty:
+        df = df_novas.copy()
+    else:
+        df = pd.concat([df_novas, df_existente], ignore_index=True)
     df = df.drop_duplicates(subset="Concurso", keep="first")
     df = df.sort_values("Concurso", ascending=False)
     _ordenar_colunas(df).to_csv(caminho_detalhes(loteria), index=False)
@@ -293,12 +296,14 @@ def atualizar_excel(loteria, arquivo_nome, num_bolas, detalhes_novos=None):
         print(f"→ Nenhum concurso novo disponível para {loteria}")
         return False
 
-    # 9. Adiciona as novas linhas NO TOPO (ordem reversa para manter mais recente primeiro)
+    # 9. Adiciona as novas linhas NO TOPO (ordem decrescente, sem duplicar concurso)
     df_novas_linhas = pd.DataFrame(novas_linhas)
-    df_novas_linhas = df_novas_linhas.sort_values(
-        "Concurso", ascending=False
-    )  # Mais recente primeiro
-    df_atualizado = pd.concat([df_novas_linhas, df_existente], ignore_index=True)
+    if df_existente is None or df_existente.empty:
+        df_atualizado = df_novas_linhas.copy()
+    else:
+        df_atualizado = pd.concat([df_novas_linhas, df_existente], ignore_index=True)
+    df_atualizado = df_atualizado.drop_duplicates(subset="Concurso", keep="first")
+    df_atualizado = df_atualizado.sort_values("Concurso", ascending=False).reset_index(drop=True)
 
     # 10. Salva o Excel atualizado
     df_atualizado.to_excel(arquivo_excel, index=False, engine="openpyxl")

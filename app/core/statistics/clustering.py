@@ -132,6 +132,47 @@ def extrair_features_jogos_batch(
     )
 
 
+# Índices das 7 features linearmente independentes (exclui col 1 = media = soma/n
+# e col 4 = gap_medio = amplitude/(n-1), que tornavam a matriz de covariância singular).
+INDEPENDENT_FEATURE_INDICES: Tuple[int, ...] = (0, 2, 3, 5, 6, 7, 8)
+INDEPENDENT_FEATURE_NAMES: List[str] = [
+    "soma",
+    "prop_pares",
+    "prop_baixos",
+    "gap_std",
+    "sequencias",
+    "prop_finais_unicos",
+    "amplitude_relativa",
+]
+
+
+def calcular_referencia_mahalanobis(features_ind: np.ndarray) -> dict:
+    """Calcula média, inversa regularizada da covariância e quantis de distância de Mahalanobis."""
+    arr = np.asarray(features_ind, dtype=float)
+    mu = arr.mean(axis=0)
+    cov = np.cov(arr, rowvar=False)
+    if cov.ndim == 0:
+        cov = np.array([[float(cov)]], dtype=float)
+    # Regularização mínima proporcional à variância média para estabilidade numérica
+    reg = max(1e-6, 1e-5 * float(np.trace(cov)) / max(1, cov.shape[0]))
+    cov_reg = cov + np.eye(cov.shape[0]) * reg
+    cov_inv = np.linalg.pinv(cov_reg)
+    diff = arr - mu
+    dm = np.sqrt(np.maximum(0.0, np.einsum("ij,jk,ik->i", diff, cov_inv, diff)))
+    return {
+        "mahal_mu": [round(float(x), 6) for x in mu],
+        "mahal_cov_inv": [[round(float(v), 8) for v in row] for row in cov_inv],
+        "mahal_media": round(float(np.mean(dm)), 4) if len(dm) else 0.0,
+        "mahal_p90": round(float(np.percentile(dm, 90)), 4) if len(dm) else 3.5,
+        "mahal_p95": round(float(np.percentile(dm, 95)), 4) if len(dm) else 4.0,
+        "mahal_quantis": (
+            [round(float(q), 6) for q in np.quantile(dm, np.linspace(0.0, 1.0, 21))]
+            if len(dm)
+            else []
+        ),
+    }
+
+
 def clusterizar_jogos_kmeans(
     jogos: List[List[int]],
     config: GameConfig,
@@ -139,75 +180,71 @@ def clusterizar_jogos_kmeans(
     random_state: int = 42
 ) -> dict:
     """
-    Agrupa jogos similares usando K-Means.
-    
-    Parameters
-    ----------
-    jogos : List[List[int]]
-        Lista de jogos (cada jogo é uma lista de números).
-    config : GameConfig
-        Configuração do jogo.
-    n_clusters : int, default=5
-        Número de clusters desejados.
-    random_state : int, default=42
-        Seed para reprodutibilidade.
-    
-    Returns
-    -------
-    dict
-        Resultado da clusterização:
-        - 'labels': cluster de cada jogo
-        - 'centroides': características médias de cada cluster
-        - 'centroides_norm': centróides no espaço Z padronizado
-        - 'scaler_mean' / 'scaler_scale': parâmetros do StandardScaler
-        - 'dist_p90' / 'dist_p95': limiares empíricos de distância Euclidiana no espaço Z
-        - 'silhouette_score': score de silhouette
-        - 'distribuicao': contagem de jogos por cluster
+    Agrupa jogos similares usando K-Means sobre as 7 features linearmente independentes
+    (eliminando a colinearidade exata de `media = soma/n` e `gap_medio = amplitude/(n-1)`)
+    e calcula a referência de distância de Mahalanobis multivariada para diagnóstico descritivo.
     """
     if len(jogos) < n_clusters:
         return {'erro': 'Número de jogos insuficiente para clusterização'}
-    
-    # Extrai features (vetorizado)
-    features = extrair_features_jogos_batch(jogos, config)
-    
-    # Normaliza
+
+    # Extrai as 9 features completas (para relatório legível) e seleciona as 7 independentes
+    features_full = extrair_features_jogos_batch(jogos, config)
+    idx_ind = list(INDEPENDENT_FEATURE_INDICES)
+    features_ind = features_full[:, idx_ind]
+
+    # Normaliza apenas as 7 features independentes (elimina peso duplo de soma/amplitude)
     scaler = StandardScaler()
-    features_norm = scaler.fit_transform(features)
+    features_norm = scaler.fit_transform(features_ind)
     safe_scale = np.where(scaler.scale_ > 1e-9, scaler.scale_, 1.0)
-    
+
     # K-Means
     kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
     labels = kmeans.fit_predict(features_norm)
-    
+
     # Silhouette score
     if len(set(labels)) > 1:
         silhouette = silhouette_score(features_norm, labels)
     else:
         silhouette = 0.0
-    
+
     # Distribuição por cluster
     distribuicao = {i: int(np.sum(labels == i)) for i in range(n_clusters)}
-    
-    # Características médias por cluster (desnormalizadas e no espaço Z)
+
+    # Características médias por cluster (9 nomes legíveis) e centróides no espaço Z (7 independentes)
     centroides = {}
     centroides_norm = {}
     feature_names = [
-        'soma', 'media', 'prop_pares', 'prop_baixos', 
-        'gap_medio', 'gap_std', 'sequencias', 
+        'soma', 'media', 'prop_pares', 'prop_baixos',
+        'gap_medio', 'gap_std', 'sequencias',
         'prop_finais_unicos', 'amplitude_relativa'
     ]
-    
+
     for i in range(n_clusters):
         mask = labels == i
         if np.sum(mask) > 0:
-            centro = features[mask].mean(axis=0)
+            centro_full = features_full[mask].mean(axis=0)
             centro_norm = features_norm[mask].mean(axis=0)
-            centroides[i] = {name: round(float(val), 3) for name, val in zip(feature_names, centro)}
+            centroides[i] = {name: round(float(val), 3) for name, val in zip(feature_names, centro_full)}
             centroides_norm[i] = [round(float(val), 6) for val in centro_norm]
         else:
             centro_norm = kmeans.cluster_centers_[i]
-            centro = centro_norm * safe_scale + scaler.mean_
-            centroides[i] = {name: round(float(val), 3) for name, val in zip(feature_names, centro)}
+            centro_ind = centro_norm * safe_scale + scaler.mean_
+            # Reconstrói as 2 features derivadas para compatibilidade do relatório
+            k_len = max(1, len(jogos[0]))
+            soma_c = float(centro_ind[0])
+            amp_rel_c = float(centro_ind[6])
+            centro_full = np.array([
+                soma_c,
+                soma_c / k_len,
+                float(centro_ind[1]),
+                float(centro_ind[2]),
+                (amp_rel_c * config.n_numbers) / max(1, k_len - 1),
+                float(centro_ind[3]),
+                float(centro_ind[4]),
+                float(centro_ind[5]),
+                amp_rel_c,
+            ])
+            centroides[i] = {name: round(float(val), 3) for name, val in zip(feature_names, centro_full)}
             centroides_norm[i] = [round(float(val), 6) for val in centro_norm]
 
     assigned_centers = np.array(
@@ -225,6 +262,8 @@ def clusterizar_jogos_kmeans(
         else []
     )
 
+    mahal_ref = calcular_referencia_mahalanobis(features_ind)
+
     return {
         'labels': labels.tolist(),
         'n_clusters': n_clusters,
@@ -234,12 +273,16 @@ def clusterizar_jogos_kmeans(
         'centroides_norm': centroides_norm,
         'scaler_mean': [round(float(x), 6) for x in scaler.mean_],
         'scaler_scale': [round(float(x), 6) for x in safe_scale],
+        'feature_indices': idx_ind,
+        'independent_feature_names': list(INDEPENDENT_FEATURE_NAMES),
         'dist_media': round(dist_media, 4),
         'dist_std': round(dist_std, 4),
         'dist_p90': round(dist_p90, 4),
         'dist_p95': round(dist_p95, 4),
         'distancias_quantis': dist_quantis,
         'feature_names': feature_names,
+        'k_referencia': int(len(jogos[0])) if jogos else int(config.k),
+        **mahal_ref,
     }
 
 
@@ -274,19 +317,21 @@ def clusterizar_jogos_dbscan(
     if len(jogos) < min_samples:
         return {'erro': 'Número de jogos insuficiente'}
     
-    # Extrai e normaliza features
-    features = extrair_features_jogos_batch(jogos, config)
+    # Extrai e normaliza apenas as 7 features independentes
+    features = extrair_features_jogos_batch(jogos, config)[
+        :, list(INDEPENDENT_FEATURE_INDICES)
+    ]
     scaler = StandardScaler()
     features_norm = scaler.fit_transform(features)
-    
+
     # DBSCAN
     dbscan = DBSCAN(eps=eps, min_samples=min_samples)
     labels = dbscan.fit_predict(features_norm)
-    
+
     # Identifica outliers (label = -1)
     outliers = [i for i, label in enumerate(labels) if label == -1]
     n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-    
+
     # Distribuição
     distribuicao = {}
     for label in set(labels):
@@ -294,7 +339,7 @@ def clusterizar_jogos_dbscan(
             distribuicao['outliers'] = int(np.sum(labels == -1))
         else:
             distribuicao[f'cluster_{label}'] = int(np.sum(labels == label))
-    
+
     return {
         'labels': labels.tolist(),
         'n_clusters': n_clusters,
@@ -314,25 +359,12 @@ def encontrar_numero_otimo_clusters(
     k_max: int = 10
 ) -> dict:
     """
-    Encontra o número ótimo de clusters usando o método Elbow e Silhouette.
-    
-    Parameters
-    ----------
-    jogos : List[List[int]]
-        Lista de jogos.
-    config : GameConfig
-        Configuração do jogo.
-    k_min : int, default=2
-        Número mínimo de clusters a testar.
-    k_max : int, default=10
-        Número máximo de clusters a testar.
-    
-    Returns
-    -------
-    dict
-        Análise com inércias, silhouettes e k ótimo sugerido.
+    Encontra o número ótimo de clusters usando o método Elbow e Silhouette
+    sobre as 7 features linearmente independentes.
     """
-    features = extrair_features_jogos_batch(jogos, config)
+    features = extrair_features_jogos_batch(jogos, config)[
+        :, list(INDEPENDENT_FEATURE_INDICES)
+    ]
     scaler = StandardScaler()
     features_norm = scaler.fit_transform(features)
     

@@ -208,11 +208,76 @@ def percentil_posicional(numeros, perfil: PerfilPosicional) -> float:
     return float(percentil_posicional_batch(np.array([sorted(numeros)]), perfil)[0])
 
 
+def _teste_espectral_fisher_fft(serie: np.ndarray) -> tuple[float, float]:
+    """
+    Teste espectral g de Fisher sobre o periodograma (FFT) da série centrada.
+    Retorna (estatistica_g, p_valor_fisher). Detecta periodicidades ocultas sem vazamento.
+    """
+    x = np.asarray(serie, dtype=float)
+    if len(x) < 32:
+        return 0.0, 1.0
+    x = x - x.mean()
+    if float(np.std(x)) <= 1e-12:
+        return 1.0, 0.0
+    spec = np.abs(np.fft.rfft(x))[1:] ** 2
+    soma = float(spec.sum())
+    if soma <= 0.0 or len(spec) < 2:
+        return 0.0, 1.0
+    g_stat = float(spec.max() / soma)
+    m_freq = len(spec)
+    # Aproximação de primeira ordem exata na cauda superior de Fisher: P(G > g) <= M * (1 - g)^(M - 1)
+    p_val = float(min(1.0, max(0.0, m_freq * ((1.0 - g_stat) ** (m_freq - 1)))))
+    return g_stat, p_val
+
+
+def _sample_entropy(serie: np.ndarray, m: int = 2, r_fator: float = 0.2, max_len: int = 600) -> float | None:
+    """
+    Sample Entropy (SampEn) — versão sem o viés de auto-contagem da ApEn — sobre
+    os últimos `max_len` sorteios válidos da primeira bola sorteada.
+    """
+    x = np.asarray(serie, dtype=float)
+    if len(x) > max_len:
+        x = x[-max_len:]
+    n = len(x)
+    if n < m + 20:
+        return None
+    sd = float(np.std(x))
+    if sd <= 1e-12:
+        return 0.0
+    tol = r_fator * sd
+
+    # Templates de tamanho m e m+1 (vetorizado em blocos para rodar em poucos ms)
+    n_t = n - m
+    u_m = np.lib.stride_tricks.sliding_window_view(x, m)[:n_t]
+    u_m1 = np.lib.stride_tricks.sliding_window_view(x, m + 1)[: n_t - 1]
+
+    b_count = 0
+    for i in range(n_t - 1):
+        diffs = np.max(np.abs(u_m[i + 1 :] - u_m[i]), axis=1)
+        b_count += int(np.sum(diffs <= tol))
+
+    a_count = 0
+    for i in range(len(u_m1) - 1):
+        diffs = np.max(np.abs(u_m1[i + 1 :] - u_m1[i]), axis=1)
+        a_count += int(np.sum(diffs <= tol))
+
+    if b_count == 0 or a_count == 0:
+        return None
+    return float(-np.log(a_count / float(b_count)))
+
+
 def auditar_ordem_saida(df: pd.DataFrame, config) -> dict:
-    """Resumo da auditoria da ordem de saída (para relatórios e decisão)."""
+    """Resumo da auditoria forense da ordem de saída (posição, FFT de Fisher e SampEn)."""
     perfil = calcular_perfil_posicional(df, config)
     if perfil is None:
         return {"disponivel": False, "motivo": "poucas linhas na ordem real de saída"}
+
+    mascara = mascara_ordem_de_saida(df, config)
+    vals_validos = df[config.draw_cols].to_numpy()[mascara]
+    d1_serie = vals_validos[:, 0].astype(float)
+    fft_g, fft_p = _teste_espectral_fisher_fft(d1_serie)
+    samp_en = _sample_entropy(d1_serie, m=2, r_fator=0.2)
+
     return {
         "disponivel": True,
         "linhas_validas": perfil.n_linhas_validas,
@@ -223,5 +288,9 @@ def auditar_ordem_saida(df: pd.DataFrame, config) -> dict:
         "menor_p_ajustado": float(perfil.p_ajustado.min()),
         "p_primeira_bola": perfil.p_primeira_bola,
         "p_ultima_bola": perfil.p_ultima_bola,
+        "fft_d1_g": round(fft_g, 5),
+        "fft_d1_p_fisher": round(fft_p, 4),
+        "sampen_d1": round(samp_en, 4) if samp_en is not None else None,
         "conclusao": perfil.conclusao(),
     }
+

@@ -1,4 +1,5 @@
 # app/ui/dashboard.py
+import math
 import streamlit as st
 import pandas as pd
 import altair as alt
@@ -181,13 +182,14 @@ def render_dashboard(ctx, svc):
     st.markdown(
         """
         <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 30px; border-radius: 15px; text-align: center; color: white;">
-            <h2 style="color: white; margin-bottom: 10px;">Viu os padrões? Agora use a IA a seu favor.</h2>
+            <h2 style="color: white; margin-bottom: 10px;">Quer montar jogos com menor risco de rateio?</h2>
             <p style="color: #cbd5e1; margin-bottom: 20px;">
-                Nossa engine usa exatamente esses dados (Atrasos, Z-Score, Regressão) para montar jogos otimizados.
+                O Gerador combina calibração estrutural, cobertura de portfólio e popularidade medida nos concursos reais da Caixa
+                (sem prometer prever dezenas; sinais históricos de atraso/quentes ficam desligados por padrão).
             </p>
-            <a href="/Gerador_de_Jogos" target="_self">
+            <a href="/Gerador" target="_self">
                 <button style="background-color: #22c55e; border: none; color: white; padding: 12px 30px; border-radius: 25px; font-weight: bold; cursor: pointer; font-size: 1.1rem;">
-                    🚀 Gerar Jogos com Base na Estatística
+                    🚀 Abrir o Gerador de Jogos
                 </button>
             </a>
         </div>
@@ -245,10 +247,12 @@ def _render_kpis(freq, df, config):
 
 
 def _render_gap_bar_charts(atrasos, config):
-    """Renderiza gráfico de números atrasados."""
-    st.subheader("Relógio dos Atrasados")
+    """Renderiza gráfico descritivo de números atrasados."""
+    st.subheader("Relógio dos Atrasados (Descritivo)")
     st.write(
-        'Estes números estão "dormindo" há muito tempo. Pela **Teoria do Retorno à Média**, a probabilidade deles saírem aumenta a cada sorteio que passa.'
+        "Estes são os números com maior intervalo desde a última aparição. "
+        "**Importante:** sorteios são independentes (sem memória) — o atraso **não** aumenta a probabilidade "
+        "de uma dezena sair no próximo concurso. Use este painel apenas como referência descritiva."
     )
 
     # Mostra os 20 mais atrasados
@@ -267,13 +271,13 @@ def _render_gap_bar_charts(atrasos, config):
             f"""
             <div style="background-color: #fef2f2; padding: 20px; border-radius: 10px; border: 1px solid #fca5a5; text-align: center;">
                 <h2 style="color: #dc2626; margin:0; font-size: 2.5rem;">{maior_gap:02d}</h2>
-                <div style="color: #991b1b; font-weight: bold; margin-bottom: 10px;">O Grande Atrasado</div>
+                <div style="color: #991b1b; font-weight: bold; margin-bottom: 10px;">Maior Atraso Atual</div>
                 <p style="font-size: 0.9em; color: #7f1d1d; margin: 0;">
                     Não sai há<br>
                     <strong style="font-size: 1.2rem;">{tempo} sorteios</strong>
                 </p>
                 <hr style="border-color: #fca5a5; margin: 10px 0;">
-                <small style="color: #ef4444;">Estratégia sugerida:<br>Fixar nos próximos jogos.</small>
+                <small style="color: #991b1b;">Métrica descritiva.<br>Chance idêntica às demais dezenas.</small>
             </div>
             """,
             unsafe_allow_html=True,
@@ -287,11 +291,12 @@ def _render_bar_charts(freq, num, config):
     total_aparicoes = freq.sum()
     media_teorica = total_aparicoes / config.n_numbers
 
-    st.subheader("Equilíbrio Matemático (Lei dos Grandes Números)")
+    st.subheader("Frequência Histórica vs. Média Esperada")
     st.markdown(
         f"""
-        A linha vermelha pontilhada representa a **"Gravidade Estatística"** (~{media_teorica:.0f} vezes).
-        Números muito acima tendem a descer (esfriar), e números muito abaixo tendem a subir (esquentar) para buscar o equilíbrio.
+        A linha vermelha pontilhada representa a frequência esperada sob uniformidade (~{media_teorica:.0f} aparições).
+        Pela **Lei dos Grandes Números**, as proporções relativas convergem no longo prazo por diluição amostral —
+        **não** porque dezenas quentes "esfriam" ou frias "compensam" no concurso seguinte.
         """
     )
 
@@ -492,13 +497,21 @@ def _render_probability_report(conjuntos, config, svc, ctx):
         dados_relatorio = []
 
         for nome, dist in distribuicoes.items():
-            # Ajuste para jogos grandes (Lotomania: aposta 50 vs sorteio 20)
-            if config.k != config.bet_size and config.k > 0:
+            # Ajuste hipergeométrico exato quando a aposta tem tamanho m != k (ex.: Lotomania m=50, k=20)
+            if (
+                config.k != config.bet_size
+                and config.k > 0
+                and config.n_numbers > config.k
+            ):
                 fator = config.bet_size / config.k
                 mean_ajustada = dist.mean * fator
-                std_ajustada = dist.std * fator
-                p5_ajustado = dist.percentiles[5] * fator
-                p95_ajustado = dist.percentiles[95] * fator
+                fator_std = math.sqrt(
+                    fator * (config.n_numbers - config.bet_size) / (config.n_numbers - config.k)
+                )
+                std_ajustada = dist.std * fator_std
+                max_grupo = float(len(grupos_geometricos.get(nome, [])))
+                p5_ajustado = max(0.0, mean_ajustada - 1.6448536 * std_ajustada)
+                p95_ajustado = min(max_grupo, mean_ajustada + 1.6448536 * std_ajustada)
             else:
                 mean_ajustada = dist.mean
                 std_ajustada = dist.std
@@ -519,7 +532,8 @@ def _render_probability_report(conjuntos, config, svc, ctx):
         df_rel = df_rel.sort_values(by="_raw_media", ascending=False)
 
         st.caption(
-            f'💡 **Dica Estratégica:** Procure manter os seus jogos dentro da "Zona Segura". Por exemplo, se a Moldura tem média histórica de 10 e intervalo 8-12 (ou seja, volatilidade de 2), evite jogos com apenas 4 números na Moldura. Eles são estatisticamente raros.'
+            '💡 **Dica Estrutural:** A "Zona Segura (90%)" mostra a faixa central da distribuição combinatória. '
+            'Manter o jogo nessa região evita combinações extremamente concentradas em uma única área do volante.'
         )
 
         st.dataframe(
@@ -527,16 +541,16 @@ def _render_probability_report(conjuntos, config, svc, ctx):
             column_config={
                 "Grupo": st.column_config.TextColumn("Grupo de Números"),
                 "Média (μ)": st.column_config.TextColumn(
-                    "Média Histórica",
-                    help=f"Quantos números deste grupo aparecem, em média, nos sorteios de {config.k} números.",
+                    "Média Esperada",
+                    help=f"Quantos números deste grupo aparecem, em média, numa aposta de {config.bet_size} números.",
                 ),
                 "Desvio (σ)": st.column_config.TextColumn(
                     "Volatilidade",
-                    help="Quanto menor, mais confiável é a média.",
+                    help="Desvio-padrão hipergeométrico ajustado ao tamanho da aposta.",
                 ),
                 "Intervalo Normal": st.column_config.TextColumn(
                     "Zona Segura (90%)",
-                    help="Tente manter seus jogos dentro desta faixa numérica.",
+                    help="Faixa P5–P95 ajustada ao tamanho da aposta.",
                 ),
             },
             hide_index=True,
@@ -620,10 +634,11 @@ def _render_regression_analysis(config, ctx):
 
 
 def _render_z_score_gaps_section(tabela):
-    """Renderiza tabela de inteligência (usa tabela do ctx)."""
-    with st.expander("🤓 Bastidores: Tabela de Pesos (Z-Score & Gaps)"):
+    """Renderiza tabela exploratória de frequências e atrasos (usa tabela do ctx)."""
+    with st.expander("🤓 Bastidores: Tabela Exploratória (Z-Score & Gaps)"):
         st.write(
-            'Esta é a matriz matemática usada pelo nosso Gerador. O "Peso" define a probabilidade de cada bola ser escolhida pela IA.'
+            "Tabela descritiva de frequências, z-scores e atrasos históricos por dezena. "
+            "No modo padrão do Gerador, todas as dezenas têm peso uniforme (sinais de quentes/atrasados ficam desligados por padrão e só atuam se ativados manualmente)."
         )
         st.dataframe(
             tabela.style.background_gradient(subset=["Peso_Geracao"], cmap="Greens"),

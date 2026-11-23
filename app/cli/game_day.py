@@ -164,10 +164,23 @@ def _render_relatorio(pacote: dict) -> str:
         f"- Status: **{pacote['status'].upper()}**",
     ]
     if m.get("ev_por_real_ajustado") is not None:
+        ic_low = m.get("ev_por_real_ic90_low")
+        ic_high = m.get("ev_por_real_ic90_high")
+        ic_txt = (
+            f" · IC90% conformal: [{ic_low:.4f}, {ic_high:.4f}]"
+            if ic_low is not None and ic_high is not None
+            else ""
+        )
+        esp_txt = " · **CONCURSO ESPECIAL**" if m.get("concurso_especial_detectado") else ""
         linhas.append(
             f"- Gatekeeper EV Ex-Ante: **{m['ev_por_real_ajustado']:.4f}** por R$ 1 "
-            f"(aleatório: {m.get('ev_por_real_aleatorio', 0.0):.4f}) · "
+            f"(aleatório: {m.get('ev_por_real_aleatorio', 0.0):.4f}{ic_txt}){esp_txt} · "
             f"recomendação: `{m.get('recomendacao_aposta', 'INDISPONIVEL')}`"
+        )
+    if m.get("drift_alerta_popularidade"):
+        linhas.append(
+            "- ⚠️ **Alerta de Drift no Modelo de Popularidade:** o desempenho recente caiu "
+            "frente à janela histórica; interprete a razão de ganhadores com cautela."
         )
     linhas += [
         "",
@@ -221,8 +234,18 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
     slug = JOGOS[jogo]
     ctx = LotteryService().get_context(slug)
     config = ctx.config
+    modelo_pre = getattr(ctx, "modelo_popularidade", None)
+    q90_pop_pre = (
+        float(getattr(modelo_pre, "conformal_q90_log", 0.0) or 0.0)
+        if modelo_pre is not None
+        else 0.0
+    )
     r_pre = float(LIMIAR_RAZAO_GANHADORES.get(config.slug, 0.90))
-    ev_preliminar = estimar_ev_concurso_ex_ante(config, razao_popularidade=r_pre)
+    ev_preliminar = estimar_ev_concurso_ex_ante(
+        config,
+        razao_popularidade=r_pre,
+        conformal_q90_log_pop=q90_pop_pre,
+    )
     if ev_preliminar.get("disponivel"):
         elast_pre = ev_preliminar.get("elasticidade_antipopular")
         if is_dataclass(ctx):
@@ -258,12 +281,14 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
         print(f"[{jogo}] tentativa {tentativa}/{MAX_TENTATIVAS} reprovada: {'; '.join(erros)}")
 
     modelo = getattr(ctx, "modelo_popularidade", None)
+    drift_alerta = False
     if modelo is not None:
         import numpy as np
 
         razoes = modelo.razao_ganhadores_batch(np.array(pacote_gerado["jogos"]))
         for v, r in zip(validacoes, razoes):
             v["razao_ganhadores"] = round(float(r), 4)
+        drift_alerta = bool(getattr(modelo, "drift_alerta", False))
 
     atraso = _dias_desde(data_ultimo, hoje)
     if atraso is not None and atraso > DIAS_MAX_SEM_ATUALIZAR:
@@ -285,6 +310,11 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
             "commit": _git_sha(),
             "ev_por_real_aleatorio": ev_diag.get("ev_por_real_aleatorio"),
             "ev_por_real_ajustado": ev_diag.get("ev_por_real_ajustado"),
+            "ev_por_real_ic90_low": ev_diag.get("ev_por_real_ic90_low"),
+            "ev_por_real_ic90_high": ev_diag.get("ev_por_real_ic90_high"),
+            "ev_positivo_conformal": ev_diag.get("ev_positivo_conformal"),
+            "concurso_especial_detectado": ev_diag.get("concurso_especial_detectado"),
+            "drift_alerta_popularidade": drift_alerta,
             "recomendacao_aposta": ev_diag.get("recomendacao_aposta"),
         },
         "jogos": pacote_gerado["jogos"],
@@ -304,6 +334,66 @@ def gerar(jogo: str, hoje: date, quantidade: int, esforco: str, saida: Path, for
     return not erros
 
 
+def _render_comparativo_modalidades(
+    agio: float = 0.0,
+    banca: float | None = None,
+    modo_estrito: bool = False,
+) -> str:
+    """Executa comparação cruzada de EV ex-ante entre todas as modalidades."""
+    from app.core.statistics.popularidade_medida import LIMIAR_RAZAO_GANHADORES
+    from app.core.statistics.prize_model import comparar_ev_modalidades
+    from app.services.lottery_service import LotteryService
+
+    svc = LotteryService()
+    razoes = {}
+    q90_map = {}
+    for slug in JOGOS.values():
+        razoes[slug] = float(LIMIAR_RAZAO_GANHADORES.get(slug, 0.90))
+        try:
+            ctx = svc.get_context(slug)
+            mod = getattr(ctx, "modelo_popularidade", None)
+            if mod is not None:
+                q90_map[slug] = float(getattr(mod, "conformal_q90_log", 0.0) or 0.0)
+        except Exception:
+            pass
+
+    comp = comparar_ev_modalidades(
+        razoes_por_slug=razoes,
+        conformal_pop_por_slug=q90_map,
+        agio_bolao=agio,
+        banca=banca,
+        modo_estrito=modo_estrito,
+    )
+    linhas = [
+        "# Comparativo Ex-Ante de EV entre Modalidades",
+        "",
+        f"- Decisão global: **`{comp['decisao_global']}`** · Melhor modalidade: `{comp['melhor_modalidade'] or 'NENHUMA'}` · Ágio: `{agio * 100:.0f}%`",
+        "",
+        "| Modalidade | EV Aleat. | EV Ajust. | IC90% Conformal | Especial? | Recomendação |",
+        "|------------|-----------|-----------|-----------------|-----------|--------------|",
+    ]
+    kelly_linhas: list[str] = []
+    for r in comp["ranking"]:
+        if not r.get("disponivel"):
+            linhas.append(f"| {r['nome']} | — | — | — | — | INDISPONIVEL |")
+            continue
+        esp = "SIM" if r.get("concurso_especial_detectado") else "Não"
+        ic = f"[{r['ev_por_real_ic90_low']:.3f}, {r['ev_por_real_ic90_high']:.3f}]"
+        linhas.append(
+            f"| {r['nome']} | {r['ev_por_real_aleatorio']:.4f} | **{r['ev_por_real_ajustado']:.4f}** | "
+            f"{ic} | {esp} | `{r['recomendacao_aposta']}` |"
+        )
+        if banca is not None and isinstance(r.get("kelly"), dict):
+            k_info = r["kelly"]
+            kelly_linhas.append(
+                f"- **{r['nome']}** (banca R$ {banca:.2f}): aposta sugerida R$ {k_info['aposta_sugerida']:.2f} "
+                f"({k_info['jogos_sugeridos']} jogos) — {k_info['motivo']}"
+            )
+    if kelly_linhas:
+        linhas += ["", "## Dimensionamento Kelly Fracionado (25%, teto 5% da banca)", ""] + kelly_linhas
+    return "\n".join(linhas)
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Gera e valida o pacote do dia de jogo.")
     p.add_argument("--game", default="hoje", choices=["hoje", *JOGOS], help="jogo, ou 'hoje' para os jogos com sorteio hoje (BRT)")
@@ -312,7 +402,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", default="out", help="pasta de saída (os pacotes vão em <out>/<data>/<jogo>)")
     p.add_argument("--force", action="store_true", help="refaz mesmo que o pacote do dia já exista")
     p.add_argument("--data", help="data AAAA-MM-DD (padrão: hoje em America/Sao_Paulo)")
+    p.add_argument(
+        "--comparar-modalidades",
+        action="store_true",
+        help="compara o EV líquido ex-ante (com IC conformal 90%%) entre todas as modalidades e sai",
+    )
+    p.add_argument("--agio", type=float, default=0.0, help="ágio do bolão em fração (ex.: 0.35 para 35%%)")
+    p.add_argument("--banca", type=float, default=None, help="banca em R$ para sugestão via Kelly fracionado")
+    p.add_argument("--modo-estrito", action="store_true", help="exige EV >= 1.00 na comparação de modalidades")
     args = p.parse_args(argv)
+
+    if args.comparar_modalidades:
+        print(
+            _render_comparativo_modalidades(
+                agio=max(0.0, float(args.agio)),
+                banca=args.banca,
+                modo_estrito=bool(args.modo_estrito),
+            )
+        )
+        return 0
 
     if not 1 <= args.quantidade <= 50:
         print("--quantidade deve estar entre 1 e 50.", file=sys.stderr)

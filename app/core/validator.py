@@ -160,17 +160,25 @@ def _analise_tecnica(report, numeros, config: GameConfig, ic_info=None):
             )
     else:
         qtd_numeros = len(numeros)
-        media_teorica = qtd_numeros * (config.n_numbers + 1) / 2
-        desvio_teorico = media_teorica * 0.20
-
-        if abs(soma - media_teorica) <= desvio_teorico:
+        n_univ = int(config.n_numbers)
+        media_teorica = qtd_numeros * (n_univ + 1) / 2.0
+        std_teorico = math.sqrt(
+            max(1.0, qtd_numeros * max(1, n_univ - qtd_numeros) * (n_univ + 1) / 12.0)
+        )
+        # Limites hipergeométricos exatos: IC80% (~1.28σ) e IC95% (~1.96σ)
+        if abs(soma - media_teorica) <= 1.28 * std_teorico:
             report["msgs"].append(
-                f"✅ Soma ({soma}) equilibrada (Teórica: ~{media_teorica:.0f})."
+                f"✅ Soma ({soma}) equilibrada (Teórica: ~{media_teorica:.0f} ± {1.28*std_teorico:.0f})."
+            )
+        elif abs(soma - media_teorica) <= 1.96 * std_teorico:
+            report["score"] -= 5
+            report["msgs"].append(
+                f"ℹ️ Soma ({soma}) na faixa 80%–95% teórica (Média: ~{media_teorica:.0f})."
             )
         else:
             report["score"] -= 15
             report["msgs"].append(
-                f"⚠️ Soma ({soma}) desviada da média teórica ({media_teorica:.0f})."
+                f"⚠️ Soma ({soma}) fora do IC95% teórico ({media_teorica - 1.96*std_teorico:.0f}–{media_teorica + 1.96*std_teorico:.0f})."
             )
 
     # Regra 2: Pares e Ímpares (limiares proporcionais sem distorção por densidade)
@@ -573,26 +581,29 @@ def _analise_multiplos(report: dict, numeros: list[int], config: "GameConfig") -
 
 
 def _analise_quase_reta(report: dict, numeros: list[int], config: "GameConfig") -> None:
-    """Detecta se 5+ números estão na mesma linha ou coluna do layout."""
+    """Detecta concentração estatisticamente anômala numa mesma linha ou coluna do layout."""
     layout = config.layout
     if not layout or layout.rows == 0 or layout.cols == 0:
         return
 
     k = len(numeros)
-    densidade = config.density
+    n_tot = int(config.n_numbers)
+    densidade = k / max(1, n_tot)
 
-    # Define limiar dinâmico baseado no tamanho do jogo E densidade
-    if k <= 6:
-        limiar_linha = int(ajustar_threshold_por_densidade(5, densidade))
-        limiar_coluna = int(ajustar_threshold_por_densidade(4, densidade))
-    elif k <= 10:
-        limiar_linha = int(ajustar_threshold_por_densidade(6, densidade))
-        limiar_coluna = int(ajustar_threshold_por_densidade(5, densidade))
-    else:
-        limiar_linha = max(6, int(k * ajustar_threshold_por_densidade(0.4, densidade)))
-        limiar_coluna = max(
-            5, int(k * ajustar_threshold_por_densidade(0.35, densidade))
-        )
+    # Limiares hipergeométricos calibrados ao tamanho real das linhas/colunas do volante
+    from scipy.stats import hypergeom
+
+    def _limiar_hiper(tam_grupo: int, n_grupos: int, alpha: float = 0.015) -> int:
+        for x in range(min(k, tam_grupo), 2, -1):
+            p_tail = float(hypergeom.sf(x - 1, n_tot, tam_grupo, k))
+            if p_tail * n_grupos >= alpha:
+                return x + 1
+        return 3
+
+    limiar_linha = _limiar_hiper(layout.cols, layout.rows, alpha=0.015)
+    limiar_coluna = _limiar_hiper(layout.rows, layout.cols, alpha=0.015)
+    if k <= 6 and layout.cols >= 10:
+        limiar_linha = max(limiar_linha, 5)
 
     # Conta números por linha e coluna
     contagem_linhas = [0] * layout.rows
@@ -613,13 +624,11 @@ def _analise_quase_reta(report: dict, numeros: list[int], config: "GameConfig") 
     max_linha = max(contagem_linhas) if contagem_linhas else 0
     max_coluna = max(contagem_colunas) if contagem_colunas else 0
 
-    # Salva métricas
     report["metricas"]["max_numa_linha"] = max_linha
     report["metricas"]["max_numa_coluna"] = max_coluna
 
-    # Verifica concentração em linha
-    if max_linha >= limiar_linha:
-        penalidade = 15 if max_linha >= k * 0.8 else 10
+    if max_linha >= limiar_linha and max_linha <= layout.cols:
+        penalidade = 15 if (max_linha >= k * 0.8 or max_linha == layout.cols) else 10
         report["score"] -= penalidade
         report["msgs"].append(
             f"❌ {max_linha} números na mesma linha (padrão visual óbvio)"
@@ -627,9 +636,8 @@ def _analise_quase_reta(report: dict, numeros: list[int], config: "GameConfig") 
         report["risco_divisao"] = "ALTO"
         return
 
-    # Verifica concentração em coluna
-    if max_coluna >= limiar_coluna:
-        penalidade = 12 if max_coluna >= k * 0.7 else 8
+    if max_coluna >= limiar_coluna and max_coluna <= layout.rows:
+        penalidade = 12 if (max_coluna >= k * 0.7 or max_coluna == layout.rows) else 8
         report["score"] -= penalidade
         report["msgs"].append(f"⚠️ {max_coluna} números na mesma coluna")
 
@@ -671,6 +679,11 @@ def _analise_popularidade_medida(report, numeros, config: GameConfig, modelo) ->
         report["metricas"]["popularidade_medida_razao"] = round(
             aval["razao_ganhadores"], 2
         )
+    if aval.get("razao_ic90_low") is not None:
+        report["metricas"]["popularidade_medida_ic90"] = (
+            round(aval["razao_ic90_low"], 2),
+            round(aval["razao_ic90_high"], 2),
+        )
 
     if pct >= 95:
         report["score"] -= 12
@@ -699,13 +712,16 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
     detalhes = []
 
     densidade = config.density
+    k_eff = max(2, int(getattr(config, "bet_size", config.k)))
+    n_tot = max(k_eff + 1, int(config.n_numbers))
 
-    # Checa flags graves (com ajuste por densidade)
-
-    # 1. Simetria forte
-    if metricas.get("pares_simetricos", 0) >= ajustar_threshold_por_densidade(
-        2, densidade
-    ):
+    # 1. Simetria forte (calibrada ao esperado hipergeométrico do jogo)
+    n_pares_tot = n_tot // 2
+    p_par = (k_eff * (k_eff - 1)) / float(n_tot * (n_tot - 1))
+    esp_sim = n_pares_tot * p_par
+    std_sim = math.sqrt(max(0.25, esp_sim * (1.0 - p_par)))
+    lim_sim = max(2, int(round(esp_sim + 2.4 * std_sim)))
+    if metricas.get("pares_simetricos", 0) >= lim_sim:
         alertas_graves += 1
         detalhes.append("simetria")
 
@@ -729,8 +745,18 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
         alertas_graves += 1
         detalhes.append("span_baixo")
 
-    # 5. Concentração em linha/coluna
-    linha_threshold = ajustar_threshold_por_densidade(5, densidade)
+    # 5. Concentração em linha (calibrada ao layout real do jogo)
+    layout = getattr(config, "layout", None)
+    n_cols = int(getattr(layout, "cols", 10) or 10)
+    esp_linha = k_eff * (n_cols / float(n_tot))
+    std_linha = math.sqrt(
+        max(0.25, esp_linha * (1.0 - n_cols / float(n_tot)) * (n_tot - k_eff) / max(1, n_tot - 1))
+    )
+    linha_threshold = max(4, int(round(esp_linha + 2.8 * std_linha)))
+    if k_eff <= 6:
+        linha_threshold = max(5, linha_threshold)
+    if n_cols <= 5 and densidade >= 0.5:
+        linha_threshold = n_cols + 1
     if metricas.get("max_numa_linha", 0) >= linha_threshold:
         alertas_graves += 1
         detalhes.append("linha_concentrada")
@@ -756,7 +782,6 @@ def _aplicar_raridade_conjunta(report: dict, config: "GameConfig") -> None:
             f"⚠️ Raridade conjunta: {alertas_graves} padrões atípicos ({', '.join(detalhes)})"
         )
 
-    # Salva métrica
     report["metricas"]["alertas_estruturais"] = alertas_graves
     report["metricas"]["detalhes_alertas"] = detalhes
 

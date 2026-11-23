@@ -27,6 +27,9 @@ CV_EXCELLENT: float = 10.0
 CV_GOOD: float = 20.0
 CV_ACCEPTABLE: float = 30.0
 
+# Cache determinístico do modelo nulo discreto para CV de gaps por (N, k)
+_GAPS_CV_NULL_CACHE: dict[tuple[int, int], np.ndarray] = {}
+
 
 def analise_poisson(
     df: pd.DataFrame, config: GameConfig, alpha: float = 0.05
@@ -71,29 +74,61 @@ def analise_poisson(
     finais_universo = [n % 10 for n in universo]
     contagem_teorica = pd.Series(finais_universo).value_counts().sort_index()
 
+    n_sorteios = len(df)
+    n_univ = int(config.n_numbers)
+    k_draw = int(config.k)
+    candidatos_digitos = []
+
     for digito in range(10):
-        prob_teorica = contagem_teorica.get(digito, 0) / config.n_numbers
-        lambda_esperado = total_bolas_sorteadas * prob_teorica
-        observado = (finais == digito).sum()
-
-        if lambda_esperado == 0:
+        n_d = int(contagem_teorica.get(digito, 0))
+        if n_d <= 0:
             continue
+        prob_teorica = n_d / float(n_univ)
+        esperado = total_bolas_sorteadas * prob_teorica
+        observado = int((finais == digito).sum())
 
-        p_inferior = poisson.cdf(observado, lambda_esperado)
-        p_superior = 1 - poisson.cdf(observado - 1, lambda_esperado)
-        p_value = min(p_inferior, p_superior) * 2
+        # Variância exata sob T sorteios independentes hipergeométricos (k sem reposição em N):
+        # Var(X_t) = k * (n_d/N) * (1 - n_d/N) * (N - k) / (N - 1)
+        var_por_sorteio = (
+            k_draw
+            * prob_teorica
+            * (1.0 - prob_teorica)
+            * max(0, n_univ - k_draw)
+            / float(max(1, n_univ - 1))
+        )
+        std_total = float(np.sqrt(max(1e-9, n_sorteios * var_por_sorteio)))
+        z_val = (observado - esperado) / std_total
+        from scipy.stats import norm as _norm
 
-        if p_value < alpha:
-            tipo = "Déficit" if observado < lambda_esperado else "Excesso"
+        p_raw = float(2.0 * _norm.sf(abs(z_val)))
+        candidatos_digitos.append(
+            (digito, observado, esperado, prob_teorica, p_raw)
+        )
+
+    # Correção Holm-Bonferroni para os múltiplos testes simultâneos nos 10 dígitos finais
+    m_testes = len(candidatos_digitos)
+    ordenados = sorted(candidatos_digitos, key=lambda item: item[4])
+    p_holm_map: dict[int, float] = {}
+    max_adj = 0.0
+    for rank, (digito, _, _, _, p_raw) in enumerate(ordenados):
+        adj = min(1.0, p_raw * (m_testes - rank))
+        max_adj = max(max_adj, adj)
+        p_holm_map[digito] = max_adj
+
+    for digito, observado, esperado, prob_teorica, p_raw in candidatos_digitos:
+        p_adj = p_holm_map[digito]
+        if p_adj < alpha:
+            tipo = "Déficit" if observado < esperado else "Excesso"
             resultado.append(
                 {
                     "digito": digito,
                     "observado": observado,
-                    "esperado": round(lambda_esperado, 2),
-                    "desvio": observado - lambda_esperado,
+                    "esperado": round(esperado, 2),
+                    "desvio": round(observado - esperado, 2),
                     "tipo": tipo,
-                    "p_value": round(p_value, 5),
-                    "interpretacao": f"Desvio ({tipo}) - Esperado: {prob_teorica:.1%}",
+                    "p_value": round(p_adj, 5),
+                    "p_value_bruto": round(p_raw, 5),
+                    "interpretacao": f"Desvio ({tipo}, Holm-corrigido) - Esperado: {prob_teorica:.1%}",
                 }
             )
 
@@ -330,52 +365,70 @@ def testar_distribuicao_gaps_bilhete(numeros: list[int], config: GameConfig) -> 
     # Calcula gaps entre números consecutivos
     gaps = [numeros_sorted[i + 1] - numeros_sorted[i] for i in range(k - 1)]
 
-    gap_medio = np.mean(gaps)
-    gap_std = np.std(gaps)
-
-    # Gap esperado para distribuição uniforme: (N - 1) / (k - 1)
-    # onde N = n_numbers e k = quantidade de números no jogo
+    # Distribuição nula discreta (cached por (N, k)) para calibrar `cv_gaps` e distância empírica
+    # sem depender de p-valor KS contínuo inválido (Lilliefors) sobre 4-5 inteiros discretos.
+    gap_medio = float(np.mean(gaps))
+    gap_std = float(np.std(gaps))
     gap_esperado = (config.n_numbers - 1) / (k - 1)
+    cv_gaps = (gap_std / gap_medio) if gap_medio > 0 else 0.0
 
-    # Normaliza gaps para teste KS (escala 0-1)
-    gaps_norm = np.array(gaps) / config.n_numbers
+    # Estatística empírica de afastamento frente aos quantis discretos esperados (geométrica discreta)
+    p_geom = min(0.99, max(1e-4, k / float(config.n_numbers)))
+    gaps_sorted = np.sort(np.asarray(gaps, dtype=float))
+    cdf_teorica = 1.0 - (1.0 - p_geom) ** gaps_sorted
+    ecdf_hi = np.arange(1, len(gaps_sorted) + 1) / float(len(gaps_sorted))
+    ecdf_lo = np.arange(0, len(gaps_sorted)) / float(len(gaps_sorted))
+    ks_stat = (
+        1.0
+        if gap_std == 0
+        else float(
+            max(
+                np.max(np.abs(ecdf_hi - cdf_teorica)),
+                np.max(np.abs(cdf_teorica - ecdf_lo)),
+            )
+        )
+    )
 
-    # Teste KS contra distribuição exponencial
-    # (gaps aleatórios tendem a seguir exponencial)
-    if gap_std > 0:
-        scale = gap_medio / config.n_numbers
-        ks_stat, ks_pvalue = kstest(gaps_norm, "expon", args=(0, scale))
+    # Calibração discreta via modelo nulo exato para (N, k) (cached em memória)
+    cache_key = (int(config.n_numbers), int(k))
+    null_cvs = _GAPS_CV_NULL_CACHE.get(cache_key)
+    if null_cvs is None:
+        rng_null = np.random.default_rng(9100 + config.n_numbers * 37 + k)
+        n_sim = 1500
+        pool = np.arange(1, config.n_numbers + 1)
+        keys = rng_null.random((n_sim, config.n_numbers))
+        amostras = np.sort(pool[np.argpartition(keys, k - 1, axis=1)[:, :k]], axis=1)
+        d_sim = np.diff(amostras, axis=1).astype(float)
+        m_sim = d_sim.mean(axis=1)
+        s_sim = d_sim.std(axis=1)
+        null_cvs = np.sort(np.divide(s_sim, m_sim, out=np.zeros_like(s_sim), where=m_sim > 0))
+        _GAPS_CV_NULL_CACHE[cache_key] = null_cvs
+
+    # p-valor bilateral discreto (baseado na cauda de regularidade / irregularidade no nulo exato)
+    if gap_std == 0:
+        ks_pvalue = 0.0
     else:
-        # Todos os gaps iguais (padrão aritmético)
-        ks_stat, ks_pvalue = 1.0, 0.0
+        p_low = float((np.searchsorted(null_cvs, cv_gaps, side="right") + 1) / (len(null_cvs) + 1))
+        p_high = float((len(null_cvs) - np.searchsorted(null_cvs, cv_gaps, side="left") + 1) / (len(null_cvs) + 1))
+        ks_pvalue = float(min(1.0, 2.0 * min(p_low, p_high)))
 
-    # Análise adicional: coeficiente de variação dos gaps
-    cv_gaps = (gap_std / gap_medio) if gap_medio > 0 else 0
-
-    # Interpretação e penalidade
-    # IMPORTANTE: Ajustar limiares baseado na densidade do jogo
-    # Densidade = k / N (proporção do volante que é sorteada)
     densidade = k / config.n_numbers
-
     penalidade = 0
 
-    # Para jogos densos (Lotofácil: 15/25 = 60%), gaps pequenos e regulares são ESPERADOS
-    # Para jogos esparsos (Mega: 6/60 = 10%), gaps regulares indicam padrão humano
-
     if densidade >= 0.5:
-        # Jogo denso (Lotofácil, Lotomania): limiares mais tolerantes
-        if ks_pvalue < 0.001 and cv_gaps < 0.1:
+        # Jogo denso (Lotofácil: 15/25 = 60%, Lotomania: 50/100 = 50%)
+        if gap_std == 0 or (ks_pvalue < 0.005 and cv_gaps < 0.15):
             conclusao = "⚠️ Gaps extremamente regulares"
             penalidade = 8
-        elif cv_gaps < 0.15:
+        elif cv_gaps < 0.2:
             conclusao = "ℹ️ Gaps regulares (comum em jogos densos)"
             penalidade = 0
         else:
             conclusao = "✅ Distribuição de gaps natural"
             penalidade = 0
     elif densidade >= 0.2:
-        # Jogo intermediário (Quina: 5/80 = 6%)
-        if ks_pvalue < 0.01 or cv_gaps < 0.15:
+        # Jogos de densidade intermediária (20%–50%)
+        if gap_std == 0 or cv_gaps < 0.15 or ks_pvalue < 0.01:
             conclusao = "⚠️ Gaps muito regulares"
             penalidade = 10
         elif cv_gaps < 0.3:
@@ -385,11 +438,11 @@ def testar_distribuicao_gaps_bilhete(numeros: list[int], config: GameConfig) -> 
             conclusao = "✅ Distribuição de gaps natural"
             penalidade = 0
     else:
-        # Jogo esparso (Mega-Sena: 6/60 = 10%)
-        if ks_pvalue < 0.01 or cv_gaps < 0.2:
+        # Jogos esparsos (Mega-Sena: 6/60 = 10%, Quina: 5/80 = 6,25%)
+        if gap_std == 0 or cv_gaps < 0.2:
             conclusao = "❌ Gaps muito regulares (padrão aritmético detectado)"
             penalidade = 15
-        elif ks_pvalue < 0.05 or cv_gaps < 0.4:
+        elif cv_gaps < 0.35 or ks_pvalue < 0.02:
             conclusao = "⚠️ Gaps com baixa variabilidade"
             penalidade = 8
         elif cv_gaps > 1.5:

@@ -100,21 +100,28 @@ def gerar_jogos_vetorizado(
 
     df_raw = ctx.tabela.copy() if getattr(ctx, "tabela", None) is not None else None
 
-    # Padronizado: cada coluna já representa a bola 1, 2, ..., N
-    bolas_indices = np.arange(1, n_numbers + 1)
-
-    if n_numbers >= 100:
-        bolas_indices = np.where(bolas_indices == 0, n_numbers, bolas_indices)
-
     if df_raw is not None and not getattr(df_raw, "empty", True):
-        vals_freq = df_raw["Z_Freq"].values
-        vals_gap = df_raw["Z_Gap"].values
-
-        mask_safe = (bolas_indices >= 1) & (bolas_indices <= n_numbers)
-        dest_indices = bolas_indices[mask_safe] - 1
-
-        z_freq[dest_indices] = vals_freq[mask_safe]
-        z_gap[dest_indices] = vals_gap[mask_safe]
+        if "Z_Freq" in df_raw.columns and "Z_Gap" in df_raw.columns:
+            # Alinha explicitamente pelo índice (bola 1..N), evitando dependência de ordenação posicional
+            idx_vals = list(range(1, n_numbers + 1))
+            try:
+                idx_int = df_raw.index.astype(int)
+                if idx_int.isin(idx_vals).any():
+                    df_alinhado = df_raw.copy()
+                    df_alinhado.index = idx_int
+                    df_alinhado = df_alinhado[~df_alinhado.index.duplicated(keep="first")].reindex(
+                        idx_vals, fill_value=0.0
+                    )
+                    z_freq = df_alinhado["Z_Freq"].to_numpy(dtype=np.float64)
+                    z_gap = df_alinhado["Z_Gap"].to_numpy(dtype=np.float64)
+                else:
+                    lim = min(n_numbers, len(df_raw))
+                    z_freq[:lim] = df_raw["Z_Freq"].to_numpy(dtype=np.float64)[:lim]
+                    z_gap[:lim] = df_raw["Z_Gap"].to_numpy(dtype=np.float64)[:lim]
+            except (TypeError, ValueError):
+                lim = min(n_numbers, len(df_raw))
+                z_freq[:lim] = df_raw["Z_Freq"].to_numpy(dtype=np.float64)[:lim]
+                z_gap[:lim] = df_raw["Z_Gap"].to_numpy(dtype=np.float64)[:lim]
 
     # Aplica estratégia
     if estrategia == "cauda_controlada":

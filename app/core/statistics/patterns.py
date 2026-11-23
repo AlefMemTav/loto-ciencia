@@ -52,22 +52,11 @@ def detectar_progressao_aritmetica_geral(
 
     if len(set(gaps)) == 1:
         razao = gaps[0]
-
-        # Ajuste por densidade
         densidade = k / config.n_numbers
 
-        # Para jogos densos, gaps pequenos (1-2) são naturais
-        if densidade >= 0.5 and razao <= 2:
-            return {
-                "pa_detectada": False,
-                "tipo": None,
-                "razao": razao,
-                "penalidade": 0,
-                "conclusao": "✅ Gaps consecutivos naturais para jogo denso",
-            }
-
-        # PA óbvia
-        penalidade = 25 if densidade < 0.3 else 15
+        # Uma PA completa (ex.: [1..6], [1..15], [1..50] ou todos os ímpares [1,3,...,99])
+        # tem probabilidade combinatória ínfima em qualquer modalidade e altíssimo risco de rateio.
+        penalidade = 25 if densidade < 0.3 else 20
 
         return {
             "pa_detectada": True,
@@ -94,9 +83,6 @@ def detectar_progressao_aritmetica_geral(
 
         # Quantos múltiplos de mdc existem no universo?
         multiplos_disponiveis = config.n_numbers // mdc
-
-        # Proporção esperada
-        prop_esperada = multiplos_disponiveis / config.n_numbers
 
         # Se escolheu TODOS múltiplos disponíveis
         if k == multiplos_disponiveis:
@@ -132,11 +118,13 @@ def detectar_progressao_aritmetica_geral(
     if freq_gap / len(gaps) >= 0.7:
         densidade = k / config.n_numbers
 
-        # Ajuste para jogos densos
+        # Ajuste para jogos densos: gaps 1-2 são comuns em subconjuntos parciais,
+        # só alerta se >= 85% dos gaps forem idênticos
         if densidade >= 0.5 and gap_mais_comum <= 2:
-            return {"pa_detectada": False, "penalidade": 0}
+            if freq_gap / len(gaps) < 0.85:
+                return {"pa_detectada": False, "penalidade": 0}
 
-        penalidade = 12 if densidade < 0.3 else 6
+        penalidade = 12 if densidade < 0.3 else 8
 
         return {
             "pa_detectada": True,
@@ -157,20 +145,6 @@ def detectar_sequencias_longas(
 
     Diferente de contar "quantas sequências", detecta se há UMA sequência
     muito longa, o que é estatisticamente raro.
-
-    Parameters
-    ----------
-    numeros : List[int]
-        Lista de números do jogo.
-    config : GameConfig
-        Configuração do jogo.
-    min_len : int, default=4
-        Tamanho mínimo de sequência para alertar.
-
-    Returns
-    -------
-    Dict
-        Informação sobre a maior sequência detectada.
     """
     nums_sorted = sorted(numeros)
 
@@ -185,7 +159,6 @@ def detectar_sequencias_longas(
                 sequencias.append(seq_atual[:])
             seq_atual = [nums_sorted[i]]
 
-    # Última sequência
     if len(seq_atual) >= min_len:
         sequencias.append(seq_atual[:])
 
@@ -195,7 +168,6 @@ def detectar_sequencias_longas(
     maior_seq = max(sequencias, key=len)
     tamanho = len(maior_seq)
 
-    # Ajuste por densidade e tamanho do jogo (Lotomania 50/100 tem maior maior-sequência esperada que Lotofácil 15/25)
     densidade = len(numeros) / config.n_numbers
 
     if densidade >= 0.5:
@@ -228,61 +200,84 @@ def detectar_sequencias_longas(
     }
 
 
+def _hypergeom_tail_p(x: int, n_total: int, k_group: int, k_bet: int) -> float:
+    """Probabilidade hipergeométrica exata P(X >= x) para X ~ Hypergeom(n_total, k_group, k_bet)."""
+    if x <= 0:
+        return 1.0
+    if x > min(k_group, k_bet) or k_group <= 0 or k_bet <= 0:
+        return 0.0
+    from scipy.stats import hypergeom
+
+    return float(hypergeom.sf(x - 1, n_total, k_group, k_bet))
+
+
 def detectar_diagonal_volante(numeros: List[int], config: GameConfig) -> Dict:
     """
-    Detecta se os números formam uma diagonal no volante.
-
-    Exemplo: Em Mega-Sena (6x10), [1, 12, 23, 34, 45, 56] forma diagonal.
-
-    Parameters
-    ----------
-    numeros : List[int]
-        Lista de números.
-    config : GameConfig
-        Configuração do jogo.
-
-    Returns
-    -------
-    Dict
-        Informação sobre diagonalidade.
+    Detecta concentração estatisticamente rara nas diagonais do volante usando
+    calibragem hipergeométrica exata (elimina falsos positivos na Quina e código morto
+    em Lotofácil/Lotomania).
     """
     layout = config.layout
+    if not layout or layout.rows == 0 or layout.cols == 0:
+        return {"diagonal": False, "penalidade": 0}
 
-    # Pega coordenadas
     coords = [layout.pos(n) for n in numeros]
+    k = len(numeros)
+    n_tot = int(config.n_numbers)
 
-    # Testa diagonal principal (r == c)
+    diag_p_cells = sum(
+        1 for n in range(1, n_tot + 1) if layout.pos(n)[0] == layout.pos(n)[1]
+    )
+    diag_s_cells = sum(
+        1
+        for n in range(1, n_tot + 1)
+        if layout.pos(n)[0] + layout.pos(n)[1] == layout.cols - 1
+    )
+
     diag_principal = sum(1 for r, c in coords if r == c)
-
-    # Testa diagonal secundária (r + c == cols - 1)
     diag_secundaria = sum(1 for r, c in coords if r + c == layout.cols - 1)
 
-    # Ajuste por densidade
-    k = len(numeros)
-    densidade = k / config.n_numbers
+    p_prin = _hypergeom_tail_p(diag_principal, n_tot, diag_p_cells, k)
+    p_sec = _hypergeom_tail_p(diag_secundaria, n_tot, diag_s_cells, k)
 
-    # Threshold ajustado
-    if densidade >= 0.5:
-        threshold = int(k * 0.6)
-    else:
-        threshold = int(k * 0.5)
-
-    if diag_principal >= threshold:
+    # Limiar de cauda exato (p < 0,015 por diagonal) + mínimo físico de 3 bolas
+    if diag_principal >= 3 and p_prin < 0.015:
         return {
             "diagonal": True,
             "tipo": "principal",
             "count": diag_principal,
+            "p_valor": round(p_prin, 5),
             "penalidade": 15,
-            "conclusao": f"❌ {diag_principal} números na diagonal principal",
+            "conclusao": f"❌ {diag_principal}/{diag_p_cells} números na diagonal principal",
         }
 
-    if diag_secundaria >= threshold:
+    if diag_secundaria >= 3 and p_sec < 0.015:
         return {
             "diagonal": True,
             "tipo": "secundaria",
             "count": diag_secundaria,
+            "p_valor": round(p_sec, 5),
             "penalidade": 15,
-            "conclusao": f"❌ {diag_secundaria} números na diagonal secundária",
+            "conclusao": f"❌ {diag_secundaria}/{diag_s_cells} números na diagonal secundária",
+        }
+
+    # Para volantes quadrados densos (ex.: Lotofácil 5x5), detecta o X completo (ambas diagonais)
+    xis_cells = {
+        n
+        for n in range(1, n_tot + 1)
+        if layout.pos(n)[0] == layout.pos(n)[1]
+        or layout.pos(n)[0] + layout.pos(n)[1] == layout.cols - 1
+    }
+    no_xis = len(set(numeros) & xis_cells)
+    p_xis = _hypergeom_tail_p(no_xis, n_tot, len(xis_cells), k)
+    if no_xis >= len(xis_cells) and p_xis < 0.01:
+        return {
+            "diagonal": True,
+            "tipo": "xis",
+            "count": no_xis,
+            "p_valor": round(p_xis, 5),
+            "penalidade": 12,
+            "conclusao": f"❌ Todos os {no_xis} números do X (ambas diagonais) marcados",
         }
 
     return {"diagonal": False, "penalidade": 0}
@@ -290,60 +285,42 @@ def detectar_diagonal_volante(numeros: List[int], config: GameConfig) -> Dict:
 
 def detectar_bordas_extremas(numeros: List[int], config: GameConfig) -> Dict:
     """
-    Detecta concentração nas bordas extremas (primeiros/últimos N números).
-
-    Ex: [1, 2, 3, 4, 5, 6] ou [55, 56, 57, 58, 59, 60]
-
-    Parameters
-    ----------
-    numeros : List[int]
-        Lista de números.
-    config : GameConfig
-        Configuração do jogo.
-
-    Returns
-    -------
-    Dict
-        Informação sobre concentração em bordas.
+    Detecta concentração estatisticamente rara nos primeiros/últimos 20% do volante
+    usando p-valor hipergeométrico exato (p < 0,015), calibrado automaticamente
+    para todas as modalidades (Mega, Quina, Lotofácil e Lotomania).
     """
     k = len(numeros)
-    N = config.n_numbers
+    n_tot = int(config.n_numbers)
 
-    # Define "borda" como primeiros/últimos 20%
-    borda_size = max(5, int(N * 0.2))
-
+    borda_size = max(5, int(n_tot * 0.2))
     borda_inferior = set(range(1, borda_size + 1))
-    borda_superior = set(range(N - borda_size + 1, N + 1))
+    borda_superior = set(range(n_tot - borda_size + 1, n_tot + 1))
 
     nums_set = set(numeros)
-
     na_inferior = len(nums_set & borda_inferior)
     na_superior = len(nums_set & borda_superior)
 
-    # Threshold: >= 70% em uma borda
-    densidade = k / N
+    p_inf = _hypergeom_tail_p(na_inferior, n_tot, borda_size, k)
+    p_sup = _hypergeom_tail_p(na_superior, n_tot, borda_size, k)
 
-    if densidade >= 0.5:
-        threshold = int(k * 0.8)
-    else:
-        threshold = int(k * 0.7)
-
-    if na_inferior >= threshold:
+    if na_inferior >= 4 and p_inf < 0.015:
         return {
             "borda_extrema": True,
             "tipo": "inferior",
             "count": na_inferior,
+            "p_valor": round(p_inf, 5),
             "penalidade": 15,
-            "conclusao": f"❌ {na_inferior} números nos primeiros {borda_size}",
+            "conclusao": f"❌ {na_inferior}/{borda_size} números nos primeiros {borda_size}",
         }
 
-    if na_superior >= threshold:
+    if na_superior >= 4 and p_sup < 0.015:
         return {
             "borda_extrema": True,
             "tipo": "superior",
             "count": na_superior,
+            "p_valor": round(p_sup, 5),
             "penalidade": 15,
-            "conclusao": f"❌ {na_superior} números nos últimos {borda_size}",
+            "conclusao": f"❌ {na_superior}/{borda_size} números nos últimos {borda_size}",
         }
 
     return {"borda_extrema": False, "penalidade": 0}

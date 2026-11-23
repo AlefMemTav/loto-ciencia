@@ -1,4 +1,5 @@
 # app/ui/views/validator.py
+import math
 import streamlit as st
 import pandas as pd
 from app.core.logger import logger
@@ -48,8 +49,12 @@ def render_validator(ctx, svc):
             "costumam pagar **prêmios 90% menores** em caso de vitória."
         )
 
-    # Limpa o resultado anterior se o usuário mudar o texto
-    current_input_hash = hash(entrada)
+    # Limpa o resultado anterior se o usuário trocar de jogo ou mudar o texto
+    if st.session_state.get("last_validator_slug") != slug:
+        st.session_state.validator_result = None
+        st.session_state.last_validator_slug = slug
+
+    current_input_hash = (slug, hash(entrada))
     if st.session_state.get("last_validator_input") != current_input_hash:
         st.session_state.validator_result = None
         st.session_state.last_validator_input = current_input_hash
@@ -62,9 +67,16 @@ def render_validator(ctx, svc):
     ):
         try:
             texto = entrada.replace(",", " ").replace("-", " ").replace("\n", " ")
-            nums = sorted(
-                list(set([int(n) for n in texto.split() if n.strip().isdigit()]))
-            )
+            nums_set = set()
+            for token in texto.split():
+                tk = token.strip()
+                if not tk.isdigit():
+                    continue
+                val = int(tk)
+                if slug == "loto_mania_sorteio" and val == 0:
+                    val = 100
+                nums_set.add(val)
+            nums = sorted(nums_set)
 
             # Validações de Input
             if len(nums) != qtd_aposta:
@@ -91,6 +103,7 @@ def render_validator(ctx, svc):
                 st.session_state.validator_result = {
                     "relatorio": relatorio,
                     "nums": nums,
+                    "slug": slug,
                     "config": config,
                     "new": True,
                 }
@@ -104,14 +117,16 @@ def render_validator(ctx, svc):
     # --- RENDERIZAÇÃO DO RESULTADO ---
     if st.session_state.get("validator_result"):
         res = st.session_state.validator_result
-        if res.get("new"):
-            # Feedback visual imediato
-            score = res["relatorio"]["score"]
-            if score >= 80:
-                st.balloons()
-            res["new"] = False
+        if res.get("slug") != slug:
+            st.session_state.validator_result = None
+        else:
+            if res.get("new"):
+                score = res["relatorio"]["score"]
+                if score >= 80:
+                    st.balloons()
+                res["new"] = False
 
-        _render_validator_results(res["relatorio"], res["nums"], ctx, svc)
+            _render_validator_results(res["relatorio"], res["nums"], ctx, svc)
 
 
 def _render_validator_results(relatorio, nums, ctx, svc):
@@ -226,10 +241,17 @@ def _render_validator_results(relatorio, nums, ctx, svc):
         soma = metricas.get("soma", 0)
         st.write(f"- **Peso do Jogo (Soma):** {soma}")
 
-        # Entropia (Traduzida)
-        entropia = metricas.get("entropia", 0)
-        nivel_caos = "Alto (Bom)" if entropia > 3.5 else "Baixo (Previsível)"
-        st.write(f"- **Imprevisibilidade:** {nivel_caos}")
+        # Entropia normalizada pelo máximo teórico log2(k-1) de cada modalidade
+        entropia = float(metricas.get("entropia", 0.0) or 0.0)
+        entropia_max = math.log2(max(2, config.bet_size - 1))
+        ratio_entropia = entropia / entropia_max if entropia_max > 0 else 0.0
+        if ratio_entropia >= 0.75:
+            nivel_caos = f"Alto ({ratio_entropia:.0%} do máx.)"
+        elif ratio_entropia >= 0.50:
+            nivel_caos = f"Moderado ({ratio_entropia:.0%} do máx.)"
+        else:
+            nivel_caos = f"Baixo — previsível ({ratio_entropia:.0%} do máx.)"
+        st.write(f"- **Imprevisibilidade dos Espaços:** {nivel_caos}")
 
         # Hamming (histórico completo vs últimos 100)
         hamming_hist = metricas.get(
@@ -258,14 +280,20 @@ def _render_validator_results(relatorio, nums, ctx, svc):
         # Popularidade Medida (ganhadores reais) vs Heurística Comportamental
         pop_pct = metricas.get("popularidade_medida_percentil")
         pop_raz = metricas.get("popularidade_medida_razao")
+        pop_ic90 = metricas.get("popularidade_medida_ic90")
         if pop_pct is not None:
             razao_txt = (
                 f" · razão estimada {pop_raz:.2f}x"
                 if pop_raz is not None
                 else ""
             )
+            ic_txt = (
+                f" (IC90% conformal: {pop_ic90[0]:.2f}x–{pop_ic90[1]:.2f}x)"
+                if isinstance(pop_ic90, (list, tuple)) and len(pop_ic90) == 2
+                else ""
+            )
             st.write(
-                f"- **Popularidade Medida (Ganhadores Reais):** Percentil {pop_pct:.0f}{razao_txt}"
+                f"- **Popularidade Medida (Ganhadores Reais):** Percentil {pop_pct:.0f}{razao_txt}{ic_txt}"
             )
 
         pop_heur = metricas.get("popularidade_heuristica")
@@ -552,29 +580,38 @@ def _render_cluster_profile(perfil):
             f"<div style='margin-top: 10px;'>{tags_html}</div>", unsafe_allow_html=True
         )
 
+        d_mahal = perfil.get("distancia_mahalanobis")
+        lim_mahal = perfil.get("limiar_mahalanobis_p95")
+        mahal_txt = (
+            f" · Distância de Mahalanobis: **{d_mahal:.2f}** (P95: {lim_mahal:.2f})"
+            if d_mahal is not None and lim_mahal is not None
+            else ""
+        )
+
         if perfil.get("is_outlier"):
             st.warning(
-                "⚠️ **Nota:** Este jogo é um 'Outlier' (muito diferente do padrão do seu grupo). Pode ser uma aposta arriscada."
+                f"⚠️ **Nota:** Este jogo está na cauda estrutural (outlier multivariado{mahal_txt}). "
+                "A probabilidade de sorteio é idêntica, mas a combinação difere do perfil típico."
             )
         else:
             st.caption(
-                f"Este perfil representa {perfil.get('percentual_historico', 0)}% dos sorteios históricos."
+                f"Este perfil representa {perfil.get('percentual_historico', 0)}% dos sorteios históricos{mahal_txt}."
             )
 
 
 def _render_bootstrap_analysis(boot, soma_jogo):
-    """Renderiza a barra de Intervalo de Confiança Bootstrap."""
-    st.subheader("Validação Científica (Bootstrap 95%)")
+    """Renderiza a barra do Intervalo de Predição 95% para bilhete único e o IC da média."""
+    st.subheader("Validação Científica (Faixa de Predição 95%)")
 
     ic = boot["ic_bootstrap"]
-    lower = ic["ic_lower"]
-    upper = ic["ic_upper"]
-    media = ic["media_bootstrap"]
+    lower = ic.get("pred_lower", ic["ic_lower"])
+    upper = ic.get("pred_upper", ic["ic_upper"])
+    media = ic.get("media_predicao", ic["media_bootstrap"])
 
-    # Prepara dados para a barra de progresso visual
-    # Normaliza a soma dentro de um range um pouco maior que o IC para dar contexto
-    range_min = lower - (upper - lower) * 0.5
-    range_max = upper + (upper - lower) * 0.5
+    # Normaliza a soma dentro de um range um pouco maior que o intervalo para dar contexto
+    span = max(upper - lower, 1.0)
+    range_min = lower - span * 0.5
+    range_max = upper + span * 0.5
 
     # Clamp (trava valores entre 0 e 1)
     pos_pct = (soma_jogo - range_min) / (range_max - range_min)
@@ -588,7 +625,7 @@ def _render_bootstrap_analysis(boot, soma_jogo):
         f"""
 <div style="margin-bottom: 5px; font-size: 0.9rem; font-weight: bold;">
     Análise da Soma ({soma_jogo}):
-    <span style="color: {cor_barra};">{'✅ DENTRO' if dentro_ic else '⚠️ FORA'} do Padrão Matemático</span>
+    <span style="color: {cor_barra};">{'✅ DENTRO' if dentro_ic else '⚠️ FORA'} da Faixa Típica (95% dos bilhetes)</span>
 </div>
 <div style="background: #e2e8f0; width: 100%; height: 20px; border-radius: 10px; position: relative;">
     <div style="
@@ -613,13 +650,19 @@ def _render_bootstrap_analysis(boot, soma_jogo):
     </div>
 </div>
 <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #64748b; margin-top: 5px;">
-    <span>Min: {lower:.0f}</span>
-    <span>Média Ideal: {media:.0f}</span>
-    <span>Max: {upper:.0f}</span>
+    <span>P2,5: {lower:.0f}</span>
+    <span>Média Esperada: {media:.0f}</span>
+    <span>P97,5: {upper:.0f}</span>
 </div>
     """,
         unsafe_allow_html=True,
     )
+
+    if "ic_media_lower" in ic and "ic_media_upper" in ic:
+        st.caption(
+            f"📊 IC Bootstrap 95% da média histórica de todos os sorteios: "
+            f"[{ic['ic_media_lower']:.1f}, {ic['ic_media_upper']:.1f}] (incerteza da média, não de um bilhete isolado)."
+        )
 
     # Mensagens detalhadas do Bootstrap
     for msg in boot.get("mensagens", []):

@@ -354,20 +354,20 @@ def render_como_funciona():
         text-align: center;
         font-size: 1.4rem;
     ">
-        Pilar 4: Inteligência Preditiva
+        Pilar 4: Economia do Rateio & EV
     </h3>
     <div style="margin-top: 20px; line-height: 1.8; font-size: 0.98rem;">
         <p style="margin-bottom: 12px;">
-            <strong>O que valida:</strong> Usa regressão à média <em>validada estatisticamente</em> 
-            para identificar se números atrasados têm poder preditivo real.
+            <strong>O que valida:</strong> Estima o risco real de dividir o prêmio usando
+            ganhadores históricos da Caixa e calcula o valor esperado líquido ex-ante (com banda conformal).
         </p>
         <p style="margin-bottom: 12px;">
-            <strong>Tecnologia:</strong> Correlação de Spearman, Order Statistics, 
-            Análise de Compressibilidade, Testes de Hipótese.
+            <strong>Tecnologia:</strong> Ridge robusto (Huber-IRLS), interações de 2ª ordem por pares,
+            diluição de Poisson, Conformal Prediction e auditoria temporal sem vazamento.
         </p>
         <p style="margin-bottom: 0;">
-            <strong style="color: #86efac;">Bônus:</strong> Até <strong>+5 pts</strong> 
-            se correlação >0.3 <em>e</em> jogo tem 40%+ números atrasados.
+            <strong style="color: #86efac;">Foco:</strong> Evitar combinações super-apostadas
+            (não promete prever dezenas sorteadas; sinais de atraso/quentes ficam desligados por padrão).
         </p>
     </div>
 </div>
@@ -642,12 +642,12 @@ def render_como_funciona():
             unsafe_allow_html=True,
         )
 
-    # Disclaimer de transparência
+    # Nota de transparência aberta
     st.info(
-        "💡 **Por que não revelamos todos os filtros?** "
-        "Nosso algoritmo é resultado de meses de pesquisa e testes estatísticos. "
-        "Revelamos a **filosofia** (4 pilares) e as **tecnologias** empregadas, "
-        "mas os thresholds, pesos e a arquitetura exata são nosso diferencial competitivo."
+        "💡 **Transparência Metodológica:** "
+        "Todo o código, pesos, testes de validação temporal e limites matemáticos são abertos e auditáveis "
+        "no repositório (`docs/index.md` e `tests/`). Nenhum filtro promete prever dezenas — "
+        "o objetivo é calibrar estrutura, evitar combinações super-apostadas e medir o EV líquido."
     )
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -690,7 +690,7 @@ def render_como_funciona():
         Cole ou Digite
     </h3>
     <p style="font-size: 1rem; opacity: 0.95; line-height: 1.6; margin-top: 15px;">
-        Escolha a loteria (Mega-Sena, Quina, Lotofácil) e 
+        Escolha a loteria (Mega-Sena, Quina, Lotofácil ou Lotomania) e
         digite ou cole seus números no validador.
     </p>
 </div>
@@ -728,8 +728,8 @@ def render_como_funciona():
         Receba o Diagnóstico
     </h3>
     <p style="font-size: 1rem; opacity: 0.95; line-height: 1.6; margin-top: 15px;">
-        Em <strong>3 segundos</strong> veja: Score técnico (0-100) + 
-        Risco de divisão + Alertas do analista.
+        Veja na hora: Score técnico (0-100), Mahalanobis multivariado,
+        popularidade medida (com IC conformal) e alertas do analista.
     </p>
 </div>
             """,
@@ -763,11 +763,11 @@ def render_como_funciona():
         3️⃣
     </div>
     <h3 style="color: white; margin: 15px 0; font-size: 1.3rem;">
-        Gere ou Ajuste
+        Gere ou Feche
     </h3>
     <p style="font-size: 1rem; opacity: 0.95; line-height: 1.6; margin-top: 15px;">
-        Se o score estiver baixo, use o <strong>Gerador Inteligente</strong> 
-        (Pro) para criar jogos melhores automaticamente.
+        Use o <strong>Gerador</strong> ou os <strong>Fechamentos (Covering Designs)</strong>
+        para montar pacotes diversificados com menor risco de rateio.
     </p>
 </div>
             """,

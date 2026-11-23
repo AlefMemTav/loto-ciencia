@@ -585,38 +585,47 @@ def indice_dispersao(df: pd.DataFrame, config: GameConfig) -> dict:
     if media == 0:
         return {"erro": "Média zero"}
 
-    vmr = variancia / media
+    vmr = float(variancia / media)
 
-    # Teste Chi² para VMR
-    # Sob H0 (Poisson), (n-1) * VMR ~ Chi²(n-1)
+    # Correção exata de população finita (sorteio de k bolas SEM reposição em N):
+    # Sob H0 uniforme sem reposição, E[s^2 / media] = (1 - k/N) * (N / (N - 1)),
+    # de modo que vmr_ajustado = vmr / fator_sem_reposicao tem esperança exata 1,0
+    # e chi2_stat = (n - 1) * vmr_ajustado ~ Chi²(n - 1), idêntico a calcular_chi_quadrado.
     n = len(freq)
-    chi2_stat = (n - 1) * vmr
-    p_value = 1 - chi2.cdf(chi2_stat, n - 1) if vmr > 1 else chi2.cdf(chi2_stat, n - 1)
+    fator_base = max(1e-6, 1.0 - float(config.k) / float(max(1, config.n_numbers)))
+    fator_sem_reposicao = fator_base * (float(n) / float(max(1, n - 1))) if n > 1 else fator_base
+    vmr_ajustado = vmr / fator_sem_reposicao
+    chi2_stat = float(max(1, n - 1)) * vmr_ajustado
+    p_upper = float(1.0 - chi2.cdf(chi2_stat, n - 1))
+    p_lower = float(chi2.cdf(chi2_stat, n - 1))
+    p_value = float(min(1.0, 2.0 * min(p_upper, p_lower)))
 
-    # Interpretação
-    if 0.9 <= vmr <= 1.1:
-        interpretacao = "✅ Distribuição compatível com aleatoriedade (Poisson)"
-    elif vmr > 1.1:
-        if vmr > 1.5:
+    # Interpretação baseada no VMR ajustado (esperado ≈ 1,0 sob sorteio sem reposição)
+    if 0.8 <= vmr_ajustado <= 1.25 and p_value >= 0.05:
+        interpretacao = "✅ Distribuição compatível com aleatoriedade (sem reposição)"
+    elif vmr_ajustado > 1.25:
+        if p_upper < 0.01:
             interpretacao = (
-                "⚠️ Superdispersão significativa (alguns números muito frequentes)"
+                "⚠️ Superdispersão acima do esperado sem reposição (verificar estabilidade temporal)"
             )
         else:
             interpretacao = "ℹ️ Leve superdispersão (variação acima do esperado)"
     else:
-        if vmr < 0.5:
+        if p_lower < 0.01:
             interpretacao = "⚠️ Subdispersão significativa (frequências muito uniformes)"
         else:
             interpretacao = "ℹ️ Leve subdispersão (variação abaixo do esperado)"
 
     return {
         "vmr": round(vmr, 4),
-        "variancia": round(variancia, 2),
-        "media": round(media, 2),
+        "vmr_ajustado": round(vmr_ajustado, 4),
+        "fator_sem_reposicao": round(fator_sem_reposicao, 4),
+        "variancia": round(float(variancia), 2),
+        "media": round(float(media), 2),
         "interpretacao": interpretacao,
-        "chi2_stat": round(chi2_stat, 2),
+        "chi2_stat": round(float(chi2_stat), 2),
         "p_value": round(p_value, 4),
-        "dispersao_normal": bool(0.9 <= vmr <= 1.1),
+        "dispersao_normal": bool(p_value >= 0.05),
     }
 
 

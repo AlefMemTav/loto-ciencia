@@ -109,9 +109,14 @@ def _contar_hits_e_score(
                     hits["0"] += 1
                     score_total += 200000  # Espelho vale muito
 
-                # Mapeamento para visualização simples (compatibilidade)
-                if acertos >= 15 or acertos == 0:
-                    hits["6"] += 1  # Marca como "Hit relevante" no bucket genérico
+                # Mapeamento proporcional para buckets genéricos (compatibilidade):
+                # apenas faixa principal (20 ou espelho 0) entra em '6'; 19 em '5'; 18 em '4'.
+                if acertos in (20, 0):
+                    hits["6"] += 1
+                elif acertos == 19:
+                    hits["5"] += 1
+                elif acertos == 18:
+                    hits["4"] += 1
 
             elif is_lotofacil:
                 # Lotofácil: 11 a 15
@@ -366,23 +371,6 @@ def _resumir_diagnostico_financeiro(acc: Dict[str, Any]) -> Dict[str, Any]:
             for key, value in sorted(acc.get("numeric", {}).items())
         },
     }
-    top_dezenas = sorted(
-        ((int(k), float(v)) for k, v in exposure.items()),
-        key=lambda item: (-item[1], item[0]),
-    )[:10]
-
-    return {
-        "medias": {
-            key: round(value / n, 6)
-            for key, value in sorted(acc.get("numeric", {}).items())
-        },
-        "exposicao_dezenas_total": exposure,
-        "top_dezenas_total": [
-            {"dezena": dezena, "vezes": round(vezes, 4)}
-            for dezena, vezes in top_dezenas
-        ],
-        "n_portfolios": round(n, 4),
-    }
 
 
 def _mc_gerar_jogos_numpy(
@@ -538,13 +526,23 @@ def executar_backtest_temporal(
 
         try:
             ctx_janela = service.build_context_from_df(config, df_treino)
-            payload = {
+            seed_base_janela = (
+                int((int(seed) * 100003 + int(corte) * 31) % (2**31 - 1))
+                if seed is not None
+                else None
+            )
+            payload_base = {
                 "quantidade": jogos_por_janela,
                 "estrategia": estrategia,
                 **payload_overrides,
             }
-            jogos_gen = service.generate_genetic(config.slug, payload, ctx=ctx_janela)
-            jogos_vet = service.generate(config.slug, payload, ctx=ctx_janela)
+            payload_gen = dict(payload_base)
+            payload_vet = dict(payload_base)
+            if seed_base_janela is not None and "seed" not in payload_overrides:
+                payload_gen["seed"] = seed_base_janela
+                payload_vet["seed"] = (seed_base_janela + 17) % (2**31 - 1)
+            jogos_gen = service.generate_genetic(config.slug, payload_gen, ctx=ctx_janela)
+            jogos_vet = service.generate(config.slug, payload_vet, ctx=ctx_janela)
 
             score_gen, hits_gen, match_gen = _contar_hits_e_score(
                 jogos_gen, gabarito, config

@@ -180,7 +180,15 @@ def _score_composto(
     triples = _safe_mean(metrics, "trincas_repetidas")
     quads = _safe_mean(metrics, "quadras_repetidas")
     calibration_js = _safe_mean(metrics, "calibracao_js_vs_alvo")
-    roi = _safe_mean(metrics, "roi")
+
+    # Detecta jogo denso (Lotofácil / Lotomania) pelos registros para evitar penalidades de jogos esparsos
+    jogo_slug = str(records[0].get("jogo", "")) if records else ""
+    is_dense = jogo_slug in {"loto_facil_sorteio", "loto_mania_sorteio"}
+    lim_exp = 15.0 if is_dense else 6.0
+    lim_ov = 12.0 if is_dense else 3.0
+    lim_pairs = 120.0 if is_dense else 30.0
+    peso_triples = 0.0 if is_dense else 0.08
+    peso_quads = 0.0 if is_dense else 1.5
 
     score = 0.0
     score += hit4 * 7.0
@@ -200,11 +208,11 @@ def _score_composto(
 
     score -= _safe_std(metrics, "hit_4") * 0.75
     score -= _safe_std(metrics, "delta_medio_acertos_vs_mc") * 60.0
-    score -= max(0.0, max_exposure - 6.0) * 1.6
-    score -= max(0.0, overlap_max - 3.0) * 1.2
-    score -= max(0.0, pair_reuse_heavy - 30.0) * 0.03
-    score -= triples * 0.08
-    score -= quads * 1.5
+    score -= max(0.0, max_exposure - lim_exp) * 1.6
+    score -= max(0.0, overlap_max - lim_ov) * 1.2
+    score -= max(0.0, pair_reuse_heavy - lim_pairs) * 0.03
+    score -= triples * peso_triples
+    score -= quads * peso_quads
     score -= calibration_js * 3.0
 
     if len(records) < 2:

@@ -72,16 +72,46 @@ def bootstrap_ic_soma(
         indices = rng.integers(0, n_sorteios, size=(end - start, n_sorteios))
         medias_bootstrap[start:end] = somas[indices].mean(axis=1)
 
-    # Calcula percentis para o intervalo de confiança
-    alpha = 1 - nivel_confianca
-    ic_lower = np.percentile(medias_bootstrap, (alpha / 2) * 100)
-    ic_upper = np.percentile(medias_bootstrap, (1 - alpha / 2) * 100)
+    # Calcula percentis para o intervalo de confiança DA MÉDIA histórica
+    alpha = 1.0 - nivel_confianca
+    ic_lower = float(np.percentile(medias_bootstrap, (alpha / 2) * 100))
+    ic_upper = float(np.percentile(medias_bootstrap, (1 - alpha / 2) * 100))
+
+    # Intervalo de PREDIÇÃO para um bilhete individual de tamanho `config.bet_size`
+    m_bet = int(getattr(config, "bet_size", config.k))
+    n_univ = int(config.n_numbers)
+    media_teorica_bilhete = m_bet * (n_univ + 1) / 2.0
+    std_teorico_bilhete = float(
+        np.sqrt(max(1e-9, m_bet * (n_univ - m_bet) * (n_univ + 1) / 12.0))
+    )
+    from scipy.stats import norm as _norm
+
+    z_crit = float(_norm.ppf(1.0 - alpha / 2.0))
+    if m_bet == int(config.k) and n_sorteios >= 20:
+        # Quantis empíricos com correção conformal de amostra finita para bilhete único
+        q_lo = max(0.0, (alpha / 2.0) * (1.0 - 1.0 / (n_sorteios + 1)))
+        q_hi = min(1.0, (1.0 - alpha / 2.0) * (n_sorteios + 1) / n_sorteios)
+        pred_lower = float(np.quantile(somas, q_lo))
+        pred_upper = float(np.quantile(somas, q_hi))
+        media_pred = float(np.mean(somas))
+    else:
+        # Jogos com bet_size != k (ex.: Lotomania 50 vs 20): usa distribuição hipergeométrica exata
+        pred_lower = float(media_teorica_bilhete - z_crit * std_teorico_bilhete)
+        pred_upper = float(media_teorica_bilhete + z_crit * std_teorico_bilhete)
+        media_pred = float(media_teorica_bilhete)
 
     return {
         "media_bootstrap": float(np.mean(medias_bootstrap)),
         "std_bootstrap": float(np.std(medias_bootstrap)),
-        "ic_lower": float(ic_lower),
-        "ic_upper": float(ic_upper),
+        "ic_lower": ic_lower,
+        "ic_upper": ic_upper,
+        "ic_media_lower": ic_lower,
+        "ic_media_upper": ic_upper,
+        "pred_lower": pred_lower,
+        "pred_upper": pred_upper,
+        "media_predicao": media_pred,
+        "media_bilhete_teorica": float(media_teorica_bilhete),
+        "std_bilhete_teorico": std_teorico_bilhete,
         "nivel_confianca": nivel_confianca,
         "n_iteracoes": n_iteracoes,
         "mediana_bootstrap": float(np.median(medias_bootstrap)),

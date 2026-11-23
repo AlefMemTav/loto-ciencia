@@ -33,7 +33,7 @@ def _build_payload_overrides(args) -> dict:
         "usar_atrasados": args.com_atrasados,
         "usar_markov": args.com_markov,
         "usar_ciclo": args.com_ciclo,
-        "usar_coocorrencia": not args.sem_coocorrencia,
+        "usar_coocorrencia": bool(getattr(args, "com_coocorrencia", False)) and not getattr(args, "sem_coocorrencia", False),
         "frequencia_recente": not args.sem_frequencia_recente,
         "usar_calibracao_score": not args.sem_calibracao_score,
         "calibration_strength": args.calibration_strength,
@@ -89,6 +89,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--com-atrasados", action="store_true")
     parser.add_argument("--com-markov", action="store_true")
     parser.add_argument("--com-ciclo", action="store_true")
+    parser.add_argument("--com-coocorrencia", action="store_true")
     parser.add_argument("--sem-coocorrencia", action="store_true")
     parser.add_argument("--sem-frequencia-recente", action="store_true")
     parser.add_argument("--output-dir", default="backtest_results")
