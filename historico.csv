@@ -12,3 +12,7 @@ data,jogo,concurso,n_jogos,melhor,media_acertos,esperado_aleatorio,premiados,fai
 2026-11-19,loto_facil,3834,10,10,8.9,9.0,0,
 2026-11-19,mega_sena,3088,10,1,0.3,0.6,0,
 2026-11-19,quina,7172,10,1,0.2,0.3125,0,
+2026-11-23,loto_facil,3836,10,11,9.4,9.0,2,11|11
+2026-11-23,loto_mania,3002,10,13,10.3,10.0,0,
+2026-11-24,loto_facil,3837,10,12,9.1,9.0,2,11|12
+2026-11-24,mega_sena,3090,10,1,0.3,0.6,0,
