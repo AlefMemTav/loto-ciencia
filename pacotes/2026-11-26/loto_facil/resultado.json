@@ -1,0 +1,63 @@
+{
+  "status": "conferido",
+  "concurso": 3839,
+  "sorteio": [
+    1,
+    3,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    12,
+    14,
+    15,
+    18,
+    19,
+    21,
+    24
+  ],
+  "acertos": [
+    7,
+    10,
+    11,
+    9,
+    11,
+    8,
+    10,
+    9,
+    8,
+    9
+  ],
+  "melhor": 11,
+  "media_acertos": 9.2,
+  "esperado_aleatorio": 9.0,
+  "premios": [
+    "11",
+    "11"
+  ],
+  "controle_pareado": {
+    "n_simulacoes": 100,
+    "p_premio_aleatorio_exato": 0.6735,
+    "media_bilhetes_premiados_exata": 1.0589,
+    "p_premio_controle_condicional": 0.65,
+    "delta_premio_pareado": 0.3265,
+    "media_bilhetes_premiados_controle": 1.09,
+    "dp_media_acertos_teorico": 0.3082,
+    "z_exposicao_hipergeometrica": 0.6489
+  },
+  "auditoria_rateio": {
+    "disponivel": true,
+    "arrecadacao": 18989869.5,
+    "custo_pacote": 35.0,
+    "premio_realizado_total": 14.0,
+    "retorno_liquido": -21.0,
+    "premios_por_faixa": {
+      "11": 14.0
+    },
+    "razao_ganhadores_sorteio_obs": 0.8957,
+    "razao_ganhadores_media_pacote": 0.6797,
+    "fator_retencao_esperado": 1.4712
+  }
+}
